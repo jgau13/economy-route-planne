@@ -77,8 +77,9 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- TU API KEY CONFIGURADA ---
-        const GOOGLE_API_KEY = "AIzaSyBGExop7r4E9sPCj_rbzbZyFM_UlC82V4c"; 
+        // --- SEGURIDAD: LA CLAVE SE INYECTA DESDE EL SERVIDOR ---
+        // Flask reemplazará {{ google_api_key }} por la clave real al cargar la página
+        const GOOGLE_API_KEY = "{{ google_api_key }}"; 
 
         // --- COLORES PARA RUTAS ---
         const ROUTE_COLORS = [
@@ -250,6 +251,11 @@
 
                 if (window.google && window.google.maps && window.google.maps.places) {
                     setScriptLoaded(true);
+                    return;
+                }
+
+                if (!GOOGLE_API_KEY || GOOGLE_API_KEY.includes("{{")) {
+                    setMapError("API Key not found. Please check .env file.");
                     return;
                 }
 
@@ -428,7 +434,6 @@
                 setLoading(true); setError('');
 
                 try {
-                    // SE USA RUTA RELATIVA PARA PRODUCCIÓN
                     const response = await fetch('/optimizar', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -436,7 +441,7 @@
                             direcciones: currentStops.map(s => s.address),
                             num_vans: activeDrivers.length,
                             base_address: baseAddress,
-                            dwell_time: parseInt(dwellTime) // Sending Dwell Time
+                            dwell_time: parseInt(dwellTime) 
                         })
                     });
                     const data = await response.json();
@@ -461,14 +466,13 @@
             const recalculateRoute = async (driverName, stopList) => {
                 setRecalculating(prev => ({ ...prev, [driverName]: true }));
                 try {
-                    // SE USA RUTA RELATIVA PARA PRODUCCIÓN
                     const response = await fetch('/recalcular', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             paradas: stopList,
                             base_address: baseAddress,
-                            dwell_time: parseInt(dwellTime) // Use configured dwell time
+                            dwell_time: parseInt(dwellTime) 
                         })
                     });
                     const data = await response.json();
@@ -480,7 +484,7 @@
                             ...prevRoutes[driverName],
                             duracion_estimada: data.duracion_estimada,
                             link: data.link,
-                            paradas: stopList // Ensure stops are updated
+                            paradas: stopList 
                         }
                     }));
                 } catch (err) {
@@ -594,13 +598,10 @@
                 const termName = newStopName.toLowerCase().trim();
                 const termAddr = newStopAddress.toLowerCase().trim();
                 // FIX: Only filter if user is typing in NAME field (termName exists)
-                // This prevents suggestions from appearing when only address is typed or deleted
                 if (!termName) return [];
 
                 return clientDB.filter(c => {
                     const matchName = termName ? c.name.toLowerCase().includes(termName) : true;
-                    // We can still filter by address match IF name is also being typed, but simpler is just name
-                    // Let's stick to name matching for the Name field to be super clean
                     return c.name.toLowerCase().includes(termName);
                 }).slice(0, 5); 
             }, [newStopName, clientDB]);

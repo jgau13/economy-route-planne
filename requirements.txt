@@ -1,0 +1,6 @@
+flask
+flask-cors
+googlemaps
+ortools
+gunicorn
+python-dotenv

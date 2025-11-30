@@ -1,30 +1,39 @@
 import os
 import sqlite3
 import sys
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import googlemaps
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
+from dotenv import load_dotenv
 
-# Configuración para servir archivos estáticos (el frontend)
-app = Flask(__name__, static_folder='.', static_url_path='')
+# Cargar variables de entorno desde el archivo .env (solo en local)
+load_dotenv()
+
+# Configuración para servir plantillas (el index.html)
+app = Flask(__name__, template_folder='.', static_folder='.', static_url_path='')
 CORS(app) 
 
-# --- CONFIGURACIÓN ---
-# En producción, es mejor usar variables de entorno, pero por ahora usamos tu key directa
-API_KEY = "AIzaSyBGExop7r4E9sPCj_rbzbZyFM_UlC82V4c" 
+# --- CONFIGURACIÓN SEGURA ---
+# Ahora la clave se lee del sistema, no del código
+API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
 # Validación de seguridad
-if API_KEY == "TU_API_KEY_AQUI":
-    print("ERROR: Necesitas configurar la API_KEY en app.py")
-    sys.exit(1)
+if not API_KEY or API_KEY == "PEGA_TU_NUEVA_CLAVE_AQUI_SIN_ESPACIOS":
+    print("\n" + "="*60)
+    print("¡ERROR DE SEGURIDAD!")
+    print("No se encontró la API Key. Asegúrate de tener un archivo .env")
+    print("con la variable GOOGLE_MAPS_API_KEY definida.")
+    print("="*60 + "\n")
+    # No salimos con sys.exit para no romper Gunicorn en nube, pero fallará la lógica
+    # En local, esto te avisará.
 
 try:
-    gmaps = googlemaps.Client(key=API_KEY)
+    if API_KEY:
+        gmaps = googlemaps.Client(key=API_KEY)
 except ValueError as e:
     print(f"Error de API Key: {e}")
-    sys.exit(1)
 
 ALMACEN_COORD = "25.7617,-80.1918" 
 
@@ -50,6 +59,7 @@ def obtener_coordenadas_inteligentes(direccion):
         conn.close()
         return resultado[0] 
     try:
+        if not API_KEY: return None
         geocode_result = gmaps.geocode(direccion)
         if geocode_result:
             loc = geocode_result[0]['geometry']['location']
@@ -63,7 +73,7 @@ def obtener_coordenadas_inteligentes(direccion):
     conn.close()
     return None
 
-# --- LÓGICA VRP (Igual que antes) ---
+# --- LÓGICA VRP ---
 def crear_modelo_datos(direcciones_texto, num_vans, base_address_text=None):
     datos = {}
     coord_almacen = ALMACEN_COORD
@@ -83,6 +93,7 @@ def crear_modelo_datos(direcciones_texto, num_vans, base_address_text=None):
     if len(puntos) <= 1: return None
 
     try:
+        if not API_KEY: return None
         matriz_respuesta = gmaps.distance_matrix(origins=puntos, destinations=puntos, mode="driving")
     except Exception as e:
         print(f"Error API Google: {e}")
@@ -139,14 +150,12 @@ def resolver_vrp(datos, dwell_time_minutos):
                     })
                 index = solution.Value(routing.NextVar(index))
             
-            # Generar Link
             if ruta:
                 base_coord = datos['base_coord']
                 base_url = "https://www.google.com/maps/dir/?api=1"
                 stops_str = "&waypoints=" + "|".join([p["coord"] for p in ruta])
                 full_link = f"{base_url}&origin={base_coord}&destination={base_coord}{stops_str}"
                 
-                # Calcular tiempo final acumulado de la ruta (Var Cumulativa al final)
                 finish_index = routing.End(vehicle_id)
                 tiempo_total = solution.Min(time_dimension.CumulVar(finish_index))
 
@@ -161,10 +170,12 @@ def resolver_vrp(datos, dwell_time_minutos):
 
 @app.route('/')
 def serve_frontend():
-    return send_from_directory('.', 'index.html')
+    # Inyectamos la API KEY de forma segura en el HTML
+    return render_template('index.html', google_api_key=API_KEY)
 
 @app.route('/optimizar', methods=['POST'])
 def optimizar():
+    if not API_KEY: return jsonify({"error": "Error de servidor: Falta API Key"}), 500
     data = request.json
     if not data or 'direcciones' not in data: return jsonify({"error": "Faltan datos"}), 400
     dwell_time = int(data.get('dwell_time', 10))
@@ -175,6 +186,7 @@ def optimizar():
 
 @app.route('/recalcular', methods=['POST'])
 def recalcular_ruta():
+    if not API_KEY: return jsonify({"error": "Error de servidor: Falta API Key"}), 500
     data = request.json
     paradas = data.get('paradas', [])
     base = data.get('base_address')
@@ -222,6 +234,5 @@ def recalcular_ruta():
 
 if __name__ == '__main__':
     init_db()
-    # Configuración para la nube (Render asigna el puerto en la variable PORT)
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
