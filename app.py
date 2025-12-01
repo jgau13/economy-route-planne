@@ -8,39 +8,41 @@ from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 from dotenv import load_dotenv
 
-# Cargar variables de entorno desde el archivo .env (solo en local)
+# Cargar variables de entorno (solo funciona en local, en Render usa las variables del sistema)
 load_dotenv()
 
-# Configuración para servir plantillas (el index.html)
-app = Flask(__name__, template_folder='.', static_folder='.', static_url_path='')
+# --- CORRECCIÓN DE RUTAS (FIX CRÍTICO) ---
+# Obtenemos la ruta absoluta de donde está este archivo app.py
+basedir = os.path.abspath(os.path.dirname(__file__))
+
+# Le decimos a Flask explícitamente dónde buscar los templates y estáticos
+app = Flask(__name__, 
+            template_folder=basedir, 
+            static_folder=basedir, 
+            static_url_path='')
 CORS(app) 
 
-# --- CONFIGURACIÓN SEGURA ---
-# Ahora la clave se lee del sistema, no del código
+# --- CONFIGURACIÓN ---
 API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
-# Validación de seguridad
-if not API_KEY or API_KEY == "PEGA_TU_NUEVA_CLAVE_AQUI_SIN_ESPACIOS":
-    print("\n" + "="*60)
-    print("¡ERROR DE SEGURIDAD!")
-    print("No se encontró la API Key. Asegúrate de tener un archivo .env")
-    print("con la variable GOOGLE_MAPS_API_KEY definida.")
-    print("="*60 + "\n")
-    # No salimos con sys.exit para no romper Gunicorn en nube, pero fallará la lógica
-    # En local, esto te avisará.
+# Validación silenciosa para no romper logs
+if not API_KEY:
+    print("ADVERTENCIA: No se detectó GOOGLE_MAPS_API_KEY en el entorno.")
 
 try:
     if API_KEY:
         gmaps = googlemaps.Client(key=API_KEY)
 except ValueError as e:
-    print(f"Error de API Key: {e}")
+    print(f"Error iniciando Google Maps: {e}")
 
 ALMACEN_COORD = "25.7617,-80.1918" 
 
 # --- BASE DE DATOS ---
 def init_db():
+    # Usamos basedir para asegurar que la DB se cree en el lugar correcto
+    db_path = os.path.join(basedir, 'economy_routes.db')
     try:
-        conn = sqlite3.connect('economy_routes.db')
+        conn = sqlite3.connect(db_path)
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS direcciones
                      (direccion TEXT PRIMARY KEY, latlng TEXT)''')
@@ -50,16 +52,20 @@ def init_db():
         print(f"Error base de datos: {e}")
 
 def obtener_coordenadas_inteligentes(direccion):
+    db_path = os.path.join(basedir, 'economy_routes.db')
     direccion_clean = direccion.strip().lower()
-    conn = sqlite3.connect('economy_routes.db')
-    c = conn.cursor()
-    c.execute("SELECT latlng FROM direcciones WHERE direccion=?", (direccion_clean,))
-    resultado = c.fetchone()
-    if resultado:
-        conn.close()
-        return resultado[0] 
+    
     try:
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        c.execute("SELECT latlng FROM direcciones WHERE direccion=?", (direccion_clean,))
+        resultado = c.fetchone()
+        if resultado:
+            conn.close()
+            return resultado[0] 
+        
         if not API_KEY: return None
+        
         geocode_result = gmaps.geocode(direccion)
         if geocode_result:
             loc = geocode_result[0]['geometry']['location']
@@ -70,7 +76,10 @@ def obtener_coordenadas_inteligentes(direccion):
             return latlng_str
     except Exception as e:
         print(f"Error geocodificando {direccion}: {e}")
-    conn.close()
+        # Intentar cerrar conexión si falló algo
+        try: conn.close()
+        except: pass
+    
     return None
 
 # --- LÓGICA VRP ---
@@ -96,7 +105,7 @@ def crear_modelo_datos(direcciones_texto, num_vans, base_address_text=None):
         if not API_KEY: return None
         matriz_respuesta = gmaps.distance_matrix(origins=puntos, destinations=puntos, mode="driving")
     except Exception as e:
-        print(f"Error API Google: {e}")
+        print(f"Error API Google Matrix: {e}")
         return None
     
     matriz_tiempos = []
@@ -170,12 +179,16 @@ def resolver_vrp(datos, dwell_time_minutos):
 
 @app.route('/')
 def serve_frontend():
-    # Inyectamos la API KEY de forma segura en el HTML
-    return render_template('index.html', google_api_key=API_KEY)
+    # Intenta renderizar index.html
+    try:
+        # Pasamos la API KEY al frontend para que el mapa funcione
+        return render_template('index.html', google_api_key=API_KEY or "")
+    except Exception as e:
+        return f"Error cargando la pagina: {str(e)} <br> Asegurate de que index.html esta en la misma carpeta.", 500
 
 @app.route('/optimizar', methods=['POST'])
 def optimizar():
-    if not API_KEY: return jsonify({"error": "Error de servidor: Falta API Key"}), 500
+    if not API_KEY: return jsonify({"error": "Error: Falta Configurar la API KEY en Render"}), 500
     data = request.json
     if not data or 'direcciones' not in data: return jsonify({"error": "Faltan datos"}), 400
     dwell_time = int(data.get('dwell_time', 10))
@@ -186,7 +199,7 @@ def optimizar():
 
 @app.route('/recalcular', methods=['POST'])
 def recalcular_ruta():
-    if not API_KEY: return jsonify({"error": "Error de servidor: Falta API Key"}), 500
+    if not API_KEY: return jsonify({"error": "Error: Falta Configurar la API KEY en Render"}), 500
     data = request.json
     paradas = data.get('paradas', [])
     base = data.get('base_address')
