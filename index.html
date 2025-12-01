@@ -24,38 +24,34 @@
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // --- ⚠️ PEGA AQUÍ TU CONFIGURACIÓN DE FIREBASE (Del Paso 1) ⚠️ ---
-        const firebaseConfig = {
-  apiKey: "AIzaSyDND4QHYs_6yHCKBKZL1190LzbzbYZ5yC0",
-  authDomain: "ess-route-planner.firebaseapp.com",
-  projectId: "ess-route-planner",
-  storageBucket: "ess-route-planner.firebasestorage.app",
-  messagingSenderId: "1001766596014",
-  appId: "1:1001766596014:web:08e2ffce2f37d2dde7ac3f",
-  measurementId: "G-RT2JRMPJ1J"
-};
-        // ------------------------------------------------------------------
+        // Dejamos la configuración aquí como una función para que pueda ser llamada
+        // globalmente UNA VEZ que el Backend la entregue de forma segura.
+        window.initializeFirebaseGlobally = (config) => {
+            try {
+                const app = initializeApp(config);
+                const auth = getAuth(app);
+                const db = getFirestore(app);
 
-        // Inicializar Firebase
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
-        // Exponer variables globalmente para React
-        window.fbAuth = auth;
-        window.fbDb = db;
-        window.fbSignIn = signInWithEmailAndPassword;
-        window.fbSignOut = signOut;
-        window.fbOnAuthStateChanged = onAuthStateChanged;
-        // Firestore functions
-        window.fbCollection = collection;
-        window.fbAddDoc = addDoc;
-        window.fbOnSnapshot = onSnapshot;
-        window.fbDoc = doc;
-        window.fbUpdateDoc = updateDoc;
-        window.fbDeleteDoc = deleteDoc;
-        window.fbQuery = query;
-        window.fbOrderBy = orderBy;
+                // Exponer variables globalmente para React
+                window.fbAuth = auth;
+                window.fbDb = db;
+                window.fbSignIn = signInWithEmailAndPassword;
+                window.fbSignOut = signOut;
+                window.fbOnAuthStateChanged = onAuthStateChanged;
+                // Firestore functions
+                window.fbCollection = collection;
+                window.fbAddDoc = addDoc;
+                window.fbOnSnapshot = onSnapshot;
+                window.fbDoc = doc;
+                window.fbUpdateDoc = updateDoc;
+                window.fbDeleteDoc = deleteDoc;
+                window.fbQuery = query;
+                window.fbOrderBy = orderBy;
+                console.log("Firebase Initialized Securely.");
+            } catch (e) {
+                console.error("Firebase Initialization Error:", e);
+            }
+        };
     </script>
 
     <!-- Configuración de Colores Corporativos -->
@@ -150,7 +146,7 @@
             );
         };
 
-        // ... (Icon Component - Same as before)
+        // ... (Icon Component)
         const Icon = ({ name, className = "" }) => {
             const [svgHtml, setSvgHtml] = useState(null);
             useEffect(() => {
@@ -175,6 +171,7 @@
             useEffect(() => {
                 if (!isLoaded) return;
                 const attemptInitialization = () => {
+                    // Verificamos si Google Maps REALMENTE existe
                     if (!window.google || !window.google.maps || !window.google.maps.places) {
                         setTimeout(attemptInitialization, 300);
                         return;
@@ -205,7 +202,7 @@
             return <input ref={inputRef} type="text" value={value} onChange={onChange} className={className} placeholder={placeholder} disabled={disabled} autoComplete="off" />;
         };
 
-        // ... (GlobalMapView Component - Same as before)
+        // ... (GlobalMapView Component)
         const GlobalMapView = ({ routes, baseAddress }) => {
             const mapRef = useRef(null);
             const ROUTE_COLORS = ["#1b6e9b", "#6bbf5d", "#e11d48", "#d97706", "#7c3aed", "#db2777"];
@@ -286,9 +283,43 @@
             const [dragOverDriver, setDragOverDriver] = useState(null);
             const [swappingDriver, setSwappingDriver] = useState(null);
 
-            // --- 1. AUTH LISTENER ---
+            // --- 1. CONFIG FETCH AND FIREBASE INIT ---
             useEffect(() => {
-                // Wait for Firebase global vars
+                const fetchConfig = async () => {
+                    try {
+                        const response = await fetch('/config');
+                        const data = await response.json();
+                        
+                        // 1. Inicializar Firebase con la config segura del backend
+                        if (data.firebaseConfig && data.firebaseConfig.apiKey) {
+                            // Delay to ensure the script module is ready
+                            const tryInitFb = () => {
+                                if (window.initializeFirebaseGlobally) {
+                                    window.initializeFirebaseGlobally(data.firebaseConfig);
+                                } else {
+                                    setTimeout(tryInitFb, 50);
+                                }
+                            };
+                            tryInitFb();
+                        } else {
+                            console.warn("Firebase configuration incomplete.");
+                        }
+
+                        // 2. Set Google Maps API Key
+                        if (data.googleApiKey) {
+                            setGoogleApiKey(data.googleApiKey);
+                        } else { 
+                            setMapError("API Key Error: Backend did not return a key.");
+                        }
+                    } catch (err) { 
+                        setMapError("Backend disconnected. Route optimization unavailable."); 
+                    }
+                };
+                fetchConfig();
+            }, []);
+
+            // --- 2. AUTH LISTENER ---
+            useEffect(() => {
                 const initAuth = () => {
                     if (window.fbOnAuthStateChanged) {
                         window.fbOnAuthStateChanged(window.fbAuth, (currentUser) => {
@@ -302,9 +333,10 @@
                 initAuth();
             }, []);
 
-            // --- 2. DATA SYNC (FIRESTORE) ---
+
+            // --- 3. DATA SYNC (FIRESTORE) ---
             useEffect(() => {
-                if (!user) return; // Only sync if logged in
+                if (!user || !window.fbDb) return; 
 
                 // Listen to Clients
                 const qClients = window.fbQuery(window.fbCollection(window.fbDb, "clients"), window.fbOrderBy("name"));
@@ -330,21 +362,7 @@
                 return () => { unsubClients(); unsubDrivers(); };
             }, [user]);
 
-            // --- 3. GOOGLE CONFIG ---
-            useEffect(() => {
-                if(!user) return;
-                const fetchConfig = async () => {
-                    try {
-                        const response = await fetch('/config');
-                        const data = await response.json();
-                        if (data.apiKey && !data.apiKey.includes("[[")) {
-                            setGoogleApiKey(data.apiKey);
-                        } else { setMapError("Backend disconnected."); }
-                    } catch (err) { setMapError("Backend disconnected."); }
-                };
-                fetchConfig();
-            }, [user]);
-
+            // --- 4. GOOGLE MAPS SCRIPT LOADING ---
             useEffect(() => {
                 if (!googleApiKey) return;
                 if (window.google && window.google.maps && window.google.maps.places) {
@@ -360,19 +378,22 @@
 
             // --- FIRESTORE ACTIONS ---
             const addDriverToFb = async (name) => {
+                if(!window.fbDb) return;
                 await window.fbAddDoc(window.fbCollection(window.fbDb, "drivers"), { name, active: true });
             };
             
             const toggleDriver = async (id, currentStatus) => {
+                if(!window.fbDb) return;
                 await window.fbUpdateDoc(window.fbDoc(window.fbDb, "drivers", id), { active: !currentStatus });
             };
 
             const deleteDriver = async (id) => {
+                if(!window.fbDb) return;
                 if (confirm('Delete driver?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, "drivers", id));
             };
 
             const saveClient = async () => {
-                if (!clientFormName.trim() || !clientFormAddress.trim()) return;
+                if (!clientFormName.trim() || !clientFormAddress.trim() || !window.fbDb) return;
                 if (editingClientId) {
                     await window.fbUpdateDoc(window.fbDoc(window.fbDb, "clients", editingClientId), { name: clientFormName, address: clientFormAddress });
                     setEditingClientId(null);
@@ -383,6 +404,7 @@
             };
 
             const deleteClient = async (id) => {
+                if(!window.fbDb) return;
                 if(confirm('Delete client?')) {
                     await window.fbDeleteDoc(window.fbDoc(window.fbDb, "clients", id));
                     setSelectedClients(selectedClients.filter(cid => cid !== id));
@@ -397,7 +419,7 @@
                 
                 // Auto-save to DB if new
                 const exists = clientDB.some(c => c.address.toLowerCase() === stop.address.toLowerCase());
-                if (!exists) {
+                if (!exists && window.fbDb) { // Check if fbDb is available before saving
                     window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: stop.name, address: stop.address });
                 }
                 setNewStopName(''); setNewStopAddress('');
@@ -408,7 +430,7 @@
             
             const handleLogout = () => window.fbSignOut(window.fbAuth);
 
-            // ... (Optimization Logic - Same as before)
+            // ... (Optimization Logic)
             const handleOptimize = async () => {
                 const activeDrivers = drivers.filter(d => d.active);
                 if (currentStops.length === 0) return setError('No stops added.');
@@ -568,7 +590,7 @@
                                 <div className="lg:col-span-4 space-y-6">
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow">
                                         <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 pb-3 border-b border-slate-100"><Icon name="users" className="h-5 w-5 text-ess-blue" /> Drivers (Cloud)</h3>
-                                        <div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-2 border border-slate-300 rounded text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div>
+                                        <div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div>
                                         <div className="space-y-3 mb-6 max-h-[300px] overflow-y-auto pr-1">{drivers.map(driver => (<div key={driver.id} className="group relative"><label className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}><div className="flex items-center gap-3"><div className={`w-2 h-2 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div><span className={`font-medium ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span></div><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-5 h-5 accent-ess-green" /></label><button onClick={(e) => { e.preventDefault(); deleteDriver(driver.id); }} className="absolute -right-2 -top-2 bg-white text-slate-400 hover:text-red-500 border border-slate-200 rounded-full p-1 opacity-0 group-hover:opacity-100 shadow-sm"><Icon name="x" className="h-3 w-3" /></button></div>))}</div>
                                     </div>
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow">
