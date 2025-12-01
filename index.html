@@ -52,10 +52,11 @@
                 
                 window.firebaseReady = true; // Bandera de éxito
                 console.log("✅ Firebase Initialized Securely.");
+                return true; // Retorna true si fue exitoso
             } catch (e) {
                 console.error("❌ Firebase Initialization Error:", e);
-                // Guardamos el error para que React lo pueda leer
                 window.firebaseInitError = e.message;
+                return false;
             }
         };
     </script>
@@ -219,6 +220,8 @@
             const [user, setUser] = useState(null);
             const [authLoading, setAuthLoading] = useState(true);
             const [systemError, setSystemError] = useState(null); 
+            // NUEVO ESTADO: Controla si la BD está lista para ser leída
+            const [dbReady, setDbReady] = useState(false);
 
             const [clientDB, setClientDB] = useState([]);
             const [drivers, setDrivers] = useState([]);
@@ -249,6 +252,13 @@
             const [dragOverDriver, setDragOverDriver] = useState(null);
             const [swappingDriver, setSwappingDriver] = useState(null);
 
+            // --- ACCIONES DE FIRESTORE (Definidas antes del uso para evitar errores) ---
+            const addDriverToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(window.fbCollection(window.fbDb, "drivers"), { name, active: true }); };
+            const toggleDriver = async (id, status) => { if(window.fbDb) await window.fbUpdateDoc(window.fbDoc(window.fbDb, "drivers", id), { active: !status }); };
+            const deleteDriver = async (id) => { if(window.fbDb && confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, "drivers", id)); };
+            const saveClient = async () => { if (!clientFormName || !window.fbDb) return; if (editingClientId) { await window.fbUpdateDoc(window.fbDoc(window.fbDb, "clients", editingClientId), { name: clientFormName, address: clientFormAddress }); setEditingClientId(null); } else { await window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: clientFormName, address: clientFormAddress }); } setClientFormName(''); setClientFormAddress(''); };
+            const deleteClient = async (id) => { if(window.fbDb && confirm('Delete?')) { await window.fbDeleteDoc(window.fbDoc(window.fbDb, "clients", id)); setSelectedClients(selectedClients.filter(c => c !== id)); } };
+
             // 1. CONFIG & INIT
             useEffect(() => {
                 const fetchConfig = async () => {
@@ -260,7 +270,9 @@
                         if (data.firebaseConfig && data.firebaseConfig.apiKey) {
                             const tryInitFb = () => {
                                 if (window.initializeFirebaseGlobally) {
-                                    window.initializeFirebaseGlobally(data.firebaseConfig);
+                                    // Inicializamos y avisamos que la BD está lista
+                                    const success = window.initializeFirebaseGlobally(data.firebaseConfig);
+                                    if (success) setDbReady(true); 
                                 } else {
                                     setTimeout(tryInitFb, 50);
                                 }
@@ -287,8 +299,8 @@
                 const initAuth = () => {
                     // VERIFICAR SI FIREBASE FALLÓ AL INICIAR
                     if (window.firebaseInitError) {
-                        setSystemError(window.firebaseInitError); // Mostrar error real
-                        setAuthLoading(false); // Dejar de cargar
+                        setSystemError(window.firebaseInitError); 
+                        setAuthLoading(false); 
                         return;
                     }
 
@@ -299,20 +311,19 @@
                         });
                     } else {
                         attempts++;
-                        // Si tarda más de 5 segundos, asumimos error de conexión
-                        if (attempts > 50 && !systemError) {
-                             // Sigue intentando un poco más
-                        }
+                        if (attempts > 50 && !systemError) { }
                         if (!systemError) setTimeout(initAuth, 100);
                     }
                 };
                 initAuth();
             }, [systemError]);
 
-            // ... (Resto de lógica idéntica) ...
             
+            // --- 3. DATA SYNC (FIRESTORE) CORREGIDO ---
             useEffect(() => {
-                if (!user || !window.fbDb) return;
+                // Ahora esperamos a 'dbReady' antes de intentar conectar
+                if (!user || !window.fbDb || !dbReady) return;
+
                 const qClients = window.fbQuery(window.fbCollection(window.fbDb, "clients"), window.fbOrderBy("name"));
                 const unsubClients = window.fbOnSnapshot(qClients, (snapshot) => {
                     const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -322,13 +333,14 @@
                 const unsubDrivers = window.fbOnSnapshot(qDrivers, (snapshot) => {
                     const driversData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     if (driversData.length === 0 && !localStorage.getItem('drivers_initialized')) {
+                        // Semilla inicial segura
                         addDriverToFb("Jorge"); addDriverToFb("Miguel"); addDriverToFb("Carlos");
                         localStorage.setItem('drivers_initialized', 'true');
                     }
                     setDrivers(driversData);
                 });
                 return () => { unsubClients(); unsubDrivers(); };
-            }, [user]);
+            }, [user, dbReady]); // Dependencia clave agregada
 
             useEffect(() => {
                 if (!googleApiKey) return;
@@ -340,11 +352,6 @@
                 document.head.appendChild(script);
             }, [googleApiKey]);
 
-            const addDriverToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(window.fbCollection(window.fbDb, "drivers"), { name, active: true }); };
-            const toggleDriver = async (id, status) => { if(window.fbDb) await window.fbUpdateDoc(window.fbDoc(window.fbDb, "drivers", id), { active: !status }); };
-            const deleteDriver = async (id) => { if(window.fbDb && confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, "drivers", id)); };
-            const saveClient = async () => { if (!clientFormName || !window.fbDb) return; if (editingClientId) { await window.fbUpdateDoc(window.fbDoc(window.fbDb, "clients", editingClientId), { name: clientFormName, address: clientFormAddress }); setEditingClientId(null); } else { await window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: clientFormName, address: clientFormAddress }); } setClientFormName(''); setClientFormAddress(''); };
-            const deleteClient = async (id) => { if(window.fbDb && confirm('Delete?')) { await window.fbDeleteDoc(window.fbDoc(window.fbDb, "clients", id)); setSelectedClients(selectedClients.filter(c => c !== id)); } };
             const addStop = () => { if (!newStopAddress) return; const stop = { id: Date.now(), name: newStopName || 'Client', address: newStopAddress }; setCurrentStops([...currentStops, stop]); if (!clientDB.some(c => c.address === stop.address) && window.fbDb) window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: stop.name, address: stop.address }); setNewStopName(''); setNewStopAddress(''); };
             const removeStop = (id) => setCurrentStops(currentStops.filter(s => s.id !== id));
             const selectClient = (c) => { setNewStopName(c.name); setNewStopAddress(c.address); };
