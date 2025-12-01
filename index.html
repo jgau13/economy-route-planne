@@ -5,20 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Economy Sign Supply Route Planner</title>
     
-    <!-- React y ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel para JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- Configuración de Colores Corporativos -->
     <script>
         tailwind.config = {
             theme: {
@@ -247,15 +242,11 @@
             const [scriptLoaded, setScriptLoaded] = useState(false);
             const [mapError, setMapError] = useState('');
 
-            // 1. Fetch API KEY desde el backend al iniciar (CON PROTECCIÓN CONTRA ERRORES)
+            // 1. Fetch API KEY desde el backend al iniciar
             useEffect(() => {
                 const fetchConfig = async () => {
                     try {
-                        // Check if we are running in a blob/preview environment where /config won't exist
-                        if (window.location.protocol === 'blob:' || window.location.href.includes('blob:')) {
-                            throw new Error("Preview Mode");
-                        }
-
+                        // FIX: Usar ruta relativa para que funcione en Render
                         const response = await fetch('/config');
                         if (!response.ok) throw new Error("Backend not found");
                         
@@ -267,9 +258,8 @@
                             setMapError("Backend disconnected. Features limited.");
                         }
                     } catch (err) {
-                        console.warn("Backend unavailable (Preview Mode):", err);
-                        // In preview mode, we stay without key or prompt user
-                        setMapError("Backend disconnected. Route optimization unavailable in preview.");
+                        console.warn("Backend unavailable:", err);
+                        setMapError("Backend disconnected. Route optimization unavailable.");
                     }
                 };
                 fetchConfig();
@@ -468,10 +458,8 @@
                 setLoading(true); setError('');
 
                 try {
-                    // TRY FULL PATH FOR PREVIEW COMPATIBILITY OR RELATIVE FOR PROD
-                    const url = (window.location.protocol === 'blob:' || window.location.href.includes('blob:')) 
-                        ? 'http://127.0.0.1:5000/optimizar' // Fallback for local testing if running backend locally
-                        : '/optimizar'; // Relative for Render
+                    // FIX: Ruta relativa para Render
+                    const url = '/optimizar';
 
                     const response = await fetch(url, {
                         method: 'POST',
@@ -505,9 +493,8 @@
             const recalculateRoute = async (driverName, stopList) => {
                 setRecalculating(prev => ({ ...prev, [driverName]: true }));
                 try {
-                    const url = (window.location.protocol === 'blob:' || window.location.href.includes('blob:')) 
-                        ? 'http://127.0.0.1:5000/recalcular' 
-                        : '/recalcular';
+                    // FIX: Ruta relativa para Render
+                    const url = '/recalcular';
 
                     const response = await fetch(url, {
                         method: 'POST',
