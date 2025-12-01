@@ -31,8 +31,9 @@ except ValueError as e:
 
 ALMACEN_COORD = "25.7617,-80.1918" 
 
-# --- BASE DE DATOS ---
+# --- BASE DE DATOS (CORREGIDA) ---
 def init_db():
+    """Inicializa la base de datos y crea la tabla si no existe."""
     db_path = os.path.join(basedir, 'economy_routes.db')
     try:
         conn = sqlite3.connect(db_path)
@@ -41,8 +42,13 @@ def init_db():
                      (direccion TEXT PRIMARY KEY, latlng TEXT)''')
         conn.commit()
         conn.close()
+        print("✅ Base de datos verificada y tabla 'direcciones' lista.")
     except Exception as e:
-        print(f"Error base de datos: {e}")
+        print(f"❌ Error crítico inicializando base de datos: {e}")
+
+# ¡ESTA ES LA SOLUCIÓN! 
+# Ejecutamos esto INMEDIATAMENTE al cargar el código, no al final.
+init_db()
 
 def obtener_coordenadas_inteligentes(direccion):
     db_path = os.path.join(basedir, 'economy_routes.db')
@@ -55,11 +61,15 @@ def obtener_coordenadas_inteligentes(direccion):
         if resultado:
             conn.close()
             return resultado[0] 
+        
+        # Si no está en DB, pedimos a Google
         if not API_KEY: return None
         geocode_result = gmaps.geocode(direccion)
         if geocode_result:
             loc = geocode_result[0]['geometry']['location']
             latlng_str = f"{loc['lat']},{loc['lng']}"
+            
+            # Guardamos en caché
             c.execute("INSERT OR REPLACE INTO direcciones VALUES (?, ?)", (direccion_clean, latlng_str))
             conn.commit()
             conn.close()
@@ -150,8 +160,10 @@ def resolver_vrp(datos, dwell_time_minutos):
             if ruta:
                 base_coord = datos['base_coord']
                 base_url = "https://www.google.com/maps/dir/?api=1"
+                # Usamos el formato universal de Google Maps
                 stops_str = "&waypoints=" + "|".join([p["coord"] for p in ruta])
                 full_link = f"{base_url}&origin={base_coord}&destination={base_coord}{stops_str}"
+                
                 finish_index = routing.End(vehicle_id)
                 tiempo_total = solution.Min(time_dimension.CumulVar(finish_index))
                 rutas_finales[f"Van {vehicle_id + 1}"] = {
@@ -165,12 +177,10 @@ def resolver_vrp(datos, dwell_time_minutos):
 
 @app.route('/')
 def serve_frontend():
-    # Enviamos el archivo tal cual, sin procesarlo (evita el error de sintaxis)
     return send_from_directory(basedir, 'index.html')
 
 @app.route('/config')
 def get_config():
-    # Endpoint seguro para entregar la API Key al frontend
     return jsonify({"apiKey": API_KEY})
 
 @app.route('/optimizar', methods=['POST'])
@@ -225,6 +235,8 @@ def recalcular_ruta():
         tiempo_total_segundos += duracion
         
     tiempo_total_segundos += (len(coords_paradas) * dwell_time * 60)
+    
+    # URL Universal de Google Maps para mejor compatibilidad móvil
     base_url = "https://www.google.com/maps/dir/?api=1"
     stops_str = "&waypoints=" + "|".join(coords_paradas)
     full_link = f"{base_url}&origin={base_coord}&destination={base_coord}{stops_str}"
@@ -232,6 +244,7 @@ def recalcular_ruta():
     return jsonify({ "duracion_estimada": tiempo_total_segundos / 60, "link": full_link })
 
 if __name__ == '__main__':
+    # Esto solo corre en tu PC, no en Render
     init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
