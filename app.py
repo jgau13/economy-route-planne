@@ -1,39 +1,27 @@
 import os
 import sqlite3
 import sys
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import googlemaps
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 from dotenv import load_dotenv
 
-# Cargar variables de entorno (solo funciona en local, en Render usa las variables del sistema)
 load_dotenv()
 
-# --- CORRECCIÓN DE RUTAS (FIX CRÍTICO) ---
-# Obtenemos la ruta absoluta de donde está este archivo app.py
+# Configuración de rutas absolutas para evitar errores en la nube
 basedir = os.path.abspath(os.path.dirname(__file__))
 
-# Le decimos a Flask explícitamente dónde buscar los templates y estáticos
-app = Flask(__name__, 
-            template_folder=basedir, 
-            static_folder=basedir, 
-            static_url_path='')
-
-# --- FIX CONFLICTO REACT VS FLASK ---
-# Cambiamos los delimitadores de Flask a [[ ]] para que NO choque con los {{ }} de React
-app.jinja_env.variable_start_string = '[['
-app.jinja_env.variable_end_string = ']]'
-
+# Configuramos Flask para servir archivos estáticos directamente desde la raíz
+app = Flask(__name__, static_folder=basedir, static_url_path='')
 CORS(app) 
 
 # --- CONFIGURACIÓN ---
 API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
-# Validación silenciosa para no romper logs
 if not API_KEY:
-    print("ADVERTENCIA: No se detectó GOOGLE_MAPS_API_KEY en el entorno.")
+    print("ADVERTENCIA: No se detectó GOOGLE_MAPS_API_KEY.")
 
 try:
     if API_KEY:
@@ -45,7 +33,6 @@ ALMACEN_COORD = "25.7617,-80.1918"
 
 # --- BASE DE DATOS ---
 def init_db():
-    # Usamos basedir para asegurar que la DB se cree en el lugar correcto
     db_path = os.path.join(basedir, 'economy_routes.db')
     try:
         conn = sqlite3.connect(db_path)
@@ -60,7 +47,6 @@ def init_db():
 def obtener_coordenadas_inteligentes(direccion):
     db_path = os.path.join(basedir, 'economy_routes.db')
     direccion_clean = direccion.strip().lower()
-    
     try:
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
@@ -69,9 +55,7 @@ def obtener_coordenadas_inteligentes(direccion):
         if resultado:
             conn.close()
             return resultado[0] 
-        
         if not API_KEY: return None
-        
         geocode_result = gmaps.geocode(direccion)
         if geocode_result:
             loc = geocode_result[0]['geometry']['location']
@@ -82,10 +66,8 @@ def obtener_coordenadas_inteligentes(direccion):
             return latlng_str
     except Exception as e:
         print(f"Error geocodificando {direccion}: {e}")
-        # Intentar cerrar conexión si falló algo
         try: conn.close()
         except: pass
-    
     return None
 
 # --- LÓGICA VRP ---
@@ -170,10 +152,8 @@ def resolver_vrp(datos, dwell_time_minutos):
                 base_url = "https://www.google.com/maps/dir/?api=1"
                 stops_str = "&waypoints=" + "|".join([p["coord"] for p in ruta])
                 full_link = f"{base_url}&origin={base_coord}&destination={base_coord}{stops_str}"
-                
                 finish_index = routing.End(vehicle_id)
                 tiempo_total = solution.Min(time_dimension.CumulVar(finish_index))
-
                 rutas_finales[f"Van {vehicle_id + 1}"] = {
                     "paradas": ruta,
                     "duracion_estimada": tiempo_total / 60,
@@ -181,16 +161,17 @@ def resolver_vrp(datos, dwell_time_minutos):
                 }
     return rutas_finales
 
-# --- RUTAS DE LA APP WEB ---
+# --- RUTAS ---
 
 @app.route('/')
 def serve_frontend():
-    # Intenta renderizar index.html
-    try:
-        # Pasamos la API KEY al frontend usando los NUEVOS delimitadores [[ ]]
-        return render_template('index.html', google_api_key=API_KEY or "")
-    except Exception as e:
-        return f"Error cargando la pagina: {str(e)} <br> Asegurate de que index.html esta en la misma carpeta.", 500
+    # Enviamos el archivo tal cual, sin procesarlo (evita el error de sintaxis)
+    return send_from_directory(basedir, 'index.html')
+
+@app.route('/config')
+def get_config():
+    # Endpoint seguro para entregar la API Key al frontend
+    return jsonify({"apiKey": API_KEY})
 
 @app.route('/optimizar', methods=['POST'])
 def optimizar():
@@ -244,7 +225,6 @@ def recalcular_ruta():
         tiempo_total_segundos += duracion
         
     tiempo_total_segundos += (len(coords_paradas) * dwell_time * 60)
-    
     base_url = "https://www.google.com/maps/dir/?api=1"
     stops_str = "&waypoints=" + "|".join(coords_paradas)
     full_link = f"{base_url}&origin={base_coord}&destination={base_coord}{stops_str}"
