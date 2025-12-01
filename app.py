@@ -20,6 +20,12 @@ app = Flask(__name__,
             template_folder=basedir, 
             static_folder=basedir, 
             static_url_path='')
+
+# --- FIX CONFLICTO REACT VS FLASK ---
+# Cambiamos los delimitadores de Flask a [[ ]] para que NO choque con los {{ }} de React
+app.jinja_env.variable_start_string = '[['
+app.jinja_env.variable_end_string = ']]'
+
 CORS(app) 
 
 # --- CONFIGURACIÓN ---
@@ -181,7 +187,7 @@ def resolver_vrp(datos, dwell_time_minutos):
 def serve_frontend():
     # Intenta renderizar index.html
     try:
-        # Pasamos la API KEY al frontend para que el mapa funcione
+        # Pasamos la API KEY al frontend usando los NUEVOS delimitadores [[ ]]
         return render_template('index.html', google_api_key=API_KEY or "")
     except Exception as e:
         return f"Error cargando la pagina: {str(e)} <br> Asegurate de que index.html esta en la misma carpeta.", 500
