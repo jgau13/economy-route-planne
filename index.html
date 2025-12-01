@@ -77,10 +77,6 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- SEGURIDAD: LA CLAVE SE INYECTA CON SINTAXIS SEGURA ---
-        // Flask ahora busca [[ ... ]] para reemplazar, ignorando {{ ... }} de React
-        const GOOGLE_API_KEY = "[[ google_api_key ]]"; 
-
         // --- COLORES PARA RUTAS ---
         const ROUTE_COLORS = [
             "#1b6e9b", // ESS Blue
@@ -117,21 +113,25 @@
                 if (!isLoaded || !window.google || !window.google.maps || !window.google.maps.places || !inputRef.current) return;
                 if (autoCompleteRef.current) return;
 
-                const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
-                    types: ['geocode', 'establishment'], 
-                    componentRestrictions: { country: "us" }, 
-                    fields: ['formatted_address', 'name', 'geometry']
-                });
+                try {
+                    const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
+                        types: ['geocode', 'establishment'], 
+                        componentRestrictions: { country: "us" }, 
+                        fields: ['formatted_address', 'name', 'geometry']
+                    });
 
-                autocomplete.addListener("place_changed", () => {
-                    const place = autocomplete.getPlace();
-                    if (place.formatted_address) {
-                        const event = { target: { value: place.formatted_address } };
-                        onChange(event);
-                    }
-                });
+                    autocomplete.addListener("place_changed", () => {
+                        const place = autocomplete.getPlace();
+                        if (place.formatted_address) {
+                            const event = { target: { value: place.formatted_address } };
+                            onChange(event);
+                        }
+                    });
 
-                autoCompleteRef.current = autocomplete;
+                    autoCompleteRef.current = autocomplete;
+                } catch (e) {
+                    console.error("Error init autocomplete:", e);
+                }
 
             }, [isLoaded]);
 
@@ -239,11 +239,46 @@
         };
 
         function App() {
+            // --- ESTADO PARA LA KEY ---
+            const [googleApiKey, setGoogleApiKey] = useState(null);
+            const [manualKeyInput, setManualKeyInput] = useState("");
+            
             // --- CARGAR SCRIPT DE GOOGLE MAPS ---
             const [scriptLoaded, setScriptLoaded] = useState(false);
             const [mapError, setMapError] = useState('');
 
+            // 1. Fetch API KEY desde el backend al iniciar (CON PROTECCIÓN CONTRA ERRORES)
             useEffect(() => {
+                const fetchConfig = async () => {
+                    try {
+                        // Check if we are running in a blob/preview environment where /config won't exist
+                        if (window.location.protocol === 'blob:' || window.location.href.includes('blob:')) {
+                            throw new Error("Preview Mode");
+                        }
+
+                        const response = await fetch('/config');
+                        if (!response.ok) throw new Error("Backend not found");
+                        
+                        const data = await response.json();
+                        if (data.apiKey && !data.apiKey.includes("[[")) {
+                            setGoogleApiKey(data.apiKey);
+                        } else {
+                            // If key is template literal, it means we are local without backend logic
+                            setMapError("Backend disconnected. Features limited.");
+                        }
+                    } catch (err) {
+                        console.warn("Backend unavailable (Preview Mode):", err);
+                        // In preview mode, we stay without key or prompt user
+                        setMapError("Backend disconnected. Route optimization unavailable in preview.");
+                    }
+                };
+                fetchConfig();
+            }, []);
+
+            // 2. Cargar Script cuando tengamos la KEY
+            useEffect(() => {
+                if (!googleApiKey) return;
+
                 window.gm_authFailure = () => {
                     console.error("Google Maps failed to authenticate");
                     setMapError("API Key Error: Verify 'Places API' and 'Maps JavaScript API' are enabled in Google Cloud.");
@@ -251,31 +286,30 @@
 
                 if (window.google && window.google.maps && window.google.maps.places) {
                     setScriptLoaded(true);
-                    return;
-                }
-
-                if (!GOOGLE_API_KEY || GOOGLE_API_KEY.includes("[[")) {
-                    setMapError("API Key not found. Please check Render Environment Variables.");
+                    setMapError(''); // Clear error if success
                     return;
                 }
 
                 const script = document.createElement("script");
-                script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_API_KEY}&libraries=places&loading=async`;
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${googleApiKey}&libraries=places&loading=async`;
                 script.async = true;
                 script.defer = true;
                 script.onload = () => {
-                    setTimeout(() => setScriptLoaded(true), 100);
+                    setTimeout(() => {
+                        setScriptLoaded(true);
+                        setMapError(''); // Clear errors
+                    }, 100);
                 };
                 script.onerror = () => setMapError("Could not load Google Maps script. Check your internet connection.");
                 document.head.appendChild(script);
-            }, []);
+            }, [googleApiKey]);
 
             // --- ESTADOS ---
-            const [view, setView] = useState('input'); // 'input', 'results', 'clients', 'global_map'
+            const [view, setView] = useState('input'); 
             const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, EE. UU.');
             
             // Configuration
-            const [dwellTime, setDwellTime] = useState(10); // NEW DWELL TIME STATE (Default 10 min)
+            const [dwellTime, setDwellTime] = useState(10); 
 
             // Conductores
             const [drivers, setDrivers] = useState(() => {
@@ -314,7 +348,7 @@
 
             // Resultados
             const [routes, setRoutes] = useState(null);
-            const [originalRoutes, setOriginalRoutes] = useState(null); // BACKUP STATE
+            const [originalRoutes, setOriginalRoutes] = useState(null); 
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
             const [recalculating, setRecalculating] = useState({});
@@ -326,7 +360,7 @@
             const [dragOverIndex, setDragOverIndex] = useState(null); 
 
             // Driver Swap State
-            const [swappingDriver, setSwappingDriver] = useState(null); // The driver being changed
+            const [swappingDriver, setSwappingDriver] = useState(null); 
 
             // --- EFECTOS ---
             useEffect(() => { localStorage.setItem('ess_clients', JSON.stringify(clientDB)); }, [clientDB]);
@@ -434,7 +468,12 @@
                 setLoading(true); setError('');
 
                 try {
-                    const response = await fetch('/optimizar', {
+                    // TRY FULL PATH FOR PREVIEW COMPATIBILITY OR RELATIVE FOR PROD
+                    const url = (window.location.protocol === 'blob:' || window.location.href.includes('blob:')) 
+                        ? 'http://127.0.0.1:5000/optimizar' // Fallback for local testing if running backend locally
+                        : '/optimizar'; // Relative for Render
+
+                    const response = await fetch(url, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -457,7 +496,7 @@
                     setOriginalRoutes(JSON.parse(JSON.stringify(assignedRoutes))); // SAVE BACKUP
                     setView('results');
                 } catch (err) {
-                    setError('Error: ' + err.message);
+                    setError('Connection Error: ' + err.message + '. Ensure backend is running.');
                 } finally {
                     setLoading(false);
                 }
@@ -466,7 +505,11 @@
             const recalculateRoute = async (driverName, stopList) => {
                 setRecalculating(prev => ({ ...prev, [driverName]: true }));
                 try {
-                    const response = await fetch('/recalcular', {
+                    const url = (window.location.protocol === 'blob:' || window.location.href.includes('blob:')) 
+                        ? 'http://127.0.0.1:5000/recalcular' 
+                        : '/recalcular';
+
+                    const response = await fetch(url, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -633,7 +676,14 @@
                             </div>
                         </div>
                     </header>
-                    {mapError && <div className="bg-red-500 text-white text-center text-sm py-2 px-4 font-bold animate-fade-in flex justify-center items-center gap-2"><Icon name="alert-triangle" className="h-4 w-4" /> {mapError}</div>}
+                    {mapError && <div className="bg-red-500 text-white text-center text-sm py-2 px-4 font-bold animate-fade-in flex justify-center items-center gap-2"><Icon name="alert-triangle" className="h-4 w-4" /> {mapError} 
+                        {!googleApiKey && (
+                            <div className="ml-2 flex gap-2">
+                                <input type="text" placeholder="Enter API Key manually" className="text-black px-2 py-0.5 rounded text-xs" value={manualKeyInput} onChange={(e) => setManualKeyInput(e.target.value)} />
+                                <button onClick={() => setGoogleApiKey(manualKeyInput)} className="bg-white text-red-500 px-2 rounded text-xs font-bold">Save</button>
+                            </div>
+                        )}
+                    </div>}
 
                     <main className="max-w-7xl mx-auto p-6">
                         
