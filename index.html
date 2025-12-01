@@ -5,15 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Economy Sign Supply Route Planner</title>
     
+    <!-- React y ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
+    <!-- Babel para JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
+    <!-- Configuración de Colores Corporativos -->
     <script>
         tailwind.config = {
             theme: {
@@ -99,36 +104,58 @@
             return <span dangerouslySetInnerHTML={{ __html: svgHtml }} style={{ display: 'contents' }} />;
         };
 
-        // --- COMPONENTE INPUT CON AUTOCOMPLETADO DE GOOGLE (ROBUSTO) ---
+        // --- COMPONENTE INPUT CON AUTOCOMPLETADO DE GOOGLE (VERSIÓN AUTOCURABLE) ---
         const GoogleAddressInput = ({ value, onChange, placeholder, className, disabled, isLoaded }) => {
             const inputRef = useRef(null);
             const autoCompleteRef = useRef(null);
             
             useEffect(() => {
-                if (!isLoaded || !window.google || !window.google.maps || !window.google.maps.places || !inputRef.current) return;
-                if (autoCompleteRef.current) return;
+                // Si el sistema principal dice que no ha cargado, esperamos.
+                if (!isLoaded) return;
 
-                try {
-                    const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
-                        types: ['geocode', 'establishment'], 
-                        componentRestrictions: { country: "us" }, 
-                        fields: ['formatted_address', 'name', 'geometry']
-                    });
+                // Función recursiva para intentar conectar hasta tener éxito
+                const attemptInitialization = () => {
+                    // 1. Verificamos si Google Maps REALMENTE existe en el navegador
+                    if (!window.google || !window.google.maps || !window.google.maps.places) {
+                        // Si no está listo, reintentamos en 300ms
+                        // console.log("Google Maps not ready yet, retrying...");
+                        setTimeout(attemptInitialization, 300);
+                        return;
+                    }
 
-                    autocomplete.addListener("place_changed", () => {
-                        const place = autocomplete.getPlace();
-                        if (place.formatted_address) {
-                            const event = { target: { value: place.formatted_address } };
-                            onChange(event);
-                        }
-                    });
+                    // 2. Verificamos si el input HTML existe
+                    if (!inputRef.current) return;
+                    
+                    // 3. Si ya estaba conectado, no hacemos nada para no duplicar
+                    if (autoCompleteRef.current) return;
 
-                    autoCompleteRef.current = autocomplete;
-                } catch (e) {
-                    console.error("Error init autocomplete:", e);
-                }
+                    try {
+                        const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
+                            types: ['geocode', 'establishment'], 
+                            componentRestrictions: { country: "us" }, 
+                            fields: ['formatted_address', 'name', 'geometry']
+                        });
 
-            }, [isLoaded]);
+                        autocomplete.addListener("place_changed", () => {
+                            const place = autocomplete.getPlace();
+                            if (place.formatted_address) {
+                                const event = { target: { value: place.formatted_address } };
+                                onChange(event);
+                            }
+                        });
+
+                        autoCompleteRef.current = autocomplete;
+                        // console.log("✅ Google Autocomplete Connected!");
+                    } catch (e) {
+                        console.error("Error init autocomplete, retrying:", e);
+                        setTimeout(attemptInitialization, 500);
+                    }
+                };
+
+                // Iniciar el intento
+                attemptInitialization();
+
+            }, [isLoaded]); // Se ejecuta cuando isLoaded cambia a TRUE
 
             return (
                 <input 
@@ -476,8 +503,9 @@
 
                     const assignedRoutes = {};
                     Object.keys(data).forEach((vanKey, index) => {
-                        if (activeDrivers[index]) assignedRoutes[activeDrivers[index].name] = data[vanKey];
-                        else assignedRoutes[vanKey] = data[vanKey];
+                        // FIX: Ensure activeDrivers exists for index, fallback to key if needed
+                        const driverName = activeDrivers[index] ? activeDrivers[index].name : vanKey;
+                        assignedRoutes[driverName] = data[vanKey];
                     });
 
                     setRoutes(assignedRoutes);
