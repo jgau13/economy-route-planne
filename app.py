@@ -17,11 +17,23 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__, static_folder=basedir, static_url_path='')
 CORS(app) 
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURACIÓN DE LLAVES Y VARIABLES DE ENTORNO ---
+# La clave de Google Maps se lee para el uso interno de Python
 API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
+# La configuración de Firebase se lee para enviársela al Frontend
+FIREBASE_CONFIG = {
+    "apiKey": os.environ.get("FIREBASE_API_KEY"),
+    "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN"),
+    "projectId": os.environ.get("FIREBASE_PROJECT_ID"),
+    "storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET"),
+    "messagingSenderId": os.environ.get("FIREBASE_MESSAGING_SENDER_ID"),
+    "appId": os.environ.get("FIREBASE_APP_ID")
+}
+# --------------------------------------------------------
+
 if not API_KEY:
-    print("ADVERTENCIA: No se detectó GOOGLE_MAPS_API_KEY.")
+    print("ADVERTENCIA: No se detectó GOOGLE_MAPS_API_KEY en las variables de entorno.")
 
 try:
     if API_KEY:
@@ -31,7 +43,7 @@ except ValueError as e:
 
 ALMACEN_COORD = "25.7617,-80.1918" 
 
-# --- BASE DE DATOS ---
+# --- BASE DE DATOS (AUTO-INICIALIZACIÓN) ---
 def init_db():
     """Inicializa la base de datos y crea la tabla si no existe."""
     db_path = os.path.join(basedir, 'economy_routes.db')
@@ -46,7 +58,7 @@ def init_db():
     except Exception as e:
         print(f"❌ Error crítico inicializando base de datos: {e}")
 
-# EJECUTAR AL INICIO (Crucial para Render)
+# EJECUTAR AL INICIO (Crucial para que funcione en Render tras cada deploy)
 init_db()
 
 def obtener_coordenadas_inteligentes(direccion):
@@ -55,6 +67,7 @@ def obtener_coordenadas_inteligentes(direccion):
     try:
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
+        # Buscamos primero en caché local para ahorrar costos y tiempo
         c.execute("SELECT latlng FROM direcciones WHERE direccion=?", (direccion_clean,))
         resultado = c.fetchone()
         if resultado:
@@ -79,7 +92,7 @@ def obtener_coordenadas_inteligentes(direccion):
         except: pass
     return None
 
-# --- LÓGICA VRP ---
+# --- LÓGICA VRP (OPTIMIZACIÓN) ---
 def crear_modelo_datos(direcciones_texto, num_vans, base_address_text=None):
     datos = {}
     coord_almacen = ALMACEN_COORD
@@ -100,6 +113,7 @@ def crear_modelo_datos(direcciones_texto, num_vans, base_address_text=None):
 
     try:
         if not API_KEY: return None
+        # Matriz de tiempos real usando Google
         matriz_respuesta = gmaps.distance_matrix(origins=puntos, destinations=puntos, mode="driving")
     except Exception as e:
         print(f"Error API Google Matrix: {e}")
@@ -129,17 +143,18 @@ def resolver_vrp(datos, dwell_time_minutos):
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
         val = datos['time_matrix'][from_node][to_node]
+        # Sumamos el tiempo de servicio en cada parada (excepto almacén)
         if to_node != 0: val += dwell_time_minutos * 60
         return val
 
     transit_callback_index = routing.RegisterTransitCallback(time_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
     
-    # Dimension de Tiempo
+    # Dimension de Tiempo (Límite de 24h)
     routing.AddDimension(transit_callback_index, 3600 * 24, 3600 * 24, True, 'Tiempo')
     
-    # --- BALANCEO DE CARGA ---
-    # Esto "castiga" al algoritmo si deja a un chofer sin hacer nada mientras otro trabaja mucho.
+    # --- BALANCEO DE CARGA (IMPORTANTE) ---
+    # Esto "castiga" al algoritmo si deja a un chofer sin hacer nada.
     # Obliga a distribuir las paradas equitativamente.
     time_dimension = routing.GetDimensionOrDie('Tiempo')
     time_dimension.SetGlobalSpanCostCoefficient(100)
@@ -182,7 +197,7 @@ def resolver_vrp(datos, dwell_time_minutos):
                     "link": full_link
                 }
             else:
-                # IMPORTANTE: Devolvemos la van vacía para que el Frontend la muestre
+                # IMPORTANTE: Devolvemos la van vacía para que el Frontend muestre al chofer disponible
                 rutas_finales[nombre_van] = {
                     "paradas": [],
                     "duracion_estimada": 0,
@@ -199,7 +214,12 @@ def serve_frontend():
 
 @app.route('/config')
 def get_config():
-    return jsonify({"apiKey": API_KEY})
+    # Esta ruta entrega la configuración segura al navegador
+    # para que index.html pueda inicializarse
+    return jsonify({
+        "googleApiKey": API_KEY,
+        "firebaseConfig": FIREBASE_CONFIG
+    })
 
 @app.route('/optimizar', methods=['POST'])
 def optimizar():
