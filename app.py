@@ -31,7 +31,7 @@ except ValueError as e:
 
 ALMACEN_COORD = "25.7617,-80.1918" 
 
-# --- BASE DE DATOS (CORREGIDA) ---
+# --- BASE DE DATOS ---
 def init_db():
     """Inicializa la base de datos y crea la tabla si no existe."""
     db_path = os.path.join(basedir, 'economy_routes.db')
@@ -46,8 +46,7 @@ def init_db():
     except Exception as e:
         print(f"❌ Error crítico inicializando base de datos: {e}")
 
-# ¡ESTA ES LA SOLUCIÓN! 
-# Ejecutamos esto INMEDIATAMENTE al cargar el código, no al final.
+# EJECUTAR AL INICIO (Crucial para Render)
 init_db()
 
 def obtener_coordenadas_inteligentes(direccion):
@@ -135,16 +134,24 @@ def resolver_vrp(datos, dwell_time_minutos):
 
     transit_callback_index = routing.RegisterTransitCallback(time_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+    
+    # Dimension de Tiempo
     routing.AddDimension(transit_callback_index, 3600 * 24, 3600 * 24, True, 'Tiempo')
     
+    # --- BALANCEO DE CARGA ---
+    # Esto "castiga" al algoritmo si deja a un chofer sin hacer nada mientras otro trabaja mucho.
+    # Obliga a distribuir las paradas equitativamente.
+    time_dimension = routing.GetDimensionOrDie('Tiempo')
+    time_dimension.SetGlobalSpanCostCoefficient(100)
+    
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    # Usamos PARALLEL_CHEAPEST_INSERTION para que intente llenar varias vans a la vez
+    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
 
     solution = routing.SolveWithParameters(search_parameters)
     rutas_finales = {}
     
     if solution:
-        time_dimension = routing.GetDimensionOrDie('Tiempo')
         for vehicle_id in range(datos['num_vehicles']):
             index = routing.Start(vehicle_id)
             ruta = []
@@ -157,20 +164,31 @@ def resolver_vrp(datos, dwell_time_minutos):
                     })
                 index = solution.Value(routing.NextVar(index))
             
+            # Nombre de la van (coincidirá con el orden del frontend)
+            nombre_van = f"Van {vehicle_id + 1}"
+            
             if ruta:
                 base_coord = datos['base_coord']
                 base_url = "https://www.google.com/maps/dir/?api=1"
-                # Usamos el formato universal de Google Maps
                 stops_str = "&waypoints=" + "|".join([p["coord"] for p in ruta])
                 full_link = f"{base_url}&origin={base_coord}&destination={base_coord}{stops_str}"
                 
                 finish_index = routing.End(vehicle_id)
                 tiempo_total = solution.Min(time_dimension.CumulVar(finish_index))
-                rutas_finales[f"Van {vehicle_id + 1}"] = {
+                
+                rutas_finales[nombre_van] = {
                     "paradas": ruta,
                     "duracion_estimada": tiempo_total / 60,
                     "link": full_link
                 }
+            else:
+                # IMPORTANTE: Devolvemos la van vacía para que el Frontend la muestre
+                rutas_finales[nombre_van] = {
+                    "paradas": [],
+                    "duracion_estimada": 0,
+                    "link": ""
+                }
+
     return rutas_finales
 
 # --- RUTAS ---
@@ -236,7 +254,6 @@ def recalcular_ruta():
         
     tiempo_total_segundos += (len(coords_paradas) * dwell_time * 60)
     
-    # URL Universal de Google Maps para mejor compatibilidad móvil
     base_url = "https://www.google.com/maps/dir/?api=1"
     stops_str = "&waypoints=" + "|".join(coords_paradas)
     full_link = f"{base_url}&origin={base_coord}&destination={base_coord}{stops_str}"
@@ -244,7 +261,5 @@ def recalcular_ruta():
     return jsonify({ "duracion_estimada": tiempo_total_segundos / 60, "link": full_link })
 
 if __name__ == '__main__':
-    # Esto solo corre en tu PC, no en Render
-    init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
