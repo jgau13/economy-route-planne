@@ -18,10 +18,8 @@ app = Flask(__name__, static_folder=basedir, static_url_path='')
 CORS(app) 
 
 # --- CONFIGURACIÓN DE LLAVES Y VARIABLES DE ENTORNO ---
-# La clave de Google Maps se lee para el uso interno de Python
 API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
-# La configuración de Firebase se lee para enviársela al Frontend
 FIREBASE_CONFIG = {
     "apiKey": os.environ.get("FIREBASE_API_KEY"),
     "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN"),
@@ -30,7 +28,6 @@ FIREBASE_CONFIG = {
     "messagingSenderId": os.environ.get("FIREBASE_MESSAGING_SENDER_ID"),
     "appId": os.environ.get("FIREBASE_APP_ID")
 }
-# --------------------------------------------------------
 
 if not API_KEY:
     print("ADVERTENCIA: No se detectó GOOGLE_MAPS_API_KEY en las variables de entorno.")
@@ -58,7 +55,6 @@ def init_db():
     except Exception as e:
         print(f"❌ Error crítico inicializando base de datos: {e}")
 
-# EJECUTAR AL INICIO (Crucial para que funcione en Render tras cada deploy)
 init_db()
 
 def obtener_coordenadas_inteligentes(direccion):
@@ -67,27 +63,38 @@ def obtener_coordenadas_inteligentes(direccion):
     try:
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        # Buscamos primero en caché local para ahorrar costos y tiempo
         c.execute("SELECT latlng FROM direcciones WHERE direccion=?", (direccion_clean,))
         resultado = c.fetchone()
         if resultado:
             conn.close()
             return resultado[0] 
         
-        # Si no está en DB, pedimos a Google
         if not API_KEY: return None
-        geocode_result = gmaps.geocode(direccion)
-        if geocode_result:
+        
+        # Uso estricto de try/except para la llamada a Google Maps
+        try:
+            geocode_result = gmaps.geocode(direccion)
+        except Exception as api_e:
+            print(f"❌ Error API al geocodificar {direccion}: {api_e}")
+            conn.close()
+            return None
+
+        if geocode_result and len(geocode_result) > 0:
             loc = geocode_result[0]['geometry']['location']
             latlng_str = f"{loc['lat']},{loc['lng']}"
             
-            # Guardamos en caché
             c.execute("INSERT OR REPLACE INTO direcciones VALUES (?, ?)", (direccion_clean, latlng_str))
             conn.commit()
             conn.close()
             return latlng_str
+        else:
+            # Si Google no encuentra resultado válido
+            print(f"⚠️ Geocodificación fallida para: {direccion}. No hay resultados.")
+            conn.close()
+            return None
+            
     except Exception as e:
-        print(f"Error geocodificando {direccion}: {e}")
+        print(f"❌ Error DB/General al geocodificar {direccion}: {e}")
         try: conn.close()
         except: pass
     return None
@@ -96,27 +103,39 @@ def obtener_coordenadas_inteligentes(direccion):
 def crear_modelo_datos(direcciones_texto, num_vans, base_address_text=None):
     datos = {}
     coord_almacen = ALMACEN_COORD
+    
+    # 1. Geocodificar la Base (Almacén)
     if base_address_text:
         coord_buscada = obtener_coordenadas_inteligentes(base_address_text)
-        if coord_buscada: coord_almacen = coord_buscada
+        if coord_buscada: 
+            coord_almacen = coord_buscada
+        else:
+            # Error crítico: no se puede encontrar la dirección base
+            print(f"CRÍTICO: No se pudo geocodificar la dirección base: {base_address_text}")
+
 
     puntos = [coord_almacen]
     direcciones_validas = []
     
+    # 2. Geocodificar todas las paradas
     for dir_txt in direcciones_texto:
         coord = obtener_coordenadas_inteligentes(dir_txt)
         if coord:
             puntos.append(coord)
             direcciones_validas.append(dir_txt)
+        else:
+            print(f"INFO: Se ignoró la dirección inválida: {dir_txt}") # Log del descarte
     
-    if len(puntos) <= 1: return None
+    # Si solo queda la base, no hay nada que optimizar
+    if len(puntos) <= 1: 
+        return None
 
+    # 3. Crear la Matriz de Tiempos
     try:
         if not API_KEY: return None
-        # Matriz de tiempos real usando Google
         matriz_respuesta = gmaps.distance_matrix(origins=puntos, destinations=puntos, mode="driving")
     except Exception as e:
-        print(f"Error API Google Matrix: {e}")
+        print(f"❌ Error API Google Matrix: {e}")
         return None
     
     matriz_tiempos = []
@@ -143,24 +162,18 @@ def resolver_vrp(datos, dwell_time_minutos):
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
         val = datos['time_matrix'][from_node][to_node]
-        # Sumamos el tiempo de servicio en cada parada (excepto almacén)
         if to_node != 0: val += dwell_time_minutos * 60
         return val
 
     transit_callback_index = routing.RegisterTransitCallback(time_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
     
-    # Dimension de Tiempo (Límite de 24h)
     routing.AddDimension(transit_callback_index, 3600 * 24, 3600 * 24, True, 'Tiempo')
     
-    # --- BALANCEO DE CARGA (IMPORTANTE) ---
-    # Esto "castiga" al algoritmo si deja a un chofer sin hacer nada.
-    # Obliga a distribuir las paradas equitativamente.
     time_dimension = routing.GetDimensionOrDie('Tiempo')
     time_dimension.SetGlobalSpanCostCoefficient(100)
     
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-    # Usamos PARALLEL_CHEAPEST_INSERTION para que intente llenar varias vans a la vez
     search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
 
     solution = routing.SolveWithParameters(search_parameters)
@@ -179,7 +192,6 @@ def resolver_vrp(datos, dwell_time_minutos):
                     })
                 index = solution.Value(routing.NextVar(index))
             
-            # Nombre de la van (coincidirá con el orden del frontend)
             nombre_van = f"Van {vehicle_id + 1}"
             
             if ruta:
@@ -197,7 +209,6 @@ def resolver_vrp(datos, dwell_time_minutos):
                     "link": full_link
                 }
             else:
-                # IMPORTANTE: Devolvemos la van vacía para que el Frontend muestre al chofer disponible
                 rutas_finales[nombre_van] = {
                     "paradas": [],
                     "duracion_estimada": 0,
@@ -215,7 +226,6 @@ def serve_frontend():
 @app.route('/config')
 def get_config():
     # Esta ruta entrega la configuración segura al navegador
-    # para que index.html pueda inicializarse
     return jsonify({
         "googleApiKey": API_KEY,
         "firebaseConfig": FIREBASE_CONFIG
@@ -223,14 +233,29 @@ def get_config():
 
 @app.route('/optimizar', methods=['POST'])
 def optimizar():
-    if not API_KEY: return jsonify({"error": "Error: Falta Configurar la API KEY en Render"}), 500
-    data = request.json
-    if not data or 'direcciones' not in data: return jsonify({"error": "Faltan datos"}), 400
-    dwell_time = int(data.get('dwell_time', 10))
-    modelo = crear_modelo_datos(data['direcciones'], data.get('num_vans', 1), data.get('base_address'))
-    if not modelo: return jsonify({"error": "No se encontraron direcciones válidas"}), 400
-    resultado = resolver_vrp(modelo, dwell_time)
-    return jsonify(resultado)
+    if not API_KEY: 
+        print("CRÍTICO: Intentando optimizar sin GOOGLE_MAPS_API_KEY.")
+        return jsonify({"error": "Error: Falta configurar la API KEY de Google Maps en Render."}), 500
+    
+    try:
+        data = request.json
+        if not data or 'direcciones' not in data: 
+            return jsonify({"error": "Faltan datos de direcciones"}), 400
+        
+        dwell_time = int(data.get('dwell_time', 10))
+        
+        # LLAMADA AL MOTOR VRP
+        modelo = crear_modelo_datos(data['direcciones'], data.get('num_vans', 1), data.get('base_address'))
+        
+        if not modelo: 
+            return jsonify({"error": "No se encontraron suficientes direcciones válidas para la optimización."}), 400
+        
+        resultado = resolver_vrp(modelo, dwell_time)
+        return jsonify(resultado)
+        
+    except Exception as e:
+        print(f"❌ ERROR FATAL EN /optimizar: {e}", file=sys.stderr)
+        return jsonify({"error": f"Error interno del servidor al optimizar. Consulte los logs: {e}"}), 500
 
 @app.route('/recalcular', methods=['POST'])
 def recalcular_ruta():
@@ -269,8 +294,14 @@ def recalcular_ruta():
         destino = puntos_secuencia[i+1]
         idx_origen = mapa_indices[origen]
         idx_destino = mapa_indices[destino]
-        duracion = rows[idx_origen]['elements'][idx_destino]['duration']['value']
-        tiempo_total_segundos += duracion
+        # Aseguramos que el elemento duration exista antes de acceder a value
+        try:
+            duracion = rows[idx_origen]['elements'][idx_destino]['duration']['value']
+            tiempo_total_segundos += duracion
+        except KeyError:
+            # Esto maneja el caso raro donde Google no pudo calcular un tramo
+            print(f"⚠️ Advertencia: No se pudo calcular la duración del tramo entre {origen} y {destino}. Usando 0.")
+            tiempo_total_segundos += 0
         
     tiempo_total_segundos += (len(coords_paradas) * dwell_time * 60)
     
