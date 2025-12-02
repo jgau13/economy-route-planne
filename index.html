@@ -317,7 +317,26 @@
             const deleteDriver = async (id) => { if(window.fbDb && confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, "drivers", id)); };
             const saveClient = async () => { if (!clientFormName || !window.fbDb) return; if (editingClientId) { await window.fbUpdateDoc(window.fbDoc(window.fbDb, "clients", editingClientId), { name: clientFormName, address: clientFormAddress }); setEditingClientId(null); } else { await window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: clientFormName, address: clientFormAddress }); } setClientFormName(''); setClientFormAddress(''); };
             const deleteClient = async (id) => { if(window.fbDb && confirm('Delete?')) { await window.fbDeleteDoc(window.fbDoc(window.fbDb, "clients", id)); setSelectedClients(selectedClients.filter(c => c !== id)); } };
-            const addStop = () => { if (!newStopAddress) return; const stop = { id: Date.now(), name: newStopName || 'Client', address: newStopAddress }; setCurrentStops([...currentStops, stop]); if (!clientDB.some(c => c.address === stop.address) && window.fbDb) window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: stop.name, address: stop.address }); setNewStopName(''); setNewStopAddress(''); };
+            
+            // --- ADD STOP CON VALIDACIÓN DE DUPLICADOS ---
+            const addStop = () => { 
+                if (!newStopAddress) return; 
+                
+                // --- DUPLICATE CHECK ---
+                const isDuplicate = currentStops.some(s => s.address === newStopAddress);
+                if (isDuplicate) {
+                    const proceed = confirm("This client is already listed for today's route. Do you want to continue anyway?");
+                    if (!proceed) return;
+                }
+                // -----------------------
+
+                const stop = { id: Date.now(), name: newStopName || 'Client', address: newStopAddress }; 
+                setCurrentStops([...currentStops, stop]); 
+                if (!clientDB.some(c => c.address === stop.address) && window.fbDb) window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: stop.name, address: stop.address }); 
+                setNewStopName(''); 
+                setNewStopAddress(''); 
+            };
+
             const removeStop = (id) => setCurrentStops(currentStops.filter(s => s.id !== id));
             const selectClient = (c) => { setNewStopName(c.name); setNewStopAddress(c.address); };
             const handleLogout = () => window.fbSignOut(window.fbAuth);
