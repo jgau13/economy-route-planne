@@ -52,7 +52,7 @@
                 
                 window.firebaseReady = true; // Bandera de éxito
                 console.log("✅ Firebase Initialized Securely.");
-                return true; // Retorna true si fue exitoso
+                return true;
             } catch (e) {
                 console.error("❌ Firebase Initialization Error:", e);
                 window.firebaseInitError = e.message;
@@ -220,7 +220,6 @@
             const [user, setUser] = useState(null);
             const [authLoading, setAuthLoading] = useState(true);
             const [systemError, setSystemError] = useState(null); 
-            // NUEVO ESTADO: Controla si la BD está lista para ser leída
             const [dbReady, setDbReady] = useState(false);
 
             const [clientDB, setClientDB] = useState([]);
@@ -266,11 +265,9 @@
                         const response = await fetch('/config');
                         const data = await response.json();
                         
-                        // Validamos si llegó la config de Firebase
                         if (data.firebaseConfig && data.firebaseConfig.apiKey) {
                             const tryInitFb = () => {
                                 if (window.initializeFirebaseGlobally) {
-                                    // Inicializamos y avisamos que la BD está lista
                                     const success = window.initializeFirebaseGlobally(data.firebaseConfig);
                                     if (success) setDbReady(true); 
                                 } else {
@@ -293,11 +290,10 @@
                 fetchConfig();
             }, []);
 
-            // 2. AUTH LISTENER CON AUTO-DIAGNÓSTICO
+            // 2. AUTH LISTENER
             useEffect(() => {
                 let attempts = 0;
                 const initAuth = () => {
-                    // VERIFICAR SI FIREBASE FALLÓ AL INICIAR
                     if (window.firebaseInitError) {
                         setSystemError(window.firebaseInitError); 
                         setAuthLoading(false); 
@@ -319,9 +315,8 @@
             }, [systemError]);
 
             
-            // --- 3. DATA SYNC (FIRESTORE) CORREGIDO ---
+            // --- 3. DATA SYNC ---
             useEffect(() => {
-                // Ahora esperamos a 'dbReady' antes de intentar conectar
                 if (!user || !window.fbDb || !dbReady) return;
 
                 const qClients = window.fbQuery(window.fbCollection(window.fbDb, "clients"), window.fbOrderBy("name"));
@@ -333,14 +328,13 @@
                 const unsubDrivers = window.fbOnSnapshot(qDrivers, (snapshot) => {
                     const driversData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     if (driversData.length === 0 && !localStorage.getItem('drivers_initialized')) {
-                        // Semilla inicial segura
                         addDriverToFb("Jorge"); addDriverToFb("Miguel"); addDriverToFb("Carlos");
                         localStorage.setItem('drivers_initialized', 'true');
                     }
                     setDrivers(driversData);
                 });
                 return () => { unsubClients(); unsubDrivers(); };
-            }, [user, dbReady]); // Dependencia clave agregada
+            }, [user, dbReady]);
 
             useEffect(() => {
                 if (!googleApiKey) return;
@@ -359,6 +353,15 @@
             const handleOptimize = async () => { const activeDrivers = drivers.filter(d => d.active); if (currentStops.length === 0) return setError('No stops.'); setLoading(true); setError(''); try { const res = await fetch('/optimizar', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ direcciones: currentStops.map(s=>s.address), num_vans: activeDrivers.length, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); if (!res.ok) throw new Error(d.error); const assigned = {}; Object.keys(d).forEach((k, i) => assigned[activeDrivers[i] ? activeDrivers[i].name : k] = d[k]); setRoutes(assigned); setOriginalRoutes(JSON.parse(JSON.stringify(assigned))); setView('results'); } catch (e) { setError('Error: ' + e.message); } finally { setLoading(false); } };
             const recalculateRoute = async (dName, stops) => { setRecalculating(p => ({...p, [dName]: true})); try { const res = await fetch('/recalcular', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); setRoutes(p => ({...p, [dName]: {...p[dName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: stops}})); } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [dName]: false})); } };
             const handleRecalculateAll = async () => { if (!routes) return; setIsRecalculatingAll(true); await Promise.all(Object.keys(routes).map(d => recalculateRoute(d, routes[d].paradas))); setIsRecalculatingAll(false); };
+            
+            // --- RESTAURAR LA FUNCIÓN FALTANTE ---
+            const handleRestore = () => {
+                if (confirm("Are you sure you want to discard your manual changes and restore the optimized routes?")) {
+                    setRoutes(JSON.parse(JSON.stringify(originalRoutes)));
+                }
+            };
+            // -------------------------------------
+
             const handleDragStart = (e, d, i) => { setDraggedItem({ driverName: d, stopIndex: i }); };
             const handleDrop = (e, targetD, targetI = null) => { e.preventDefault(); setDragOverDriver(null); if (!draggedItem) return; const sourceD = draggedItem.driverName; const sourceI = draggedItem.stopIndex; const newR = JSON.parse(JSON.stringify(routes)); const [moved] = newR[sourceD].paradas.splice(sourceI, 1); let dest = newR[targetD].paradas; if (targetI !== null) { let adj = targetI; if (sourceD === targetD && sourceI < targetI) adj -= 0; dest.splice(adj, 0, moved); } else { dest.push(moved); } setRoutes(newR); recalculateRoute(targetD, newR[targetD].paradas); if (sourceD !== targetD) recalculateRoute(sourceD, newR[sourceD].paradas); };
             const getWhatsappLink = (l) => `https://wa.me/?text=${encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`)}`;
