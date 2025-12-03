@@ -75,10 +75,8 @@
         .pac-item { padding: 10px 12px; cursor: pointer; font-size: 14px; }
         .pac-item:hover { background-color: #f0f9ff; }
         .pac-item-query { font-size: 14px; color: #1e293b; font-weight: 600; }
-        
         .draggable-source { opacity: 0.4; border: 2px dashed #cbd5e1; background: #f1f5f9; }
         .drop-target { background-color: #eff6ff; border: 2px dashed #1b6e9b; }
-        
         #global-map-container { height: 70vh; width: 100%; border-radius: 12px; }
         .loader { border: 3px solid #f3f3f3; border-radius: 50%; border-top: 3px solid #1b6e9b; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -205,7 +203,7 @@
             const [scriptLoaded, setScriptLoaded] = useState(false);
             const [view, setView] = useState('input'); 
             const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, EE. UU.');
-            const [dwellTime, setDwellTime] = useState(10); 
+            const [dwellTime, setDwellTime] = useState(6); // CAMBIO: Dwell Time por defecto 6 minutos
             const [currentStops, setCurrentStops] = useState([]);
             
             const [newStopName, setNewStopName] = useState('');
@@ -227,25 +225,6 @@
             const [draggedItem, setDraggedItem] = useState(null);
             const [dragOverDriver, setDragOverDriver] = useState(null);
             const [swappingDriver, setSwappingDriver] = useState(null);
-
-            // --- 1. PERSISTENCIA DE RUTA ACTUAL (Draft Mode) ---
-            useEffect(() => {
-                const savedStops = localStorage.getItem('ess_draft_stops');
-                if (savedStops) {
-                    try { setCurrentStops(JSON.parse(savedStops)); } catch (e) {}
-                }
-            }, []);
-
-            useEffect(() => {
-                localStorage.setItem('ess_draft_stops', JSON.stringify(currentStops));
-            }, [currentStops]);
-
-            const clearDraftRoute = () => {
-                if(confirm("Are you sure you want to clear the entire list?")) {
-                    setCurrentStops([]);
-                    localStorage.removeItem('ess_draft_stops');
-                }
-            };
 
             // --- INIT & AUTH ---
             useEffect(() => {
@@ -285,11 +264,15 @@
                 initAuth();
             }, [systemError]);
 
-            // --- DATA SYNC ---
+            // --- DATA SYNC (Cloud) ---
             useEffect(() => {
                 if (!user || !window.fbDb || !dbReady) return;
+                
+                // Sync Clients
                 const qClients = window.fbQuery(window.fbCollection(window.fbDb, "clients"), window.fbOrderBy("name"));
                 window.fbOnSnapshot(qClients, (s) => setClientDB(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+                
+                // Sync Drivers
                 const qDrivers = window.fbQuery(window.fbCollection(window.fbDb, "drivers"), window.fbOrderBy("name"));
                 window.fbOnSnapshot(qDrivers, (s) => {
                     const d = s.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -299,6 +282,15 @@
                     }
                     setDrivers(d);
                 });
+
+                // Sync Current Draft Route (NEW: Syncing across devices)
+                const qStops = window.fbQuery(window.fbCollection(window.fbDb, "draft_stops"), window.fbOrderBy("createdAt"));
+                const unsubStops = window.fbOnSnapshot(qStops, (snapshot) => {
+                    const stops = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setCurrentStops(stops);
+                });
+
+                return () => { unsubStops(); };
             }, [user, dbReady]);
 
             useEffect(() => {
@@ -318,22 +310,46 @@
             const saveClient = async () => { if (!clientFormName || !window.fbDb) return; if (editingClientId) { await window.fbUpdateDoc(window.fbDoc(window.fbDb, "clients", editingClientId), { name: clientFormName, address: clientFormAddress }); setEditingClientId(null); } else { await window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: clientFormName, address: clientFormAddress }); } setClientFormName(''); setClientFormAddress(''); };
             const deleteClient = async (id) => { if(window.fbDb && confirm('Delete?')) { await window.fbDeleteDoc(window.fbDoc(window.fbDb, "clients", id)); setSelectedClients(selectedClients.filter(c => c !== id)); } };
             
-            // --- ADD STOP ---
-            const addStop = () => { 
+            // --- ADD STOP (CLOUD SYNCED) ---
+            const addStop = async () => { 
                 if (!newStopAddress) return; 
                 const isDuplicate = currentStops.some(s => s.address === newStopAddress);
                 if (isDuplicate) {
                     const proceed = confirm("This client is already listed for today's route. Do you want to continue anyway?");
                     if (!proceed) return;
                 }
-                const stop = { id: Date.now(), name: newStopName || 'Client', address: newStopAddress }; 
-                setCurrentStops([...currentStops, stop]); 
-                if (!clientDB.some(c => c.address === stop.address) && window.fbDb) window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: stop.name, address: stop.address }); 
+                
+                if (window.fbDb) {
+                    // Add to Draft Stops in Cloud
+                    await window.fbAddDoc(window.fbCollection(window.fbDb, "draft_stops"), {
+                        name: newStopName || 'Client', 
+                        address: newStopAddress,
+                        createdAt: Date.now()
+                    });
+
+                    // Auto-save to Client DB if new
+                    if (!clientDB.some(c => c.address.toLowerCase() === newStopAddress.toLowerCase())) {
+                         window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: newStopName || 'Client', address: newStopAddress }); 
+                    }
+                }
                 setNewStopName(''); 
                 setNewStopAddress(''); 
             };
 
-            const removeStop = (id) => setCurrentStops(currentStops.filter(s => s.id !== id));
+            const removeStop = async (id) => {
+                if(window.fbDb) await window.fbDeleteDoc(window.fbDoc(window.fbDb, "draft_stops", id));
+            };
+
+            const clearDraftRoute = async () => {
+                if(confirm("Are you sure you want to clear the entire list for EVERYONE?")) {
+                    // Batch delete is ideal, but iterating works for small lists
+                    if(window.fbDb) {
+                        const promises = currentStops.map(stop => window.fbDeleteDoc(window.fbDoc(window.fbDb, "draft_stops", stop.id)));
+                        await Promise.all(promises);
+                    }
+                }
+            };
+
             const selectClient = (c) => { setNewStopName(c.name); setNewStopAddress(c.address); };
             const handleLogout = () => window.fbSignOut(window.fbAuth);
             
