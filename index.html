@@ -349,7 +349,10 @@
             const clearDraftRoute = async () => {
                 if(confirm("Are you sure you want to clear the entire list for EVERYONE?")) {
                     if(window.fbDb) {
-                        const promises = currentStops.map(stop => window.fbDeleteDoc(window.fbDoc(window.fbDb, "draft_stops", stop.id)));
+                        // Get all docs first
+                        const q = window.fbQuery(window.fbCollection(window.fbDb, "draft_stops"));
+                        const snapshot = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js").then(module => module.getDocs(q));
+                        const promises = snapshot.docs.map(doc => window.fbDeleteDoc(doc.ref));
                         await Promise.all(promises);
                     }
                 }
@@ -366,20 +369,28 @@
             const handleLogout = () => window.fbSignOut(window.fbAuth);
             
             // --- OPTIMIZATION & LOOKUP ---
-            const getClientNameFromAddress = (address) => {
-                const fromDraft = currentStops.find(s => s.address === address);
-                if (fromDraft) return fromDraft.name;
-                const fromDB = clientDB.find(c => c.address === address);
-                return fromDB ? fromDB.name : "Client";
-            };
-
+            // MODIFICADO: Enviar nombre y dirección explícitos
             const handleOptimize = async () => { 
                 const activeDrivers = drivers.filter(d => d.active); 
                 if (currentStops.length === 0) return setError('No stops.'); 
                 setLoading(true); setError(''); 
+                
                 try { 
-                    const res = await fetch('/optimizar', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ direcciones: currentStops.map(s=>s.address), num_vans: activeDrivers.length, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); 
+                    // Enviar objetos {nombre, direccion} al backend
+                    const payload = {
+                        direcciones: currentStops.map(s => ({ nombre: s.name, direccion: s.address })),
+                        num_vans: activeDrivers.length,
+                        base_address: baseAddress,
+                        dwell_time: parseInt(dwellTime)
+                    };
+
+                    const res = await fetch('/optimizar', { 
+                        method: 'POST', 
+                        headers: {'Content-Type':'application/json'}, 
+                        body: JSON.stringify(payload) 
+                    }); 
                     const d = await res.json(); 
+                    
                     if (!res.ok) {
                         if (d.invalid_addresses && d.invalid_addresses.length > 0) {
                             const badAddresses = d.invalid_addresses.map(a => `• ${a}`).join('\n');
@@ -667,7 +678,7 @@
                                                             </div>
                                                             
                                                             <div className="flex-1">
-                                                                <div className="font-bold text-sm text-slate-800">{getClientNameFromAddress(stop.direccion)}</div>
+                                                                <div className="font-bold text-sm text-slate-800">{stop.nombre}</div>
                                                                 <div className="text-xs text-slate-500 mt-0.5">{stop.direccion}</div>
                                                             </div>
 
