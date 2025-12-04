@@ -2,7 +2,7 @@ import os
 import sqlite3
 import sys
 import urllib.parse
-import datetime # Necesario para el tráfico en tiempo real
+import datetime
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import googlemaps
@@ -12,7 +12,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Configuración de rutas absolutas para evitar errores en la nube
 basedir = os.path.abspath(os.path.dirname(__file__))
+
 app = Flask(__name__, static_folder=basedir, static_url_path='')
 CORS(app) 
 
@@ -221,14 +223,14 @@ def resolver_vrp(datos, dwell_time_minutos):
             nombre_van = f"Van {vehicle_id + 1}"
             
             if ruta:
+                # --- FIX: USAR SOLO DIRECCIÓN EN EL LINK ---
                 base_info = datos['paradas_info'][0]
-                # Usamos quote_plus para URLs más limpias (con + en lugar de %20)
                 base_txt = urllib.parse.quote_plus(base_info['direccion']) 
                 base_url = "https://www.google.com/maps/dir/?api=1"
                 
-                # Generar waypoints con "Nombre, Dirección"
+                # Usamos SOLO la dirección física para que Google la encuentre sin problemas
                 stops_str = "&waypoints=" + "|".join([
-                    urllib.parse.quote_plus(f"{p['nombre']}, {p['direccion']}") 
+                    urllib.parse.quote_plus(p['direccion']) 
                     for p in ruta
                 ])
                 
@@ -247,7 +249,7 @@ def resolver_vrp(datos, dwell_time_minutos):
 
     return rutas_finales
 
-# --- OPTIMIZACIÓN PARCIAL ---
+# --- OPTIMIZACIÓN PARCIAL (Restantes) ---
 def resolver_tsp_parcial(fixed_stop, loose_stops, base_address_txt, dwell_time):
     fixed_txt = fixed_stop['direccion']
     coord_start = obtener_coordenadas_inteligentes(fixed_txt)
@@ -425,13 +427,13 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         
     tiempo_total_segundos += (len(coords_limpias) * dwell_time * 60)
     
-    # --- CORRECCIÓN DE LINK FINAL: NOMBRE + DIRECCIÓN ---
+    # --- FIX FINAL: SOLO DIRECCIÓN EN EL LINK ---
     base_txt = urllib.parse.quote_plus(base)
     base_url = "https://www.google.com/maps/dir/?api=1"
     
-    # AHORA SÍ: Incluye Nombre, Dirección
+    # Solo dirección, sin nombres
     stops_str = "&waypoints=" + "|".join([
-        urllib.parse.quote_plus(f"{p['nombre']}, {p['direccion']}") 
+        urllib.parse.quote_plus(p['direccion']) 
         for p in paradas_limpias
     ])
     full_link = f"{base_url}&origin={base_txt}&destination={base_txt}{stops_str}"
