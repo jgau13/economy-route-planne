@@ -1,7 +1,8 @@
 import os
 import sqlite3
 import sys
-import urllib.parse # Importante para codificar las direcciones en el link
+import math  # Necesario para calcular los lotes
+import urllib.parse
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import googlemaps
@@ -91,6 +92,52 @@ def obtener_coordenadas_inteligentes(direccion):
         except: pass
     return None
 
+# --- NUEVA FUNCIÓN: OBTENER MATRIZ POR LOTES ---
+def obtener_matriz_segura(puntos):
+    """
+    Divide la petición a Google Matrix en lotes para evitar el error MAX_ELEMENTS_EXCEEDED.
+    El límite es 100 elementos (origenes * destinos) por llamada.
+    """
+    num_puntos = len(puntos)
+    
+    # Calculamos cuántas filas (orígenes) podemos pedir por cada llamada
+    # para no pasarnos de 100 elementos.
+    # filas * num_puntos <= 100  => filas <= 100 / num_puntos
+    if num_puntos == 0: return []
+    
+    max_filas_por_lote = max(1, int(100 / num_puntos))
+    
+    # Google también tiene un límite de 25 orígenes/destinos por llamada
+    max_filas_por_lote = min(max_filas_por_lote, 25)
+    
+    matriz_completa = []
+    
+    # Iteramos por los puntos en bloques
+    for i in range(0, num_puntos, max_filas_por_lote):
+        # Lote de orígenes (ej: del 0 al 5)
+        origenes_lote = puntos[i : i + max_filas_por_lote]
+        
+        try:
+            # Pedimos: Este lote de orígenes contra TODOS los destinos
+            # Esto rellena una "banda" horizontal de la matriz final
+            respuesta = gmaps.distance_matrix(
+                origins=origenes_lote,
+                destinations=puntos,
+                mode="driving"
+            )
+            
+            if 'rows' in respuesta:
+                matriz_completa.extend(respuesta['rows'])
+            else:
+                print("Error inesperado en respuesta de Google (sin rows)")
+                return None
+                
+        except Exception as e:
+            print(f"Error obteniendo lote de matriz: {e}")
+            return None
+            
+    return matriz_completa
+
 # --- LÓGICA VRP ---
 def crear_modelo_datos(direcciones_texto, num_vans, base_address_text=None):
     datos = {}
@@ -120,17 +167,19 @@ def crear_modelo_datos(direcciones_texto, num_vans, base_address_text=None):
 
     if len(puntos) <= 1: return None
 
-    try:
-        if not API_KEY: return None
-        matriz_respuesta = gmaps.distance_matrix(origins=puntos, destinations=puntos, mode="driving")
-    except Exception as e:
-        print(f"Error API Google Matrix: {e}", file=sys.stderr)
+    # --- USAMOS LA NUEVA FUNCIÓN SEGURA ---
+    if not API_KEY: return None
+    rows_matriz = obtener_matriz_segura(puntos)
+    
+    if not rows_matriz:
         return None
     
+    # Procesamos la respuesta (que ahora ya está completa y unida)
     matriz_tiempos = []
-    for fila in matriz_respuesta['rows']:
+    for fila in rows_matriz:
         fila_tiempos = []
         for elemento in fila['elements']:
+            # Valor por defecto alto si no hay ruta
             valor = elemento.get('duration', {}).get('value', 999999)
             fila_tiempos.append(valor)
         matriz_tiempos.append(fila_tiempos)
@@ -139,7 +188,6 @@ def crear_modelo_datos(direcciones_texto, num_vans, base_address_text=None):
     datos['num_vehicles'] = int(num_vans)
     datos['depot'] = 0 
     datos['coords'] = puntos
-    # Guardamos la dirección base real en el índice 0 para usarla en el link
     datos['nombres_originales'] = [base_address_text if base_address_text else "Warehouse"] + direcciones_validas
     datos['base_coord'] = coord_almacen
     return datos
@@ -184,11 +232,8 @@ def resolver_vrp(datos, dwell_time_minutos):
             nombre_van = f"Van {vehicle_id + 1}"
             
             if ruta:
-                # --- CORRECCIÓN DE LINK: USAR TEXTO, NO COORDENADAS ---
                 base_txt = urllib.parse.quote(datos['nombres_originales'][0])
                 base_url = "https://www.google.com/maps/dir/?api=1"
-                
-                # Usamos la dirección de texto codificada para que Google la encuentre exacta
                 stops_str = "&waypoints=" + "|".join([urllib.parse.quote(p["direccion"]) for p in ruta])
                 full_link = f"{base_url}&origin={base_txt}&destination={base_txt}{stops_str}"
                 
@@ -228,15 +273,13 @@ def resolver_tsp_parcial(fixed_stop_txt, loose_stops_txt, base_address_txt, dwel
     coords.append(coord_end)
     nombres.append(base_address_txt) 
     
-    try:
-        if not API_KEY: return None
-        matriz_res = gmaps.distance_matrix(origins=coords, destinations=coords, mode="driving")
-    except Exception as e:
-        print(f"Error TSP Matrix: {e}")
-        return None
+    # USAR LA NUEVA FUNCIÓN SEGURA AQUÍ TAMBIÉN
+    if not API_KEY: return None
+    rows_matriz = obtener_matriz_segura(coords)
+    if not rows_matriz: return None
 
     time_matrix = []
-    for r in matriz_res['rows']:
+    for r in rows_matriz:
         row = []
         for el in r['elements']:
             row.append(el.get('duration', {}).get('value', 999999))
@@ -257,14 +300,10 @@ def resolver_tsp_parcial(fixed_stop_txt, loose_stops_txt, base_address_txt, dwel
     transit_idx = routing.RegisterTransitCallback(time_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
 
-    # --- CORRECCIÓN CLAVE: FORZAR OPTIMIZACIÓN AGRESIVA ---
     search_params = pywrapcp.DefaultRoutingSearchParameters()
     search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-    # Activamos Búsqueda Local Guiada para obligarlo a mejorar la solución
     search_params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-    # Le damos 1 segundo para intentar múltiples combinaciones
     search_params.time_limit.seconds = 1 
-    # ------------------------------------------------------
 
     solution = routing.SolveWithParameters(search_params)
     
@@ -351,9 +390,7 @@ def optimizar_restantes():
 
 def recalcular_ruta_internal(paradas_objs, base, dwell_time):
     base_coord = obtener_coordenadas_inteligentes(base)
-    # Lista de coordenadas para calcular tiempos
     coords_paradas = [p['coord'] for p in paradas_objs]
-    # Lista de textos para generar link
     textos_paradas = [p['direccion'] for p in paradas_objs]
     
     if not base_coord: return jsonify({"error": "Error base"}), 400
@@ -362,13 +399,12 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
     tiempo_total_segundos = 0
     puntos_unicos = list(set(puntos_secuencia))
     
-    try:
-        matriz = gmaps.distance_matrix(origins=puntos_unicos, destinations=puntos_unicos, mode="driving")
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # --- USAR NUEVA FUNCIÓN SEGURA ---
+    rows_matriz = obtener_matriz_segura(puntos_unicos)
+    if not rows_matriz: return jsonify({"error": "Error calculando tiempos"}), 500
         
     mapa_indices = {coord: i for i, coord in enumerate(puntos_unicos)}
-    rows = matriz['rows']
+    rows = rows_matriz # Ya viene completa
     
     for i in range(len(puntos_secuencia) - 1):
         origen = puntos_secuencia[i]
@@ -383,7 +419,6 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         
     tiempo_total_segundos += (len(coords_paradas) * dwell_time * 60)
     
-    # --- CORRECCIÓN DE LINK AQUÍ TAMBIÉN ---
     base_txt = urllib.parse.quote(base)
     base_url = "https://www.google.com/maps/dir/?api=1"
     stops_str = "&waypoints=" + "|".join([urllib.parse.quote(t) for t in textos_paradas])
