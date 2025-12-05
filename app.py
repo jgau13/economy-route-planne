@@ -58,6 +58,8 @@ def obtener_datos_geo(direccion):
     """
     Retorna una tupla (latlng, formatted_address, place_id).
     """
+    if not direccion: return None, None, None
+    
     db_path = os.path.join(basedir, 'economy_routes.db')
     direccion_clean = direccion.strip().lower()
     
@@ -135,6 +137,7 @@ def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     base_url = "https://www.google.com/maps/dir/?api=1"
     
     def clean_param(text):
+        if not text: return ""
         encoded = urllib.parse.quote_plus(text.strip())
         encoded = encoded.replace('%2C', ',')
         return encoded
@@ -151,7 +154,8 @@ def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
         wp_list = []
         for p in waypoints_objs:
             texto_direccion = p.get('direccion') or p.get('clean_address')
-            wp_list.append(clean_param(texto_direccion))
+            if texto_direccion:
+                wp_list.append(clean_param(texto_direccion))
             
         wp_string = "|".join(wp_list)
         link += f"&waypoints={wp_string}"
@@ -184,11 +188,16 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     paradas_erroneas = []
     
     for item in lista_paradas:
-        dir_txt = item['direccion'] if isinstance(item, dict) else item
-        nombre_txt = item['nombre'] if isinstance(item, dict) else "Cliente"
-        # EXTRAEMOS NUEVOS CAMPOS (si no existen, default vacío/0)
-        invoices = item.get('invoices', '') if isinstance(item, dict) else ''
-        pieces = item.get('pieces', '') if isinstance(item, dict) else ''
+        # --- FIX: NORMALIZACIÓN DE CLAVES ---
+        # Aseguramos leer 'direccion' (Backend antiguo) O 'address' (Frontend nuevo)
+        dir_txt = item.get('direccion') or item.get('address')
+        # Aseguramos leer 'nombre' O 'name'
+        nombre_txt = item.get('nombre') or item.get('name') or "Cliente"
+        
+        invoices = item.get('invoices', '')
+        pieces = item.get('pieces', '')
+
+        if not dir_txt: continue # Skip empty addresses
 
         c, fmt, pid = obtener_datos_geo(dir_txt)
         if c:
@@ -199,8 +208,8 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
                 "direccion": dir_txt,
                 "clean_address": fmt,
                 "place_id": pid,
-                "invoices": invoices, # Guardamos Invoice
-                "pieces": pieces      # Guardamos Piezas
+                "invoices": invoices,
+                "pieces": pieces
             })
         else:
             paradas_erroneas.append(dir_txt)
@@ -281,8 +290,8 @@ def resolver_vrp(datos, dwell_time_minutos):
                         "direccion": info['direccion'], 
                         "clean_address": info['clean_address'],
                         "place_id": info.get('place_id'),
-                        "invoices": info.get('invoices', ''), # PASAMOS INFO
-                        "pieces": info.get('pieces', ''),     # PASAMOS INFO
+                        "invoices": info.get('invoices', ''),
+                        "pieces": info.get('pieces', ''),
                         "coord": datos['coords'][node_index]
                     })
                     
@@ -309,7 +318,9 @@ def resolver_vrp(datos, dwell_time_minutos):
 
 # --- OPTIMIZACIÓN PARCIAL ---
 def resolver_tsp_parcial(fixed_stop, loose_stops, base_address_txt, dwell_time):
-    c_start, fmt_start, pid_start = obtener_datos_geo(fixed_stop['direccion'])
+    # Fix keys
+    fixed_addr = fixed_stop.get('direccion') or fixed_stop.get('address')
+    c_start, fmt_start, pid_start = obtener_datos_geo(fixed_addr)
     c_end, fmt_end, pid_end = obtener_datos_geo(base_address_txt)
     
     if not c_start or not c_end: return None
@@ -317,15 +328,18 @@ def resolver_tsp_parcial(fixed_stop, loose_stops, base_address_txt, dwell_time):
     coords = [c_start]
     
     obj_start = fixed_stop.copy()
+    obj_start['direccion'] = fixed_addr # Standardize
     obj_start['clean_address'] = fmt_start
     obj_start['place_id'] = pid_start
     objetos_ordenados = [obj_start] 
     
     for s in loose_stops:
-        c, fmt, pid = obtener_datos_geo(s['direccion'])
+        s_addr = s.get('direccion') or s.get('address')
+        c, fmt, pid = obtener_datos_geo(s_addr)
         if c:
             coords.append(c)
             s_copy = s.copy()
+            s_copy['direccion'] = s_addr # Standardize
             s_copy['clean_address'] = fmt
             s_copy['place_id'] = pid
             objetos_ordenados.append(s_copy)
@@ -402,10 +416,11 @@ def optimizar():
         lista_raw = data['direcciones']
         lista_normalizada = []
         for item in lista_raw:
-            # Ahora manejamos objetos con invoices y pieces
+            # Ahora manejamos objetos con invoices y pieces Y normalizamos claves
             if isinstance(item, str): 
                 lista_normalizada.append({"nombre": "Cliente", "direccion": item, "invoices": "", "pieces": ""})
             else: 
+                # NO asumas que las claves están bien, pásalas tal cual y deja que crear_modelo_datos lo arregle
                 lista_normalizada.append(item)
 
         modelo = crear_modelo_datos(lista_normalizada, data.get('num_vans', 1), data.get('base_address'))
@@ -421,6 +436,8 @@ def optimizar():
         
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 @app.route('/optimizar_restantes', methods=['POST'])
@@ -433,12 +450,15 @@ def optimizar_restantes():
     
     paradas_objs = []
     for p in paradas_actuales:
-        # Aseguramos que pasamos invoices y pieces
         obj = {"nombre": "Cliente", "direccion": "", "invoices": "", "pieces": ""}
         if isinstance(p, dict):
             obj.update(p)
-            if 'nombre' not in p: obj['nombre'] = "Cliente"
-            if 'direccion' not in p: obj['direccion'] = ""
+            # FIX KEYS:
+            if 'name' in p: obj['nombre'] = p['name']
+            if 'address' in p: obj['direccion'] = p['address']
+            
+            if 'nombre' not in obj: obj['nombre'] = "Cliente"
+            if 'direccion' not in obj: obj['direccion'] = ""
         else:
             obj['direccion'] = p
         paradas_objs.append(obj)
@@ -452,11 +472,12 @@ def optimizar_restantes():
     nuevas_loose_ordenadas = resolver_tsp_parcial(fixed_stop, loose_stops, base_address, dwell_time)
     
     if nuevas_loose_ordenadas is None: return jsonify({"error": "Error optimizando"}), 500
-        
-    c_fixed, fmt_fixed, pid_fixed = obtener_datos_geo(fixed_stop['direccion'])
+    
+    fixed_addr = fixed_stop.get('direccion') or fixed_stop.get('address')
+    c_fixed, fmt_fixed, pid_fixed = obtener_datos_geo(fixed_addr)
     fixed_completo = {
-        "nombre": fixed_stop['nombre'], 
-        "direccion": fixed_stop['direccion'], 
+        "nombre": fixed_stop.get('nombre', 'Cliente'), 
+        "direccion": fixed_addr, 
         "clean_address": fmt_fixed,
         "place_id": pid_fixed,
         "coord": c_fixed,
@@ -474,11 +495,15 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
     paradas_con_clean = []
 
     for p in paradas_objs:
-        c, fmt, pid = obtener_datos_geo(p['direccion'])
+        p_addr = p.get('direccion') or p.get('address')
+        if not p_addr: continue
+        
+        c, fmt, pid = obtener_datos_geo(p_addr)
         if c:
             coords_paradas.append(c)
             p_copy = p.copy()
-            # Mantenemos todos los metadatos
+            # Standardize for output
+            p_copy['direccion'] = p_addr
             p_copy['clean_address'] = fmt 
             p_copy['place_id'] = pid
             paradas_con_clean.append(p_copy)
@@ -533,8 +558,11 @@ def recalcular_ruta():
         obj = {"nombre": "Cliente", "direccion": "", "invoices": "", "pieces": ""}
         if isinstance(p, dict):
             obj.update(p)
-            if 'nombre' not in p: obj['nombre'] = "Cliente"
-            if 'direccion' not in p: obj['direccion'] = ""
+            if 'name' in p: obj['nombre'] = p['name']
+            if 'address' in p: obj['direccion'] = p['address']
+            
+            if 'nombre' not in obj: obj['nombre'] = "Cliente"
+            if 'direccion' not in obj: obj['direccion'] = ""
         else:
             obj['direccion'] = p
         paradas_objs.append(obj)
