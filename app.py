@@ -44,7 +44,7 @@ def init_db():
     try:
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        # Nueva tabla V2 con soporte para Place ID
+        # Mantenemos la tabla V2 por compatibilidad, pero usaremos latlng para cálculo y texto para link
         c.execute('''CREATE TABLE IF NOT EXISTS direcciones_v2
                      (direccion TEXT PRIMARY KEY, latlng TEXT, place_id TEXT)''')
         conn.commit()
@@ -57,7 +57,7 @@ init_db()
 
 def obtener_datos_geo(direccion):
     """
-    Retorna una tupla (latlng, place_id)
+    Retorna una tupla (latlng, place_id) - Aunque solo usaremos latlng para el cálculo
     """
     db_path = os.path.join(basedir, 'economy_routes.db')
     direccion_clean = direccion.strip().lower()
@@ -75,7 +75,6 @@ def obtener_datos_geo(direccion):
         if not API_KEY: return None, None
         
         try:
-            # Solicitamos el Place ID explícitamente
             geocode_result = gmaps.geocode(direccion)
         except Exception as api_e:
             print(f"❌ Error API al geocodificar {direccion}: {api_e}", file=sys.stderr)
@@ -86,7 +85,7 @@ def obtener_datos_geo(direccion):
             res = geocode_result[0]
             loc = res['geometry']['location']
             latlng_str = f"{loc['lat']},{loc['lng']}"
-            place_id = res.get('place_id', '') # Obtenemos el ID único de Google
+            place_id = res.get('place_id', '')
             
             c.execute("INSERT OR REPLACE INTO direcciones_v2 VALUES (?, ?, ?)", (direccion_clean, latlng_str, place_id))
             conn.commit()
@@ -137,18 +136,15 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     
     # Datos de la base
     coord_almacen = ALMACEN_COORD
-    pid_almacen = ""
     
     if base_address_text:
-        c, pid = obtener_datos_geo(base_address_text)
+        c, _ = obtener_datos_geo(base_address_text)
         if c: 
             coord_almacen = c
-            pid_almacen = pid
         else:
             return {"error_critico": f"No se encontró la dirección BASE: {base_address_text}"}
 
     puntos = [coord_almacen]
-    place_ids = [pid_almacen] # Lista paralela de Place IDs
     paradas_validas = [] 
     paradas_erroneas = []
     
@@ -156,10 +152,9 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
         dir_txt = item['direccion'] if isinstance(item, dict) else item
         nombre_txt = item['nombre'] if isinstance(item, dict) else "Cliente"
         
-        c, pid = obtener_datos_geo(dir_txt)
+        c, _ = obtener_datos_geo(dir_txt)
         if c:
             puntos.append(c)
-            place_ids.append(pid)
             paradas_validas.append({"nombre": nombre_txt, "direccion": dir_txt})
         else:
             paradas_erroneas.append(dir_txt)
@@ -188,7 +183,6 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     datos['num_vehicles'] = int(num_vans)
     datos['depot'] = 0 
     datos['coords'] = puntos
-    datos['place_ids'] = place_ids
     datos['paradas_info'] = [{"nombre": "Warehouse", "direccion": base_address_text or "Warehouse"}] + paradas_validas
     return datos
 
@@ -222,7 +216,6 @@ def resolver_vrp(datos, dwell_time_minutos):
         for vehicle_id in range(datos['num_vehicles']):
             index = routing.Start(vehicle_id)
             ruta = []
-            ruta_pids = [] # Place IDs de la ruta
             
             while not routing.IsEnd(index):
                 node_index = manager.IndexToNode(index)
@@ -233,33 +226,27 @@ def resolver_vrp(datos, dwell_time_minutos):
                         "direccion": info['direccion'],
                         "coord": datos['coords'][node_index]
                     })
-                    # Guardamos el Place ID
-                    ruta_pids.append(datos['place_ids'][node_index])
                     
                 index = solution.Value(routing.NextVar(index))
             
             nombre_van = f"Van {vehicle_id + 1}"
             
             if ruta:
-                # --- GENERACIÓN DE LINK CON PLACE IDs ---
-                base_pid = datos['place_ids'][0]
-                base_param = f"origin=place_id:{base_pid}" if base_pid else f"origin={urllib.parse.quote_plus(datos['paradas_info'][0]['direccion'])}"
-                dest_param = f"destination=place_id:{base_pid}" if base_pid else f"destination={urllib.parse.quote_plus(datos['paradas_info'][0]['direccion'])}"
+                # --- GENERACIÓN DE LINK LIMPIO (SOLO DIRECCIÓN) ---
+                # Usamos solo la dirección de texto, sin nombres ni Place IDs.
+                # Esto fuerza a Google Maps a buscar la dirección postal exacta.
                 
-                # Construimos waypoints usando place_id:XXXX
-                # Esto fuerza a Google Maps a mostrar el nombre del negocio oficial
-                waypoints_parts = []
-                for i, pid in enumerate(ruta_pids):
-                    if pid:
-                        waypoints_parts.append(f"place_id:{pid}")
-                    else:
-                        # Fallback a dirección si no hay ID
-                        waypoints_parts.append(urllib.parse.quote_plus(ruta[i]['direccion']))
-                
-                stops_str = "&waypoints=" + "|".join(waypoints_parts)
-                
+                base_dir = datos['paradas_info'][0]['direccion']
+                base_encoded = urllib.parse.quote_plus(base_dir)
                 base_url = "https://www.google.com/maps/dir/?api=1"
-                full_link = f"{base_url}&{base_param}&{dest_param}{stops_str}"
+                
+                # Solo direcciones en los waypoints
+                stops_str = "&waypoints=" + "|".join([
+                    urllib.parse.quote_plus(p['direccion']) 
+                    for p in ruta
+                ])
+                
+                full_link = f"{base_url}&origin={base_encoded}&destination={base_encoded}{stops_str}"
                 
                 finish_index = routing.End(vehicle_id)
                 tiempo_total = solution.Min(time_dimension.CumulVar(finish_index))
@@ -276,24 +263,21 @@ def resolver_vrp(datos, dwell_time_minutos):
 
 # --- OPTIMIZACIÓN PARCIAL ---
 def resolver_tsp_parcial(fixed_stop, loose_stops, base_address_txt, dwell_time):
-    c_start, pid_start = obtener_datos_geo(fixed_stop['direccion'])
-    c_end, pid_end = obtener_datos_geo(base_address_txt)
+    c_start, _ = obtener_datos_geo(fixed_stop['direccion'])
+    c_end, _ = obtener_datos_geo(base_address_txt)
     
     if not c_start or not c_end: return None
 
     coords = [c_start]
-    place_ids = [pid_start]
     objetos_ordenados = [fixed_stop] 
     
     for s in loose_stops:
-        c, pid = obtener_datos_geo(s['direccion'])
+        c, _ = obtener_datos_geo(s['direccion'])
         if c:
             coords.append(c)
-            place_ids.append(pid)
             objetos_ordenados.append(s)
             
     coords.append(c_end)
-    place_ids.append(pid_end)
     
     if not API_KEY: return None
     rows_matriz = obtener_matriz_segura(coords) 
@@ -338,11 +322,11 @@ def resolver_tsp_parcial(fixed_stop, loose_stops, base_address_txt, dwell_time):
         while not routing.IsEnd(index):
             node_index = manager.IndexToNode(index)
             obj_original = objetos_ordenados[node_index]
-            # Adjuntamos el Place ID al objeto para usarlo luego
-            obj_con_pid = obj_original.copy()
-            obj_con_pid['place_id'] = place_ids[node_index]
-            
-            nuevo_orden_paradas.append(obj_con_pid)
+            nuevo_orden_paradas.append({
+                "nombre": obj_original['nombre'],
+                "direccion": obj_original['direccion'],
+                "coord": coords[node_index]
+            })
             index = solution.Value(routing.NextVar(index))
             
     return nuevo_orden_paradas
@@ -411,39 +395,27 @@ def optimizar_restantes():
     
     if nuevas_loose_ordenadas is None: return jsonify({"error": "Error optimizando"}), 500
         
-    c_fixed, pid_fixed = obtener_datos_geo(fixed_stop['direccion'])
+    c_fixed, _ = obtener_datos_geo(fixed_stop['direccion'])
     fixed_completo = {
         "nombre": fixed_stop['nombre'], 
         "direccion": fixed_stop['direccion'], 
-        "place_id": pid_fixed
+        "coord": c_fixed
     }
     lista_final = [fixed_completo] + nuevas_loose_ordenadas
     
     return recalcular_ruta_internal(lista_final, base_address, dwell_time)
 
 def recalcular_ruta_internal(paradas_objs, base, dwell_time):
-    c_base, pid_base = obtener_datos_geo(base)
+    c_base, _ = obtener_datos_geo(base)
     
     coords_paradas = []
-    place_ids_paradas = []
     
     for p in paradas_objs:
-        # Intentamos usar lo que ya traiga, si no, buscamos
-        if 'place_id' in p and p['place_id']:
-            # Ya tenemos el ID (viene de optimizar_restantes)
-            # Necesitamos coord para matriz? Sí.
-            # Pero obtener_datos_geo es rápido (caché).
-            c, pid = obtener_datos_geo(p['direccion']) # Re-fetch seguro de caché
-            coords_paradas.append(c)
-            place_ids_paradas.append(pid)
-        else:
-            c, pid = obtener_datos_geo(p['direccion'])
-            coords_paradas.append(c)
-            place_ids_paradas.append(pid)
+        c, _ = obtener_datos_geo(p['direccion'])
+        coords_paradas.append(c)
             
     # Filtrar nulos
     coords_limpias = [c for c in coords_paradas if c]
-    pids_limpios = [pid for pid in place_ids_paradas] # Mantiene indices alineados con paradas_objs (asumiendo éxito previo)
 
     if not c_base: return jsonify({"error": "Error base"}), 400
 
@@ -471,21 +443,15 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         
     tiempo_total_segundos += (len(coords_limpias) * dwell_time * 60)
     
-    # --- LINK GENERATION WITH PLACE ID ---
-    base_param = f"origin=place_id:{pid_base}" if pid_base else f"origin={urllib.parse.quote_plus(base)}"
-    dest_param = f"destination=place_id:{pid_base}" if pid_base else f"destination={urllib.parse.quote_plus(base)}"
-    
-    waypoints_parts = []
-    for i, pid in enumerate(pids_limpios):
-        if pid:
-            waypoints_parts.append(f"place_id:{pid}")
-        else:
-            waypoints_parts.append(urllib.parse.quote_plus(paradas_objs[i]['direccion']))
-            
-    stops_str = "&waypoints=" + "|".join(waypoints_parts)
-    
+    # --- LINK LIMPIO: SOLO DIRECCIÓN (Sin Nombres, Sin Place IDs) ---
+    base_encoded = urllib.parse.quote_plus(base)
     base_url = "https://www.google.com/maps/dir/?api=1"
-    full_link = f"{base_url}&{base_param}&{dest_param}{stops_str}"
+    
+    stops_str = "&waypoints=" + "|".join([
+        urllib.parse.quote_plus(p['direccion']) 
+        for p in paradas_objs
+    ])
+    full_link = f"{base_url}&origin={base_encoded}&destination={base_encoded}{stops_str}"
     
     return jsonify({
         "duracion_estimada": tiempo_total_segundos / 60,
