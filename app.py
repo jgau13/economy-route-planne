@@ -44,7 +44,7 @@ def init_db():
     try:
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        # Mantenemos la tabla V2 por compatibilidad, pero usaremos latlng para cálculo y texto para link
+        # Usamos tabla V2 para mantener compatibilidad y caché robusto
         c.execute('''CREATE TABLE IF NOT EXISTS direcciones_v2
                      (direccion TEXT PRIMARY KEY, latlng TEXT, place_id TEXT)''')
         conn.commit()
@@ -57,7 +57,9 @@ init_db()
 
 def obtener_datos_geo(direccion):
     """
-    Retorna una tupla (latlng, place_id) - Aunque solo usaremos latlng para el cálculo
+    Obtiene lat/lng para cálculos matemáticos. 
+    Ignoramos place_id para la generación de links para evitar 
+    que Google asigne nombres de negocios incorrectos.
     """
     db_path = os.path.join(basedir, 'economy_routes.db')
     direccion_clean = direccion.strip().lower()
@@ -75,6 +77,7 @@ def obtener_datos_geo(direccion):
         if not API_KEY: return None, None
         
         try:
+            # Geocodificación estándar
             geocode_result = gmaps.geocode(direccion)
         except Exception as api_e:
             print(f"❌ Error API al geocodificar {direccion}: {api_e}", file=sys.stderr)
@@ -87,6 +90,7 @@ def obtener_datos_geo(direccion):
             latlng_str = f"{loc['lat']},{loc['lng']}"
             place_id = res.get('place_id', '')
             
+            # Guardamos en caché
             c.execute("INSERT OR REPLACE INTO direcciones_v2 VALUES (?, ?, ?)", (direccion_clean, latlng_str, place_id))
             conn.commit()
             conn.close()
@@ -102,6 +106,7 @@ def obtener_datos_geo(direccion):
     return None, None
 
 def obtener_matriz_segura(puntos):
+    # Lógica para evitar error de límites de Google (Max Elements Exceeded)
     num_puntos = len(puntos)
     if num_puntos == 0: return []
     
@@ -113,6 +118,7 @@ def obtener_matriz_segura(puntos):
     for i in range(0, num_puntos, max_filas_por_lote):
         origenes_lote = puntos[i : i + max_filas_por_lote]
         try:
+            # Usamos tráfico en tiempo real para precisión matemática
             respuesta = gmaps.distance_matrix(
                 origins=origenes_lote,
                 destinations=puntos,
@@ -134,7 +140,7 @@ def obtener_matriz_segura(puntos):
 def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     datos = {}
     
-    # Datos de la base
+    # Procesar Base
     coord_almacen = ALMACEN_COORD
     
     if base_address_text:
@@ -149,12 +155,14 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     paradas_erroneas = []
     
     for item in lista_paradas:
+        # Manejo robusto si viene objeto o texto
         dir_txt = item['direccion'] if isinstance(item, dict) else item
         nombre_txt = item['nombre'] if isinstance(item, dict) else "Cliente"
         
         c, _ = obtener_datos_geo(dir_txt)
         if c:
             puntos.append(c)
+            # Guardamos la info original tal cual la escribió el usuario
             paradas_validas.append({"nombre": nombre_txt, "direccion": dir_txt})
         else:
             paradas_erroneas.append(dir_txt)
@@ -183,6 +191,7 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     datos['num_vehicles'] = int(num_vans)
     datos['depot'] = 0 
     datos['coords'] = puntos
+    # La base también se guarda como texto puro para el link
     datos['paradas_info'] = [{"nombre": "Warehouse", "direccion": base_address_text or "Warehouse"}] + paradas_validas
     return datos
 
@@ -232,15 +241,15 @@ def resolver_vrp(datos, dwell_time_minutos):
             nombre_van = f"Van {vehicle_id + 1}"
             
             if ruta:
-                # --- GENERACIÓN DE LINK LIMPIO (SOLO DIRECCIÓN) ---
-                # Usamos solo la dirección de texto, sin nombres ni Place IDs.
-                # Esto fuerza a Google Maps a buscar la dirección postal exacta.
+                # --- GENERACIÓN DE LINK PURISTA ---
+                # Usamos quote_plus para reemplazar espacios con '+'
+                # No enviamos coordenadas ni Place IDs, SOLO texto de dirección.
                 
                 base_dir = datos['paradas_info'][0]['direccion']
                 base_encoded = urllib.parse.quote_plus(base_dir)
                 base_url = "https://www.google.com/maps/dir/?api=1"
                 
-                # Solo direcciones en los waypoints
+                # Waypoints: Solo la dirección limpia
                 stops_str = "&waypoints=" + "|".join([
                     urllib.parse.quote_plus(p['direccion']) 
                     for p in ruta
@@ -261,7 +270,7 @@ def resolver_vrp(datos, dwell_time_minutos):
 
     return rutas_finales
 
-# --- OPTIMIZACIÓN PARCIAL ---
+# --- OPTIMIZACIÓN PARCIAL (Fix #1) ---
 def resolver_tsp_parcial(fixed_stop, loose_stops, base_address_txt, dwell_time):
     c_start, _ = obtener_datos_geo(fixed_stop['direccion'])
     c_end, _ = obtener_datos_geo(base_address_txt)
@@ -409,12 +418,10 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
     c_base, _ = obtener_datos_geo(base)
     
     coords_paradas = []
-    
     for p in paradas_objs:
         c, _ = obtener_datos_geo(p['direccion'])
         coords_paradas.append(c)
             
-    # Filtrar nulos
     coords_limpias = [c for c in coords_paradas if c]
 
     if not c_base: return jsonify({"error": "Error base"}), 400
@@ -443,7 +450,7 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         
     tiempo_total_segundos += (len(coords_limpias) * dwell_time * 60)
     
-    # --- LINK LIMPIO: SOLO DIRECCIÓN (Sin Nombres, Sin Place IDs) ---
+    # --- RECALCULAR LINK TAMBIÉN EN MODO TEXTO PURO ---
     base_encoded = urllib.parse.quote_plus(base)
     base_url = "https://www.google.com/maps/dir/?api=1"
     
