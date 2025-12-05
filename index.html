@@ -96,6 +96,64 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
+        // --- ERROR SCREEN ---
+        const ConfigErrorScreen = ({ errorDetails }) => (
+            <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-lg border-l-4 border-red-500">
+                    <h1 className="text-2xl font-bold text-red-600 mb-2 flex items-center gap-2"><Icon name="alert-triangle" className="h-8 w-8" /> System Error</h1>
+                    <p className="text-slate-600 mb-4 font-bold">Connection failed.</p>
+                    <div className="bg-red-50 p-4 rounded-lg border border-red-200 text-sm font-mono text-red-800 mb-4 break-words">Error: {errorDetails || "Unknown Configuration Error"}</div>
+                    <button onClick={() => window.location.reload()} className="mt-6 w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-900 transition-colors">Retry Connection</button>
+                </div>
+            </div>
+        );
+
+        // --- LOGIN SCREEN (Restored) ---
+        const LoginScreen = () => {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleLogin = async (e) => {
+                e.preventDefault(); 
+                setLoading(true); 
+                setError('');
+                
+                // Safety check: Ensure Firebase function exists before calling
+                if (!window.fbSignIn) { 
+                    setError("System not ready. Please refresh."); 
+                    setLoading(false); 
+                    return; 
+                }
+                
+                try { 
+                    await window.fbSignIn(window.fbAuth, email, password); 
+                } catch (err) { 
+                    console.error(err);
+                    setError("Access Denied. Check credentials."); 
+                    setLoading(false); 
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-200">
+                        <div className="text-center mb-8">
+                            <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-16 mx-auto mb-4"/>
+                            <h1 className="text-2xl font-bold text-ess-blue">Route Planner</h1>
+                        </div>
+                        <form onSubmit={handleLogin} className="space-y-4">
+                            <div><label className="block text-sm font-bold text-slate-700 mb-1">Email</label><input type="email" required className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-ess-blue outline-none" value={email} onChange={e => setEmail(e.target.value)} /></div>
+                            <div><label className="block text-sm font-bold text-slate-700 mb-1">Password</label><input type="password" required className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-ess-blue outline-none" value={password} onChange={e => setPassword(e.target.value)} /></div>
+                            {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg font-medium">{error}</div>}
+                            <button type="submit" disabled={loading} className="w-full bg-ess-blue text-white py-3 rounded-lg font-bold hover:bg-sky-700 transition-colors flex justify-center">{loading ? <div className="loader"></div> : "Sign In"}</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
         // --- COMPONENTS ---
         const Icon = ({ name, className = "" }) => {
             const [svgHtml, setSvgHtml] = useState(null);
@@ -200,7 +258,7 @@
                                     <td className="border border-black p-1"></td>
                                 </tr>
                             ))}
-                            {/* Fill remaining space with empty rows (More rows for portrait) */}
+                            {/* Fill remaining space with empty rows */}
                             {[...Array(8)].map((_, i) => (
                                 <tr key={`empty-${i}`} className="h-14">
                                     <td className="border border-black p-1 text-center text-gray-400">{routeData.length + i + 1}</td>
@@ -235,6 +293,8 @@
             const [user, setUser] = useState(null);
             const [authLoading, setAuthLoading] = useState(true);
             const [dbReady, setDbReady] = useState(false);
+            const [systemError, setSystemError] = useState(null);
+
             const [clientDB, setClientDB] = useState([]);
             const [drivers, setDrivers] = useState([]);
             const [vehicles, setVehicles] = useState([]); // Vehicles State
@@ -288,7 +348,10 @@
                         if (data.firebaseConfig && data.firebaseConfig.apiKey) {
                             const tryInitFb = () => { if (window.initializeFirebaseGlobally) { if (window.initializeFirebaseGlobally(data.firebaseConfig)) setDbReady(true); } else setTimeout(tryInitFb, 50); };
                             tryInitFb();
-                        } else { setAuthLoading(false); }
+                        } else { 
+                            setSystemError("Missing Firebase Config.");
+                            setAuthLoading(false); 
+                        }
                         if (data.googleApiKey) setGoogleApiKey(data.googleApiKey);
                     } catch (err) { setAuthLoading(false); }
                 };
@@ -297,8 +360,12 @@
 
             useEffect(() => {
                 const initAuth = () => {
-                    if (window.fbOnAuthStateChanged) window.fbOnAuthStateChanged(window.fbAuth, (currentUser) => { setUser(currentUser); setAuthLoading(false); });
-                    else setTimeout(initAuth, 100);
+                    if (window.fbOnAuthStateChanged) {
+                        window.fbOnAuthStateChanged(window.fbAuth, (currentUser) => { setUser(currentUser); setAuthLoading(false); });
+                    } else {
+                        // Keep trying until firebase global is ready
+                        setTimeout(initAuth, 100);
+                    }
                 };
                 initAuth();
             }, []);
@@ -466,8 +533,11 @@
                 setRoutes(newRoutes); setSelectedStops([]); const affectedDrivers = new Set(sortedSelection.map(s => s.driver)); affectedDrivers.add(targetDriver); affectedDrivers.forEach(d => recalculateRoute(d, newRoutes[d].paradas));
             };
 
+            if (systemError) return <ConfigErrorScreen errorDetails={systemError} />;
             if (authLoading) return <div className="min-h-screen flex items-center justify-center text-ess-blue font-bold text-lg">Loading...</div>;
-            if (!user) return <div className="p-10 text-center"><button onClick={()=>window.fbSignIn(window.fbAuth, prompt('Email'), prompt('Password'))} className="bg-ess-blue text-white p-3 rounded">Login</button></div>;
+            
+            // --- FIX APPLIED HERE: Replaced raw button with <LoginScreen /> ---
+            if (!user) return <LoginScreen />;
 
             return (
                 <div className="min-h-screen text-slate-800 bg-white pb-24">
