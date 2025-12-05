@@ -130,47 +130,44 @@ def obtener_matriz_segura(puntos):
             
     return matriz_completa
 
-# --- GENERADOR DE LINKS LIMPIOS (API OFICIAL V1) ---
-def generar_link_robusto(origen_obj, destino_obj, waypoints_objs):
+# --- GENERADOR DE LINKS PUROS ---
+def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     """
-    Genera URL usando https://www.google.com/maps/dir/?api=1
-    Usa quote_plus para evitar %20 y prioriza Place IDs.
+    Genera URL usando estrictamente el TEXTO ingresado por el usuario.
+    NO usa Place IDs para evitar que Google reemplace la dirección con nombres de negocios.
+    Usa quote_plus (+) para evitar los %20 en la visualización.
     """
     base_url = "https://www.google.com/maps/dir/?api=1"
     
-    # Función auxiliar para limpiar texto para URL (espacios a +)
+    # Helper para limpiar texto
     def clean_param(text):
-        return urllib.parse.quote_plus(text)
+        # quote_plus reemplaza espacios con + (mejor para Maps que %20)
+        return urllib.parse.quote_plus(text.strip())
 
     # 1. Origen
-    # Usamos clean_address que viene formateada de Google
+    # Para el origen (Warehouse) usamos la dirección limpia de Google para asegurar que arranque bien
     origin_addr = clean_param(origen_obj['clean_address'])
     link = f"{base_url}&origin={origin_addr}"
-    if origen_obj.get('place_id'):
-        link += f"&origin_place_id={origen_obj['place_id']}"
     
     # 2. Destino
+    # Igual para el destino final
     dest_addr = clean_param(destino_obj['clean_address'])
     link += f"&destination={dest_addr}"
-    if destino_obj.get('place_id'):
-        link += f"&destination_place_id={destino_obj['place_id']}"
 
     # 3. Waypoints
+    # AQUÍ ESTÁ EL CAMBIO CLAVE:
+    # Usamos p['direccion'] (Lo que escribió el usuario: "123 Main St Suite 4")
+    # EN LUGAR DE p['clean_address'] (Lo que Google cree que es: "123 Main St")
+    # Y NO enviamos place_id.
     if waypoints_objs:
-        # Texto de direcciones (Separado por pipe '|' encoded como %7C automáticamente por browsers, 
-        # pero aquí lo construimos string). 
-        # IMPORTANTE: quote_plus convierte espacios a +, lo cual Google lee mejor visualmente que %20
-        wp_list = [clean_param(p['clean_address']) for p in waypoints_objs]
+        wp_list = []
+        for p in waypoints_objs:
+            # Priorizamos la dirección original del usuario para mantener "Suite", "Unit", etc.
+            texto_direccion = p.get('direccion') or p.get('clean_address')
+            wp_list.append(clean_param(texto_direccion))
+            
         wp_string = "|".join(wp_list)
         link += f"&waypoints={wp_string}"
-        
-        # Place IDs de waypoints
-        ids_validos = [p.get('place_id', '') for p in waypoints_objs]
-        
-        # Google Maps exige que si usas waypoint_place_ids, coincida exactamente con la cantidad de waypoints
-        if all(ids_validos): 
-            wp_ids_str = "|".join(ids_validos)
-            link += f"&waypoint_place_ids={wp_ids_str}"
 
     # 4. Modo de viaje
     link += "&travelmode=driving"
@@ -210,8 +207,8 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
             direcciones_limpias.append(fmt)
             paradas_validas.append({
                 "nombre": nombre_txt, 
-                "direccion": dir_txt,
-                "clean_address": fmt,
+                "direccion": dir_txt,     # <--- MANTENEMOS TU TEXTO ORIGINAL
+                "clean_address": fmt,     # Texto normalizado por Google (Backup)
                 "place_id": pid
             })
         else:
@@ -288,8 +285,8 @@ def resolver_vrp(datos, dwell_time_minutos):
                     info = datos['paradas_info'][node_index]
                     ruta.append({
                         "nombre": info['nombre'],
-                        "direccion": info['direccion'],
-                        "clean_address": info['clean_address'],
+                        "direccion": info['direccion'], # Tu input original
+                        "clean_address": info['clean_address'], # Google Clean
                         "place_id": info.get('place_id'),
                         "coord": datos['coords'][node_index]
                     })
@@ -300,7 +297,8 @@ def resolver_vrp(datos, dwell_time_minutos):
             
             if ruta:
                 base_info = datos['paradas_info'][0]
-                full_link = generar_link_robusto(base_info, base_info, ruta)
+                # USAMOS EL GENERADOR PURO SIN IDs
+                full_link = generar_link_puro(base_info, base_info, ruta)
                 
                 finish_index = routing.End(vehicle_id)
                 tiempo_total = solution.Min(time_dimension.CumulVar(finish_index))
@@ -475,7 +473,8 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         if c:
             coords_paradas.append(c)
             p_copy = p.copy()
-            p_copy['clean_address'] = fmt
+            # IMPORTANTE: Mantenemos 'direccion' original para el LINK
+            p_copy['clean_address'] = fmt 
             p_copy['place_id'] = pid
             paradas_con_clean.append(p_copy)
             
@@ -507,9 +506,9 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         
     tiempo_total_segundos += (len(coords_limpias) * dwell_time * 60)
     
-    # --- LINK ROBUSTO FINAL ---
+    # --- LINK PURO SIN IDs ---
     base_obj = {"clean_address": fmt_base, "place_id": pid_base}
-    full_link = generar_link_robusto(base_obj, base_obj, paradas_con_clean)
+    full_link = generar_link_puro(base_obj, base_obj, paradas_con_clean)
     
     return jsonify({
         "duracion_estimada": tiempo_total_segundos / 60,
