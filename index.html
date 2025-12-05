@@ -478,7 +478,7 @@
                 return fromDB ? fromDB.name : "Client";
             };
             const getWhatsappLink = (l) => `https://wa.me/?text=${encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`)}`;
-            const filteredClients = useMemo(() => { const t = newStopName.toLowerCase().trim(); return t ? clientDB.filter(c => c.name.toLowerCase().includes(t)).slice(0, 5) : []; }, [newStopName, clientDB]);
+            const filteredClients = useMemo(() => { const t = newStopName.toLowerCase().trim(); return t ? clientDB.filter(c => (c.name || "").toLowerCase().includes(t)).slice(0, 5) : []; }, [newStopName, clientDB]);
             
             const recalculateRoute = async (dName, stops) => { 
                 setRecalculating(p => ({...p, [dName]: true})); 
