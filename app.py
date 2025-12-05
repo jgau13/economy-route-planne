@@ -58,8 +58,6 @@ init_db()
 def obtener_datos_geo(direccion):
     """
     Retorna una tupla (latlng, formatted_address, place_id).
-    formatted_address: Dirección postal LIMPIA.
-    place_id: ID único de Google (CRUCIAL para corregir error en Android/iOS).
     """
     db_path = os.path.join(basedir, 'economy_routes.db')
     direccion_clean = direccion.strip().lower()
@@ -72,8 +70,6 @@ def obtener_datos_geo(direccion):
         
         if resultado:
             conn.close()
-            # Retorna (latlng, formatted_address, place_id)
-            # Nota: resultado[2] es place_id
             return resultado[0], resultado[1], resultado[2]
         
         if not API_KEY: return None, None, None
@@ -90,7 +86,6 @@ def obtener_datos_geo(direccion):
             loc = res['geometry']['location']
             latlng_str = f"{loc['lat']},{loc['lng']}"
             place_id = res.get('place_id', '')
-            # CAPTURAMOS LA DIRECCIÓN LIMPIA OFICIAL
             formatted_addr = res.get('formatted_address', direccion) 
             
             c.execute("INSERT OR REPLACE INTO direcciones_v3 VALUES (?, ?, ?, ?)", (direccion_clean, latlng_str, place_id, formatted_addr))
@@ -136,41 +131,44 @@ def obtener_matriz_segura(puntos):
             
     return matriz_completa
 
-# --- GENERADOR DE LINKS SEGURO (CROSS-PLATFORM) ---
+# --- GENERADOR DE LINKS OFICIAL (DIR API) ---
 def generar_link_robusto(origen_obj, destino_obj, waypoints_objs):
     """
-    Genera una URL oficial de Google Maps (api=1) usando Place IDs.
-    Esto soluciona el problema de Android/iOS interpretando mal los textos.
+    Genera URL usando el protocolo oficial Universal Cross-Platform.
+    https://www.google.com/maps/dir/?api=1
     """
     base_url = "https://www.google.com/maps/dir/?api=1"
     
-    # 1. Origen y Destino
-    origin_str = urllib.parse.quote_plus(origen_obj['clean_address'])
-    dest_str = urllib.parse.quote_plus(destino_obj['clean_address'])
-    
-    link = f"{base_url}&origin={origin_str}&destination={dest_str}"
-    
-    # 2. Agregar Place IDs para Origen/Destino (Fuerza ubicación exacta)
+    # 1. Origen
+    # Usamos quote (no quote_plus) para asegurar compatibilidad con iOS en ciertos caracteres
+    origin_addr = urllib.parse.quote(origen_obj['clean_address'])
+    link = f"{base_url}&origin={origin_addr}"
     if origen_obj.get('place_id'):
         link += f"&origin_place_id={origen_obj['place_id']}"
+    
+    # 2. Destino
+    dest_addr = urllib.parse.quote(destino_obj['clean_address'])
+    link += f"&destination={dest_addr}"
     if destino_obj.get('place_id'):
         link += f"&destination_place_id={destino_obj['place_id']}"
 
-    # 3. Waypoints (Paradas intermedias)
+    # 3. Waypoints
     if waypoints_objs:
-        # Texto de direcciones (Backup visual)
-        wp_addresses = "|".join([urllib.parse.quote_plus(p['clean_address']) for p in waypoints_objs])
-        link += f"&waypoints={wp_addresses}"
+        # Texto de direcciones (Codificamos cada dirección individualmente, pero NO el separador pipe '|')
+        wp_list = [urllib.parse.quote(p['clean_address']) for p in waypoints_objs]
+        wp_string = "|".join(wp_list)
+        link += f"&waypoints={wp_string}"
         
-        # Place IDs de waypoints (La clave para la navegación precisa)
-        # Google exige que si se usa waypoint_place_ids, coincida en número con waypoints
+        # Place IDs de waypoints (CRUCIAL para que iOS no "piense", solo obedezca)
         ids_validos = [p.get('place_id', '') for p in waypoints_objs]
         
-        # Solo agregamos los IDs si todos existen (para evitar errores de API), 
-        # aunque con nuestro sistema geocodificado siempre deberían existir.
+        # Solo añadimos los IDs si tenemos todos, para garantizar la integridad de la ruta
         if all(ids_validos): 
             wp_ids_str = "|".join(ids_validos)
             link += f"&waypoint_place_ids={wp_ids_str}"
+
+    # 4. Modo de viaje
+    link += "&travelmode=driving"
 
     return link
 
@@ -184,7 +182,6 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     pid_almacen = ""
 
     if base_address_text:
-        # Recuperamos 3 valores ahora
         c, fmt, pid = obtener_datos_geo(base_address_text)
         if c: 
             coord_almacen = c
@@ -202,7 +199,6 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
         dir_txt = item['direccion'] if isinstance(item, dict) else item
         nombre_txt = item['nombre'] if isinstance(item, dict) else "Cliente"
         
-        # Recuperamos 3 valores
         c, fmt, pid = obtener_datos_geo(dir_txt)
         if c:
             puntos.append(c)
@@ -210,8 +206,8 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
             paradas_validas.append({
                 "nombre": nombre_txt, 
                 "direccion": dir_txt,
-                "clean_address": fmt,  # Dirección limpia
-                "place_id": pid        # ID exacto
+                "clean_address": fmt,
+                "place_id": pid
             })
         else:
             paradas_erroneas.append(dir_txt)
@@ -241,7 +237,6 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     datos['depot'] = 0 
     datos['coords'] = puntos
     
-    # Base info completa
     base_obj = {
         "nombre": "Warehouse", 
         "direccion": base_address_text or "Warehouse", 
@@ -290,7 +285,7 @@ def resolver_vrp(datos, dwell_time_minutos):
                         "nombre": info['nombre'],
                         "direccion": info['direccion'],
                         "clean_address": info['clean_address'],
-                        "place_id": info.get('place_id'), # Incluimos ID
+                        "place_id": info.get('place_id'),
                         "coord": datos['coords'][node_index]
                     })
                     
@@ -299,7 +294,7 @@ def resolver_vrp(datos, dwell_time_minutos):
             nombre_van = f"Van {vehicle_id + 1}"
             
             if ruta:
-                # --- GENERACIÓN DE LINK ROBUSTO ---
+                # Modificamos para pasar el destino correctamente (que es la Warehouse, índice 0)
                 base_info = datos['paradas_info'][0]
                 full_link = generar_link_robusto(base_info, base_info, ruta)
                 
@@ -318,7 +313,6 @@ def resolver_vrp(datos, dwell_time_minutos):
 
 # --- OPTIMIZACIÓN PARCIAL ---
 def resolver_tsp_parcial(fixed_stop, loose_stops, base_address_txt, dwell_time):
-    # Recuperamos 3 valores
     c_start, fmt_start, pid_start = obtener_datos_geo(fixed_stop['direccion'])
     c_end, fmt_end, pid_end = obtener_datos_geo(base_address_txt)
     
@@ -332,7 +326,6 @@ def resolver_tsp_parcial(fixed_stop, loose_stops, base_address_txt, dwell_time):
     objetos_ordenados = [obj_start] 
     
     for s in loose_stops:
-        # Recuperamos 3 valores
         c, fmt, pid = obtener_datos_geo(s['direccion'])
         if c:
             coords.append(c)
@@ -455,7 +448,6 @@ def optimizar_restantes():
     
     if nuevas_loose_ordenadas is None: return jsonify({"error": "Error optimizando"}), 500
         
-    # Obtener datos completos de la fija
     c_fixed, fmt_fixed, pid_fixed = obtener_datos_geo(fixed_stop['direccion'])
     fixed_completo = {
         "nombre": fixed_stop['nombre'], 
@@ -469,7 +461,6 @@ def optimizar_restantes():
     return recalcular_ruta_internal(lista_final, base_address, dwell_time)
 
 def recalcular_ruta_internal(paradas_objs, base, dwell_time):
-    # Recuperar datos base con ID
     c_base, fmt_base, pid_base = obtener_datos_geo(base)
     
     coords_paradas = []
@@ -512,7 +503,7 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         
     tiempo_total_segundos += (len(coords_limpias) * dwell_time * 60)
     
-    # --- LINK ROBUSTO CON PLACE IDs ---
+    # --- LINK ROBUSTO FINAL ---
     base_obj = {"clean_address": fmt_base, "place_id": pid_base}
     full_link = generar_link_robusto(base_obj, base_obj, paradas_con_clean)
     
