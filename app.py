@@ -130,39 +130,36 @@ def obtener_matriz_segura(puntos):
             
     return matriz_completa
 
-# --- GENERADOR DE LINKS PUROS ---
+# --- GENERADOR DE LINKS LIMPIOS (FIX iOS) ---
 def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     """
-    Genera URL usando estrictamente el TEXTO ingresado por el usuario.
-    NO usa Place IDs para evitar que Google reemplace la dirección con nombres de negocios.
-    Usa quote_plus (+) para evitar los %20 en la visualización.
+    Genera URL usando texto limpio.
+    CORRECCIÓN CRÍTICA: Reemplaza %2C por comas literales (,)
+    Esto evita que iOS rompa la dirección o muestre códigos feos.
     """
     base_url = "https://www.google.com/maps/dir/?api=1"
     
     # Helper para limpiar texto
     def clean_param(text):
-        # quote_plus reemplaza espacios con + (mejor para Maps que %20)
-        return urllib.parse.quote_plus(text.strip())
+        # 1. Encode básico (espacios -> +)
+        encoded = urllib.parse.quote_plus(text.strip())
+        # 2. RESTAURAR COMAS: Google Maps las acepta y iOS las prefiere legibles
+        encoded = encoded.replace('%2C', ',')
+        return encoded
 
     # 1. Origen
-    # Para el origen (Warehouse) usamos la dirección limpia de Google para asegurar que arranque bien
     origin_addr = clean_param(origen_obj['clean_address'])
     link = f"{base_url}&origin={origin_addr}"
     
     # 2. Destino
-    # Igual para el destino final
     dest_addr = clean_param(destino_obj['clean_address'])
     link += f"&destination={dest_addr}"
 
     # 3. Waypoints
-    # AQUÍ ESTÁ EL CAMBIO CLAVE:
-    # Usamos p['direccion'] (Lo que escribió el usuario: "123 Main St Suite 4")
-    # EN LUGAR DE p['clean_address'] (Lo que Google cree que es: "123 Main St")
-    # Y NO enviamos place_id.
     if waypoints_objs:
         wp_list = []
         for p in waypoints_objs:
-            # Priorizamos la dirección original del usuario para mantener "Suite", "Unit", etc.
+            # Usamos la dirección original del usuario para preservar "Unit", "Suite", etc.
             texto_direccion = p.get('direccion') or p.get('clean_address')
             wp_list.append(clean_param(texto_direccion))
             
@@ -207,8 +204,8 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
             direcciones_limpias.append(fmt)
             paradas_validas.append({
                 "nombre": nombre_txt, 
-                "direccion": dir_txt,     # <--- MANTENEMOS TU TEXTO ORIGINAL
-                "clean_address": fmt,     # Texto normalizado por Google (Backup)
+                "direccion": dir_txt,     # Mantenemos input original
+                "clean_address": fmt,     # Backup de Google
                 "place_id": pid
             })
         else:
@@ -285,8 +282,8 @@ def resolver_vrp(datos, dwell_time_minutos):
                     info = datos['paradas_info'][node_index]
                     ruta.append({
                         "nombre": info['nombre'],
-                        "direccion": info['direccion'], # Tu input original
-                        "clean_address": info['clean_address'], # Google Clean
+                        "direccion": info['direccion'], 
+                        "clean_address": info['clean_address'],
                         "place_id": info.get('place_id'),
                         "coord": datos['coords'][node_index]
                     })
@@ -297,7 +294,7 @@ def resolver_vrp(datos, dwell_time_minutos):
             
             if ruta:
                 base_info = datos['paradas_info'][0]
-                # USAMOS EL GENERADOR PURO SIN IDs
+                # USAMOS EL GENERADOR PURO FIX iOS
                 full_link = generar_link_puro(base_info, base_info, ruta)
                 
                 finish_index = routing.End(vehicle_id)
@@ -473,7 +470,7 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         if c:
             coords_paradas.append(c)
             p_copy = p.copy()
-            # IMPORTANTE: Mantenemos 'direccion' original para el LINK
+            # Mantenemos 'direccion' original para el LINK
             p_copy['clean_address'] = fmt 
             p_copy['place_id'] = pid
             paradas_con_clean.append(p_copy)
@@ -506,7 +503,7 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         
     tiempo_total_segundos += (len(coords_limpias) * dwell_time * 60)
     
-    # --- LINK PURO SIN IDs ---
+    # --- LINK PURO FIX iOS ---
     base_obj = {"clean_address": fmt_base, "place_id": pid_base}
     full_link = generar_link_puro(base_obj, base_obj, paradas_con_clean)
     
