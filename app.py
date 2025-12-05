@@ -130,12 +130,13 @@ def obtener_matriz_segura(puntos):
             
     return matriz_completa
 
-# --- GENERADOR DE LINKS LIMPIOS (FIX iOS) ---
+# --- GENERADOR DE LINKS LIMPIOS (FIX iOS + MY LOCATION) ---
 def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     """
     Genera URL usando texto limpio.
-    CORRECCIÓN CRÍTICA: Reemplaza %2C por comas literales (,)
-    Esto evita que iOS rompa la dirección o muestre códigos feos.
+    1. Usa quote_plus y restaura comas para iOS.
+    2. OMITE el parámetro 'origin' -> Google Maps usará "Tu Ubicación" (GPS).
+    3. Mantiene 'destination' fijo (Warehouse).
     """
     base_url = "https://www.google.com/maps/dir/?api=1"
     
@@ -147,11 +148,11 @@ def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
         encoded = encoded.replace('%2C', ',')
         return encoded
 
-    # 1. Origen
-    origin_addr = clean_param(origen_obj['clean_address'])
-    link = f"{base_url}&origin={origin_addr}"
+    # 1. Origen: OMITIDO
+    # Al no poner &origin=..., Google Maps inicia desde la ubicación actual del dispositivo.
+    link = base_url
     
-    # 2. Destino
+    # 2. Destino (Siempre el Warehouse)
     dest_addr = clean_param(destino_obj['clean_address'])
     link += f"&destination={dest_addr}"
 
@@ -159,7 +160,7 @@ def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     if waypoints_objs:
         wp_list = []
         for p in waypoints_objs:
-            # Usamos la dirección original del usuario para preservar "Unit", "Suite", etc.
+            # Usamos la dirección original del usuario
             texto_direccion = p.get('direccion') or p.get('clean_address')
             wp_list.append(clean_param(texto_direccion))
             
@@ -294,7 +295,8 @@ def resolver_vrp(datos, dwell_time_minutos):
             
             if ruta:
                 base_info = datos['paradas_info'][0]
-                # USAMOS EL GENERADOR PURO FIX iOS
+                # USAMOS EL GENERADOR PURO (MY LOCATION -> WAYPOINTS -> WAREHOUSE)
+                # Notar que pasamos base_info como destino, y base_info (aunque ignorado) como origen
                 full_link = generar_link_puro(base_info, base_info, ruta)
                 
                 finish_index = routing.End(vehicle_id)
@@ -503,7 +505,7 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         
     tiempo_total_segundos += (len(coords_limpias) * dwell_time * 60)
     
-    # --- LINK PURO FIX iOS ---
+    # --- LINK PURO FIX iOS + MY LOCATION ---
     base_obj = {"clean_address": fmt_base, "place_id": pid_base}
     full_link = generar_link_puro(base_obj, base_obj, paradas_con_clean)
     
