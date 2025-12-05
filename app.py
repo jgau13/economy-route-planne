@@ -44,12 +44,12 @@ def init_db():
     try:
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        # Usamos tabla V2 para mantener compatibilidad y caché robusto
-        c.execute('''CREATE TABLE IF NOT EXISTS direcciones_v2
-                     (direccion TEXT PRIMARY KEY, latlng TEXT, place_id TEXT)''')
+        # TABLA V3: Agregamos 'formatted_address' para guardar la dirección limpia oficial
+        c.execute('''CREATE TABLE IF NOT EXISTS direcciones_v3
+                     (direccion TEXT PRIMARY KEY, latlng TEXT, place_id TEXT, formatted_address TEXT)''')
         conn.commit()
         conn.close()
-        print("✅ Base de datos verificada (V2).")
+        print("✅ Base de datos verificada (V3).")
     except Exception as e:
         print(f"❌ Error DB: {e}", file=sys.stderr)
 
@@ -57,9 +57,8 @@ init_db()
 
 def obtener_datos_geo(direccion):
     """
-    Obtiene lat/lng para cálculos matemáticos. 
-    Ignoramos place_id para la generación de links para evitar 
-    que Google asigne nombres de negocios incorrectos.
+    Retorna una tupla (latlng, formatted_address).
+    formatted_address es la dirección postal LIMPIA (sin nombre de negocio).
     """
     db_path = os.path.join(basedir, 'economy_routes.db')
     direccion_clean = direccion.strip().lower()
@@ -67,7 +66,7 @@ def obtener_datos_geo(direccion):
     try:
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        c.execute("SELECT latlng, place_id FROM direcciones_v2 WHERE direccion=?", (direccion_clean,))
+        c.execute("SELECT latlng, formatted_address FROM direcciones_v3 WHERE direccion=?", (direccion_clean,))
         resultado = c.fetchone()
         
         if resultado:
@@ -77,7 +76,6 @@ def obtener_datos_geo(direccion):
         if not API_KEY: return None, None
         
         try:
-            # Geocodificación estándar
             geocode_result = gmaps.geocode(direccion)
         except Exception as api_e:
             print(f"❌ Error API al geocodificar {direccion}: {api_e}", file=sys.stderr)
@@ -89,12 +87,13 @@ def obtener_datos_geo(direccion):
             loc = res['geometry']['location']
             latlng_str = f"{loc['lat']},{loc['lng']}"
             place_id = res.get('place_id', '')
+            # CAPTURAMOS LA DIRECCIÓN LIMPIA OFICIAL
+            formatted_addr = res.get('formatted_address', direccion) 
             
-            # Guardamos en caché
-            c.execute("INSERT OR REPLACE INTO direcciones_v2 VALUES (?, ?, ?)", (direccion_clean, latlng_str, place_id))
+            c.execute("INSERT OR REPLACE INTO direcciones_v3 VALUES (?, ?, ?, ?)", (direccion_clean, latlng_str, place_id, formatted_addr))
             conn.commit()
             conn.close()
-            return latlng_str, place_id
+            return latlng_str, formatted_addr
         else:
             conn.close()
             return None, None
@@ -106,7 +105,6 @@ def obtener_datos_geo(direccion):
     return None, None
 
 def obtener_matriz_segura(puntos):
-    # Lógica para evitar error de límites de Google (Max Elements Exceeded)
     num_puntos = len(puntos)
     if num_puntos == 0: return []
     
@@ -118,7 +116,6 @@ def obtener_matriz_segura(puntos):
     for i in range(0, num_puntos, max_filas_por_lote):
         origenes_lote = puntos[i : i + max_filas_por_lote]
         try:
-            # Usamos tráfico en tiempo real para precisión matemática
             respuesta = gmaps.distance_matrix(
                 origins=origenes_lote,
                 destinations=puntos,
@@ -140,30 +137,37 @@ def obtener_matriz_segura(puntos):
 def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     datos = {}
     
-    # Procesar Base
+    # Datos de la base
     coord_almacen = ALMACEN_COORD
+    fmt_almacen = base_address_text # Fallback
     
     if base_address_text:
-        c, _ = obtener_datos_geo(base_address_text)
+        c, fmt = obtener_datos_geo(base_address_text)
         if c: 
             coord_almacen = c
+            fmt_almacen = fmt
         else:
             return {"error_critico": f"No se encontró la dirección BASE: {base_address_text}"}
 
     puntos = [coord_almacen]
+    direcciones_limpias = [fmt_almacen] # Lista para guardar las versiones limpias
     paradas_validas = [] 
     paradas_erroneas = []
     
     for item in lista_paradas:
-        # Manejo robusto si viene objeto o texto
         dir_txt = item['direccion'] if isinstance(item, dict) else item
         nombre_txt = item['nombre'] if isinstance(item, dict) else "Cliente"
         
-        c, _ = obtener_datos_geo(dir_txt)
+        c, fmt = obtener_datos_geo(dir_txt)
         if c:
             puntos.append(c)
-            # Guardamos la info original tal cual la escribió el usuario
-            paradas_validas.append({"nombre": nombre_txt, "direccion": dir_txt})
+            direcciones_limpias.append(fmt)
+            # Guardamos la dirección original Y la limpia
+            paradas_validas.append({
+                "nombre": nombre_txt, 
+                "direccion": dir_txt, # Mantenemos lo que el usuario escribió para mostrarlo
+                "clean_address": fmt  # Usaremos esta para el link
+            })
         else:
             paradas_erroneas.append(dir_txt)
     
@@ -191,8 +195,10 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     datos['num_vehicles'] = int(num_vans)
     datos['depot'] = 0 
     datos['coords'] = puntos
-    # La base también se guarda como texto puro para el link
-    datos['paradas_info'] = [{"nombre": "Warehouse", "direccion": base_address_text or "Warehouse"}] + paradas_validas
+    
+    # Guardamos la base limpia en paradas_info para usarla
+    base_obj = {"nombre": "Warehouse", "direccion": base_address_text or "Warehouse", "clean_address": fmt_almacen}
+    datos['paradas_info'] = [base_obj] + paradas_validas
     return datos
 
 def resolver_vrp(datos, dwell_time_minutos):
@@ -232,7 +238,8 @@ def resolver_vrp(datos, dwell_time_minutos):
                     info = datos['paradas_info'][node_index]
                     ruta.append({
                         "nombre": info['nombre'],
-                        "direccion": info['direccion'],
+                        "direccion": info['direccion'], # Mostramos la original
+                        "clean_address": info['clean_address'], # Guardamos la limpia
                         "coord": datos['coords'][node_index]
                     })
                     
@@ -241,17 +248,15 @@ def resolver_vrp(datos, dwell_time_minutos):
             nombre_van = f"Van {vehicle_id + 1}"
             
             if ruta:
-                # --- GENERACIÓN DE LINK PURISTA ---
-                # Usamos quote_plus para reemplazar espacios con '+'
-                # No enviamos coordenadas ni Place IDs, SOLO texto de dirección.
+                # --- GENERACIÓN DE LINK LIMPIO (V3) ---
+                # Usamos 'clean_address' que viene de Google, garantizado sin nombres de negocio extraños
                 
-                base_dir = datos['paradas_info'][0]['direccion']
-                base_encoded = urllib.parse.quote_plus(base_dir)
+                base_clean = datos['paradas_info'][0]['clean_address']
+                base_encoded = urllib.parse.quote_plus(base_clean)
                 base_url = "https://www.google.com/maps/dir/?api=1"
                 
-                # Waypoints: Solo la dirección limpia
                 stops_str = "&waypoints=" + "|".join([
-                    urllib.parse.quote_plus(p['direccion']) 
+                    urllib.parse.quote_plus(p['clean_address']) 
                     for p in ruta
                 ])
                 
@@ -270,21 +275,26 @@ def resolver_vrp(datos, dwell_time_minutos):
 
     return rutas_finales
 
-# --- OPTIMIZACIÓN PARCIAL (Fix #1) ---
+# --- OPTIMIZACIÓN PARCIAL ---
 def resolver_tsp_parcial(fixed_stop, loose_stops, base_address_txt, dwell_time):
-    c_start, _ = obtener_datos_geo(fixed_stop['direccion'])
-    c_end, _ = obtener_datos_geo(base_address_txt)
+    c_start, fmt_start = obtener_datos_geo(fixed_stop['direccion'])
+    c_end, fmt_end = obtener_datos_geo(base_address_txt)
     
     if not c_start or not c_end: return None
 
     coords = [c_start]
-    objetos_ordenados = [fixed_stop] 
+    # Guardamos objetos con la dirección limpia
+    obj_start = fixed_stop.copy()
+    obj_start['clean_address'] = fmt_start
+    objetos_ordenados = [obj_start] 
     
     for s in loose_stops:
-        c, _ = obtener_datos_geo(s['direccion'])
+        c, fmt = obtener_datos_geo(s['direccion'])
         if c:
             coords.append(c)
-            objetos_ordenados.append(s)
+            s_copy = s.copy()
+            s_copy['clean_address'] = fmt
+            objetos_ordenados.append(s_copy)
             
     coords.append(c_end)
     
@@ -331,11 +341,7 @@ def resolver_tsp_parcial(fixed_stop, loose_stops, base_address_txt, dwell_time):
         while not routing.IsEnd(index):
             node_index = manager.IndexToNode(index)
             obj_original = objetos_ordenados[node_index]
-            nuevo_orden_paradas.append({
-                "nombre": obj_original['nombre'],
-                "direccion": obj_original['direccion'],
-                "coord": coords[node_index]
-            })
+            nuevo_orden_paradas.append(obj_original)
             index = solution.Value(routing.NextVar(index))
             
     return nuevo_orden_paradas
@@ -404,10 +410,11 @@ def optimizar_restantes():
     
     if nuevas_loose_ordenadas is None: return jsonify({"error": "Error optimizando"}), 500
         
-    c_fixed, _ = obtener_datos_geo(fixed_stop['direccion'])
+    c_fixed, fmt_fixed = obtener_datos_geo(fixed_stop['direccion'])
     fixed_completo = {
         "nombre": fixed_stop['nombre'], 
         "direccion": fixed_stop['direccion'], 
+        "clean_address": fmt_fixed,
         "coord": c_fixed
     }
     lista_final = [fixed_completo] + nuevas_loose_ordenadas
@@ -415,12 +422,19 @@ def optimizar_restantes():
     return recalcular_ruta_internal(lista_final, base_address, dwell_time)
 
 def recalcular_ruta_internal(paradas_objs, base, dwell_time):
-    c_base, _ = obtener_datos_geo(base)
+    c_base, fmt_base = obtener_datos_geo(base)
     
     coords_paradas = []
+    paradas_con_clean = []
+
     for p in paradas_objs:
-        c, _ = obtener_datos_geo(p['direccion'])
-        coords_paradas.append(c)
+        c, fmt = obtener_datos_geo(p['direccion'])
+        if c:
+            coords_paradas.append(c)
+            # Aseguramos que el objeto tenga clean_address
+            p_copy = p.copy()
+            p_copy['clean_address'] = fmt
+            paradas_con_clean.append(p_copy)
             
     coords_limpias = [c for c in coords_paradas if c]
 
@@ -450,20 +464,22 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         
     tiempo_total_segundos += (len(coords_limpias) * dwell_time * 60)
     
-    # --- RECALCULAR LINK TAMBIÉN EN MODO TEXTO PURO ---
-    base_encoded = urllib.parse.quote_plus(base)
+    # --- LINK LIMPIO (V3): USAR 'clean_address' ---
+    # Usamos la dirección oficial devuelta por Google, que suele estar limpia.
+    
+    base_encoded = urllib.parse.quote_plus(fmt_base)
     base_url = "https://www.google.com/maps/dir/?api=1"
     
     stops_str = "&waypoints=" + "|".join([
-        urllib.parse.quote_plus(p['direccion']) 
-        for p in paradas_objs
+        urllib.parse.quote_plus(p['clean_address']) 
+        for p in paradas_con_clean
     ])
     full_link = f"{base_url}&origin={base_encoded}&destination={base_encoded}{stops_str}"
     
     return jsonify({
         "duracion_estimada": tiempo_total_segundos / 60,
         "link": full_link,
-        "paradas": paradas_objs
+        "paradas": paradas_con_clean
     })
 
 @app.route('/recalcular', methods=['POST'])
