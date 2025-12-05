@@ -441,6 +441,15 @@
                 }
             };
 
+            // --- LOGOUT ACTION (ADDED BACK) ---
+            const handleLogout = () => {
+                if(window.fbSignOut && window.fbAuth) {
+                    window.fbSignOut(window.fbAuth);
+                } else {
+                    window.location.reload();
+                }
+            };
+
             // --- PRINT ACTIONS ---
             const openPrintModal = (driverName, stops) => {
                 setPrintData({ driverName, stops });
