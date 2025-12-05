@@ -44,7 +44,6 @@ def init_db():
     try:
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        # TABLA V3: Incluye place_id para corrección de rutas en móviles
         c.execute('''CREATE TABLE IF NOT EXISTS direcciones_v3
                      (direccion TEXT PRIMARY KEY, latlng TEXT, place_id TEXT, formatted_address TEXT)''')
         conn.commit()
@@ -131,38 +130,44 @@ def obtener_matriz_segura(puntos):
             
     return matriz_completa
 
-# --- GENERADOR DE LINKS OFICIAL (DIR API) ---
+# --- GENERADOR DE LINKS LIMPIOS (API OFICIAL V1) ---
 def generar_link_robusto(origen_obj, destino_obj, waypoints_objs):
     """
-    Genera URL usando el protocolo oficial Universal Cross-Platform.
-    https://www.google.com/maps/dir/?api=1
+    Genera URL usando https://www.google.com/maps/dir/?api=1
+    Usa quote_plus para evitar %20 y prioriza Place IDs.
     """
     base_url = "https://www.google.com/maps/dir/?api=1"
     
+    # Función auxiliar para limpiar texto para URL (espacios a +)
+    def clean_param(text):
+        return urllib.parse.quote_plus(text)
+
     # 1. Origen
-    # Usamos quote (no quote_plus) para asegurar compatibilidad con iOS en ciertos caracteres
-    origin_addr = urllib.parse.quote(origen_obj['clean_address'])
+    # Usamos clean_address que viene formateada de Google
+    origin_addr = clean_param(origen_obj['clean_address'])
     link = f"{base_url}&origin={origin_addr}"
     if origen_obj.get('place_id'):
         link += f"&origin_place_id={origen_obj['place_id']}"
     
     # 2. Destino
-    dest_addr = urllib.parse.quote(destino_obj['clean_address'])
+    dest_addr = clean_param(destino_obj['clean_address'])
     link += f"&destination={dest_addr}"
     if destino_obj.get('place_id'):
         link += f"&destination_place_id={destino_obj['place_id']}"
 
     # 3. Waypoints
     if waypoints_objs:
-        # Texto de direcciones (Codificamos cada dirección individualmente, pero NO el separador pipe '|')
-        wp_list = [urllib.parse.quote(p['clean_address']) for p in waypoints_objs]
+        # Texto de direcciones (Separado por pipe '|' encoded como %7C automáticamente por browsers, 
+        # pero aquí lo construimos string). 
+        # IMPORTANTE: quote_plus convierte espacios a +, lo cual Google lee mejor visualmente que %20
+        wp_list = [clean_param(p['clean_address']) for p in waypoints_objs]
         wp_string = "|".join(wp_list)
         link += f"&waypoints={wp_string}"
         
-        # Place IDs de waypoints (CRUCIAL para que iOS no "piense", solo obedezca)
+        # Place IDs de waypoints
         ids_validos = [p.get('place_id', '') for p in waypoints_objs]
         
-        # Solo añadimos los IDs si tenemos todos, para garantizar la integridad de la ruta
+        # Google Maps exige que si usas waypoint_place_ids, coincida exactamente con la cantidad de waypoints
         if all(ids_validos): 
             wp_ids_str = "|".join(ids_validos)
             link += f"&waypoint_place_ids={wp_ids_str}"
@@ -294,7 +299,6 @@ def resolver_vrp(datos, dwell_time_minutos):
             nombre_van = f"Van {vehicle_id + 1}"
             
             if ruta:
-                # Modificamos para pasar el destino correctamente (que es la Warehouse, índice 0)
                 base_info = datos['paradas_info'][0]
                 full_link = generar_link_robusto(base_info, base_info, ruta)
                 
