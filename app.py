@@ -130,26 +130,16 @@ def obtener_matriz_segura(puntos):
             
     return matriz_completa
 
-# --- GENERADOR DE LINKS LIMPIOS (FIX iOS + MY LOCATION) ---
+# --- GENERADOR DE LINKS PUROS (FIX iOS + MY LOCATION) ---
 def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
-    """
-    Genera URL usando texto limpio.
-    1. Usa quote_plus y restaura comas para iOS.
-    2. OMITE el parámetro 'origin' -> Google Maps usará "Tu Ubicación" (GPS).
-    3. Mantiene 'destination' fijo (Warehouse).
-    """
     base_url = "https://www.google.com/maps/dir/?api=1"
     
-    # Helper para limpiar texto
     def clean_param(text):
-        # 1. Encode básico (espacios -> +)
         encoded = urllib.parse.quote_plus(text.strip())
-        # 2. RESTAURAR COMAS: Google Maps las acepta y iOS las prefiere legibles
         encoded = encoded.replace('%2C', ',')
         return encoded
 
-    # 1. Origen: OMITIDO
-    # Al no poner &origin=..., Google Maps inicia desde la ubicación actual del dispositivo.
+    # 1. Origen: OMITIDO (GPS Actual)
     link = base_url
     
     # 2. Destino (Siempre el Warehouse)
@@ -160,7 +150,6 @@ def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     if waypoints_objs:
         wp_list = []
         for p in waypoints_objs:
-            # Usamos la dirección original del usuario
             texto_direccion = p.get('direccion') or p.get('clean_address')
             wp_list.append(clean_param(texto_direccion))
             
@@ -176,9 +165,8 @@ def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
 def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     datos = {}
     
-    # Datos de la base
     coord_almacen = ALMACEN_COORD
-    fmt_almacen = base_address_text # Fallback
+    fmt_almacen = base_address_text 
     pid_almacen = ""
 
     if base_address_text:
@@ -198,16 +186,21 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     for item in lista_paradas:
         dir_txt = item['direccion'] if isinstance(item, dict) else item
         nombre_txt = item['nombre'] if isinstance(item, dict) else "Cliente"
-        
+        # EXTRAEMOS NUEVOS CAMPOS (si no existen, default vacío/0)
+        invoices = item.get('invoices', '') if isinstance(item, dict) else ''
+        pieces = item.get('pieces', '') if isinstance(item, dict) else ''
+
         c, fmt, pid = obtener_datos_geo(dir_txt)
         if c:
             puntos.append(c)
             direcciones_limpias.append(fmt)
             paradas_validas.append({
                 "nombre": nombre_txt, 
-                "direccion": dir_txt,     # Mantenemos input original
-                "clean_address": fmt,     # Backup de Google
-                "place_id": pid
+                "direccion": dir_txt,
+                "clean_address": fmt,
+                "place_id": pid,
+                "invoices": invoices, # Guardamos Invoice
+                "pieces": pieces      # Guardamos Piezas
             })
         else:
             paradas_erroneas.append(dir_txt)
@@ -241,7 +234,9 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
         "nombre": "Warehouse", 
         "direccion": base_address_text or "Warehouse", 
         "clean_address": fmt_almacen,
-        "place_id": pid_almacen
+        "place_id": pid_almacen,
+        "invoices": "",
+        "pieces": ""
     }
     datos['paradas_info'] = [base_obj] + paradas_validas
     return datos
@@ -286,6 +281,8 @@ def resolver_vrp(datos, dwell_time_minutos):
                         "direccion": info['direccion'], 
                         "clean_address": info['clean_address'],
                         "place_id": info.get('place_id'),
+                        "invoices": info.get('invoices', ''), # PASAMOS INFO
+                        "pieces": info.get('pieces', ''),     # PASAMOS INFO
                         "coord": datos['coords'][node_index]
                     })
                     
@@ -295,8 +292,6 @@ def resolver_vrp(datos, dwell_time_minutos):
             
             if ruta:
                 base_info = datos['paradas_info'][0]
-                # USAMOS EL GENERADOR PURO (MY LOCATION -> WAYPOINTS -> WAREHOUSE)
-                # Notar que pasamos base_info como destino, y base_info (aunque ignorado) como origen
                 full_link = generar_link_puro(base_info, base_info, ruta)
                 
                 finish_index = routing.End(vehicle_id)
@@ -407,8 +402,11 @@ def optimizar():
         lista_raw = data['direcciones']
         lista_normalizada = []
         for item in lista_raw:
-            if isinstance(item, str): lista_normalizada.append({"nombre": "Cliente", "direccion": item})
-            else: lista_normalizada.append(item)
+            # Ahora manejamos objetos con invoices y pieces
+            if isinstance(item, str): 
+                lista_normalizada.append({"nombre": "Cliente", "direccion": item, "invoices": "", "pieces": ""})
+            else: 
+                lista_normalizada.append(item)
 
         modelo = crear_modelo_datos(lista_normalizada, data.get('num_vans', 1), data.get('base_address'))
         
@@ -435,9 +433,15 @@ def optimizar_restantes():
     
     paradas_objs = []
     for p in paradas_actuales:
-        if isinstance(p, dict) and 'nombre' in p: paradas_objs.append(p)
-        elif isinstance(p, dict): paradas_objs.append({"nombre": "Cliente", "direccion": p.get('direccion', '')})
-        else: paradas_objs.append({"nombre": "Cliente", "direccion": p})
+        # Aseguramos que pasamos invoices y pieces
+        obj = {"nombre": "Cliente", "direccion": "", "invoices": "", "pieces": ""}
+        if isinstance(p, dict):
+            obj.update(p)
+            if 'nombre' not in p: obj['nombre'] = "Cliente"
+            if 'direccion' not in p: obj['direccion'] = ""
+        else:
+            obj['direccion'] = p
+        paradas_objs.append(obj)
 
     if len(paradas_objs) < 3:
         return recalcular_ruta_internal(paradas_objs, base_address, dwell_time) 
@@ -455,7 +459,9 @@ def optimizar_restantes():
         "direccion": fixed_stop['direccion'], 
         "clean_address": fmt_fixed,
         "place_id": pid_fixed,
-        "coord": c_fixed
+        "coord": c_fixed,
+        "invoices": fixed_stop.get('invoices', ''),
+        "pieces": fixed_stop.get('pieces', '')
     }
     lista_final = [fixed_completo] + nuevas_loose_ordenadas
     
@@ -472,7 +478,7 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         if c:
             coords_paradas.append(c)
             p_copy = p.copy()
-            # Mantenemos 'direccion' original para el LINK
+            # Mantenemos todos los metadatos
             p_copy['clean_address'] = fmt 
             p_copy['place_id'] = pid
             paradas_con_clean.append(p_copy)
@@ -505,7 +511,6 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         
     tiempo_total_segundos += (len(coords_limpias) * dwell_time * 60)
     
-    # --- LINK PURO FIX iOS + MY LOCATION ---
     base_obj = {"clean_address": fmt_base, "place_id": pid_base}
     full_link = generar_link_puro(base_obj, base_obj, paradas_con_clean)
     
@@ -525,9 +530,14 @@ def recalcular_ruta():
     
     paradas_objs = []
     for p in paradas:
-        if isinstance(p, dict) and 'nombre' in p: paradas_objs.append(p)
-        elif isinstance(p, dict): paradas_objs.append({"nombre": "Cliente", "direccion": p.get('direccion', '')})
-        else: paradas_objs.append({"nombre": "Cliente", "direccion": p})
+        obj = {"nombre": "Cliente", "direccion": "", "invoices": "", "pieces": ""}
+        if isinstance(p, dict):
+            obj.update(p)
+            if 'nombre' not in p: obj['nombre'] = "Cliente"
+            if 'direccion' not in p: obj['direccion'] = ""
+        else:
+            obj['direccion'] = p
+        paradas_objs.append(obj)
             
     return recalcular_ruta_internal(paradas_objs, base, dwell_time)
 
