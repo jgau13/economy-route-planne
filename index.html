@@ -40,7 +40,7 @@
                 window.fbUpdatePassword = updatePassword;
                 window.fbCollection = collection;
                 window.fbAddDoc = addDoc;
-                window.fbSetDoc = setDoc; // NEW: Added setDoc for user settings
+                window.fbSetDoc = setDoc; 
                 window.fbOnSnapshot = onSnapshot;
                 window.fbDoc = doc;
                 window.fbUpdateDoc = updateDoc;
@@ -288,7 +288,8 @@
                     <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
                         <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
                         <div className="text-right">
-                            <h1 className="text-2xl font-bold uppercase">Global Route Summary</h1>
+                            {/* RENAMED TO ALL ROUTES SUMMARY */}
+                            <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
                             <p className="text-lg font-bold">{today}</p>
                         </div>
                     </div>
@@ -692,7 +693,7 @@
                             </div>
                             <div className="flex items-center gap-3">
                                 <button onClick={() => setView('input')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'input' || view === 'results' || view === 'global_map' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
-                                <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
+                                <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients Database</button>
                                 <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Van or Truck ID</button>
                                 <button onClick={() => setView('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Settings</button>
                                 
@@ -818,6 +819,10 @@
 
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">
                                         {error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}
+                                        
+                                        {/* VIEW ACTIVE ROUTES BUTTON */}
+                                        {!loading && routes && <button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-4 rounded-xl font-bold text-lg shadow-lg mb-3 transition-all flex justify-center items-center gap-2"><Icon name="map" className="h-6 w-6" /> VIEW ACTIVE ROUTES</button>}
+                                        
                                         <button onClick={handleOptimize} disabled={loading} className="w-full bg-ess-green hover:bg-green-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-green-600/20 transition-all flex justify-center items-center gap-2 disabled:opacity-75">{loading ? <div className="loader mr-2"></div> : <Icon name="zap" className="h-6 w-6" />} GENERATE</button>
                                     </div>
                                 </div>
@@ -834,7 +839,7 @@
                                         <button onClick={() => setView('global_map')} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="map" className="h-3 w-3" /> Map</button>
                                         
                                         {/* GLOBAL PRINT BUTTON */}
-                                        <button onClick={handleGlobalPrint} className="text-xs font-bold text-white bg-slate-800 hover:bg-black px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="printer" className="h-3 w-3" /> Print All Routes</button>
+                                        <button onClick={handleGlobalPrint} className="text-xs font-bold text-white bg-slate-800 hover:bg-black px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="printer" className="h-3 w-3" /> All Routes Summary</button>
                                         
                                         <button onClick={handleRecalculateAll} disabled={isRecalculatingAll} className="text-xs font-bold text-white bg-ess-blue hover:bg-sky-700 px-4 py-2 rounded-lg flex items-center gap-2">{isRecalculatingAll ? <div className="loader w-3 h-3"></div> : <><Icon name="refresh-cw" className="h-3 w-3" /> Update</>}</button>
                                     </div>
@@ -977,4 +982,3 @@
     </script>
 </body>
 </html>
-
