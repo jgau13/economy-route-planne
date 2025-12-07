@@ -21,8 +21,8 @@
     <!-- FIREBASE SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, getDocs, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         window.initializeFirebaseGlobally = (config) => {
             try {
@@ -36,8 +36,11 @@
                 window.fbSignIn = signInWithEmailAndPassword;
                 window.fbSignOut = signOut;
                 window.fbOnAuthStateChanged = onAuthStateChanged;
+                window.fbSendPasswordResetEmail = sendPasswordResetEmail;
+                window.fbUpdatePassword = updatePassword;
                 window.fbCollection = collection;
                 window.fbAddDoc = addDoc;
+                window.fbSetDoc = setDoc; // NEW: Added setDoc for user settings
                 window.fbOnSnapshot = onSnapshot;
                 window.fbDoc = doc;
                 window.fbUpdateDoc = updateDoc;
@@ -84,8 +87,8 @@
         @media print {
             @page { size: portrait; margin: 0.5cm; }
             body * { visibility: hidden; }
-            #printable-sheet, #printable-sheet * { visibility: visible; }
-            #printable-sheet { position: absolute; left: 0; top: 0; width: 100%; }
+            #printable-sheet, #printable-sheet *, #global-manifest, #global-manifest * { visibility: visible; }
+            #printable-sheet, #global-manifest { position: absolute; left: 0; top: 0; width: 100%; }
             .no-print { display: none !important; }
         }
     </style>
@@ -108,32 +111,28 @@
             </div>
         );
 
-        // --- LOGIN SCREEN (Restored) ---
+        // --- LOGIN SCREEN ---
         const LoginScreen = () => {
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
             const [error, setError] = useState('');
+            const [msg, setMsg] = useState('');
             const [loading, setLoading] = useState(false);
 
             const handleLogin = async (e) => {
-                e.preventDefault(); 
-                setLoading(true); 
-                setError('');
-                
-                // Safety check: Ensure Firebase function exists before calling
-                if (!window.fbSignIn) { 
-                    setError("System not ready. Please refresh."); 
-                    setLoading(false); 
-                    return; 
-                }
-                
-                try { 
-                    await window.fbSignIn(window.fbAuth, email, password); 
-                } catch (err) { 
-                    console.error(err);
-                    setError("Access Denied. Check credentials."); 
-                    setLoading(false); 
-                }
+                e.preventDefault(); setLoading(true); setError(''); setMsg('');
+                if (!window.fbSignIn) { setError("System not ready. Please refresh."); setLoading(false); return; }
+                try { await window.fbSignIn(window.fbAuth, email, password); } 
+                catch (err) { console.error(err); setError("Access Denied. Check credentials."); setLoading(false); }
+            };
+
+            const handleForgotPassword = async () => {
+                if(!email) { setError("Please enter your email first."); return; }
+                try {
+                    await window.fbSendPasswordResetEmail(window.fbAuth, email);
+                    setMsg("Password reset email sent! Check your inbox.");
+                    setError('');
+                } catch (e) { setError("Error sending email: " + e.message); }
             };
 
             return (
@@ -147,7 +146,11 @@
                             <div><label className="block text-sm font-bold text-slate-700 mb-1">Email</label><input type="email" required className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-ess-blue outline-none" value={email} onChange={e => setEmail(e.target.value)} /></div>
                             <div><label className="block text-sm font-bold text-slate-700 mb-1">Password</label><input type="password" required className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-ess-blue outline-none" value={password} onChange={e => setPassword(e.target.value)} /></div>
                             {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg font-medium">{error}</div>}
+                            {msg && <div className="p-3 bg-green-50 text-green-600 text-sm rounded-lg font-medium">{msg}</div>}
                             <button type="submit" disabled={loading} className="w-full bg-ess-blue text-white py-3 rounded-lg font-bold hover:bg-sky-700 transition-colors flex justify-center">{loading ? <div className="loader"></div> : "Sign In"}</button>
+                            <div className="text-center">
+                                <button type="button" onClick={handleForgotPassword} className="text-sm text-slate-500 hover:text-ess-blue underline">Forgot your password?</button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -210,8 +213,8 @@
             return (<div className="animate-fade-in space-y-4 no-print"><div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-center justify-between"><h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Icon name="map" className="h-5 w-5 text-ess-blue" /> Global Fleet Map</h2><div className="flex flex-wrap gap-3">{Object.keys(routes).map((driver, index) => (<div key={driver} className="flex items-center gap-1.5 text-xs font-medium text-slate-600"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: ROUTE_COLORS[index % ROUTE_COLORS.length] }}></span>{driver}</div>))}</div></div><div className="bg-white p-1 rounded-xl border border-slate-200 shadow-lg"><div id="global-map-container" ref={mapRef}></div></div></div>);
         };
 
-        // --- PRINTABLE SHEET COMPONENT (PORTRAIT - NO EMPTY ROWS) ---
-        const PrintableSheet = ({ routeData, driverName, vehicle }) => {
+        // --- PRINTABLE SHEET COMPONENT (DRIVER MANIFEST) ---
+        const PrintableSheet = ({ routeData, driverName, vehicle, config }) => {
             const today = new Date();
             const dateStr = today.toLocaleDateString('en-US');
             const timeStr = today.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
@@ -237,7 +240,7 @@
                     {/* Table */}
                     <table className="w-full border-collapse border border-black mb-4">
                         <thead>
-                            <tr className="bg-gray-200">
+                            <tr className="bg-white">
                                 <th className="border border-black p-1 w-8 text-center text-xs">#</th>
                                 <th className="border border-black p-2 text-left w-auto">Customer / Address</th>
                                 <th className="border border-black p-2 w-20 text-center text-xs">Invoices</th>
@@ -258,7 +261,6 @@
                                     <td className="border border-black p-1"></td>
                                 </tr>
                             ))}
-                            {/* NO EMPTY ROWS ADDED HERE - TABLE ENDS WITH DATA */}
                         </tbody>
                     </table>
 
@@ -269,10 +271,59 @@
                             <div>Time: __________________________</div>
                         </div>
                         <div className="text-right text-[10px]">
-                            <div className="font-bold text-xs">ECONOMY SIGN SUPPLY ORLANDO</div>
-                            <div>PHONE: 407-901-0900</div>
-                            <div>8350 PARKLINE BLVD, ORLANDO, FLORIDA 32809</div>
+                            <div className="font-bold text-xs">{config.companyName || "ECONOMY SIGN SUPPLY"}</div>
+                            <div>PHONE: {config.phone || "407-901-0900"}</div>
+                            <div>{config.address || "8350 PARKLINE BLVD, ORLANDO, FL 32809"}</div>
                         </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- GLOBAL MANIFEST COMPONENT (MANAGER VIEW) ---
+        const GlobalManifest = ({ routes, config }) => {
+            const today = new Date().toLocaleDateString('en-US');
+            return (
+                <div id="global-manifest" className="hidden print:block bg-white text-black p-8 font-sans">
+                    <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
+                        <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
+                        <div className="text-right">
+                            <h1 className="text-2xl font-bold uppercase">Global Route Summary</h1>
+                            <p className="text-lg font-bold">{today}</p>
+                        </div>
+                    </div>
+                    
+                    <div className="space-y-8">
+                        {Object.entries(routes).map(([driver, data], idx) => (
+                            <div key={idx} className="break-inside-avoid">
+                                <div className="bg-gray-100 border border-black p-2 font-bold text-lg mb-2 flex justify-between">
+                                    <span>{driver}</span>
+                                    <span>{data.paradas.length} Stops</span>
+                                </div>
+                                <table className="w-full border-collapse border border-black text-xs">
+                                    <thead>
+                                        <tr>
+                                            <th className="border border-black p-1 w-8">#</th>
+                                            <th className="border border-black p-1 text-left">Customer / Address</th>
+                                            <th className="border border-black p-1 w-20">Invoices</th>
+                                            <th className="border border-black p-1 w-12">Pcs</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {data.paradas.map((stop, sIdx) => (
+                                            <tr key={sIdx}>
+                                                <td className="border border-black p-1 text-center">{sIdx + 1}</td>
+                                                <td className="border border-black p-1">
+                                                    <span className="font-bold">{stop.nombre}</span> - {stop.direccion}
+                                                </td>
+                                                <td className="border border-black p-1 text-center">{stop.invoices}</td>
+                                                <td className="border border-black p-1 text-center">{stop.pieces}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ))}
                     </div>
                 </div>
             );
@@ -288,19 +339,28 @@
 
             const [clientDB, setClientDB] = useState([]);
             const [drivers, setDrivers] = useState([]);
-            const [vehicles, setVehicles] = useState([]); // Vehicles State
+            const [vehicles, setVehicles] = useState([]);
             const [googleApiKey, setGoogleApiKey] = useState(null);
             const [scriptLoaded, setScriptLoaded] = useState(false);
             const [view, setView] = useState('input'); 
+            
+            // FEATURE 5 & 6: Config Persistence & Dwell Time
+            // NOW USING FIRESTORE FOR PERSISTENCE (Sync across devices)
             const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, EE. UU.');
-            const [dwellTime, setDwellTime] = useState(6); 
+            const [dwellTime, setDwellTime] = useState(6); // HARDCODED 6 MINUTES
+            const [companyConfig, setCompanyConfig] = useState({
+                companyName: "ECONOMY SIGN SUPPLY ORLANDO",
+                phone: "407-901-0900",
+                address: "8350 PARKLINE BLVD, ORLANDO, FLORIDA 32809"
+            });
+
             const [currentStops, setCurrentStops] = useState([]);
             
             // Input States
             const [newStopName, setNewStopName] = useState('');
             const [newStopAddress, setNewStopAddress] = useState('');
             const [newDriverName, setNewDriverName] = useState('');
-            const [newVehicleName, setNewVehicleName] = useState(''); // NEW
+            const [newVehicleName, setNewVehicleName] = useState(''); 
             const [showSuggestions, setShowSuggestions] = useState(false);
             
             // Modal States
@@ -312,7 +372,12 @@
             // Print States
             const [printData, setPrintData] = useState(null); 
             const [showPrintModal, setShowPrintModal] = useState(false);
+            const [showGlobalPrint, setShowGlobalPrint] = useState(false); 
             const [selectedVehicleForPrint, setSelectedVehicleForPrint] = useState('');
+
+            // Settings States
+            const [settingsPwd, setSettingsPwd] = useState('');
+            const [settingsMsg, setSettingsMsg] = useState('');
 
             const [routes, setRoutes] = useState(null);
             const [originalRoutes, setOriginalRoutes] = useState(null); 
@@ -354,7 +419,6 @@
                     if (window.fbOnAuthStateChanged) {
                         window.fbOnAuthStateChanged(window.fbAuth, (currentUser) => { setUser(currentUser); setAuthLoading(false); });
                     } else {
-                        // Keep trying until firebase global is ready
                         setTimeout(initAuth, 100);
                     }
                 };
@@ -364,11 +428,25 @@
             // --- DATA SYNC ---
             useEffect(() => {
                 if (!user || !window.fbDb || !dbReady) return;
+                
+                // Sync Main Collections
                 window.fbOnSnapshot(window.fbQuery(window.fbCollection(window.fbDb, "clients"), window.fbOrderBy("name")), (s) => setClientDB(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                 window.fbOnSnapshot(window.fbQuery(window.fbCollection(window.fbDb, "drivers"), window.fbOrderBy("name")), (s) => setDrivers(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                 window.fbOnSnapshot(window.fbQuery(window.fbCollection(window.fbDb, "draft_stops"), window.fbOrderBy("createdAt")), (s) => setCurrentStops(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-                // Sync Vehicles
                 window.fbOnSnapshot(window.fbQuery(window.fbCollection(window.fbDb, "vehicles"), window.fbOrderBy("name")), (s) => setVehicles(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+
+                // SYNC USER SETTINGS (Cloud Persistence for Base Address & Company Config)
+                const userSettingsRef = window.fbDoc(window.fbDb, "user_settings", user.uid);
+                window.fbOnSnapshot(userSettingsRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        if (data.baseAddress) setBaseAddress(data.baseAddress);
+                        if (data.companyName) setCompanyConfig(prev => ({ ...prev, companyName: data.companyName }));
+                        if (data.companyPhone) setCompanyConfig(prev => ({ ...prev, phone: data.companyPhone }));
+                        if (data.companyAddress) setCompanyConfig(prev => ({ ...prev, address: data.companyAddress }));
+                    }
+                });
+
             }, [user, dbReady]);
 
             useEffect(() => {
@@ -385,19 +463,50 @@
             const deleteDriver = async (id) => { if(window.fbDb && confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, "drivers", id)); };
             const toggleDriver = async (id, status) => { if(window.fbDb) await window.fbUpdateDoc(window.fbDoc(window.fbDb, "drivers", id), { active: !status }); };
             
-            // Vehicle Actions
             const addVehicleToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(window.fbCollection(window.fbDb, "vehicles"), { name }); };
             const deleteVehicle = async (id) => { if(window.fbDb && confirm('Delete Vehicle?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, "vehicles", id)); };
 
-            // Client Actions
             const saveClient = async () => { if (!clientFormName || !window.fbDb) return; if (editingClientId) { await window.fbUpdateDoc(window.fbDoc(window.fbDb, "clients", editingClientId), { name: clientFormName, address: clientFormAddress }); setEditingClientId(null); } else { await window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: clientFormName, address: clientFormAddress }); } setClientFormName(''); setClientFormAddress(''); };
             const deleteClient = async (id) => { if(window.fbDb && confirm('Delete?')) { await window.fbDeleteDoc(window.fbDoc(window.fbDb, "clients", id)); setSelectedClients(selectedClients.filter(c => c !== id)); } };
+
+            // --- FEATURE 5: Save Base Address (Cloud) ---
+            const handleBaseAddressChange = async (e) => {
+                const val = e.target.value;
+                setBaseAddress(val);
+                // Save to Firestore
+                if (window.fbDb && user) {
+                    const userSettingsRef = window.fbDoc(window.fbDb, "user_settings", user.uid);
+                    await window.fbSetDoc(userSettingsRef, { baseAddress: val }, { merge: true });
+                }
+            };
+
+            // --- FEATURE 3: Settings Save (Cloud) ---
+            const saveSettings = async () => {
+                if (window.fbDb && user) {
+                    const userSettingsRef = window.fbDoc(window.fbDb, "user_settings", user.uid);
+                    await window.fbSetDoc(userSettingsRef, { 
+                        companyName: companyConfig.companyName,
+                        companyPhone: companyConfig.phone,
+                        companyAddress: companyConfig.address
+                    }, { merge: true });
+                    alert("Settings saved to cloud and synced!");
+                }
+            };
+
+            const handleChangePassword = async () => {
+                try {
+                    await window.fbSendPasswordResetEmail(window.fbAuth, user.email);
+                    setSettingsMsg("Reset email sent!");
+                } catch(e) {
+                    setSettingsMsg("Error: " + e.message);
+                }
+            };
 
             // --- NEW STOP FLOW ---
             const initiateAddStop = () => {
                 if (!newStopAddress) return;
                 if (currentStops.some(s => s.address === newStopAddress)) {
-                    if (!confirm("Duplicate address. Continue?")) return;
+                    if (!confirm("This address is already in today's route! Add anyway?")) return;
                 }
                 setTempStopData({ name: newStopName || 'Client', address: newStopAddress });
                 setTempInvoices('');
@@ -414,7 +523,9 @@
                         pieces: tempPieces,
                         createdAt: Date.now()
                     });
-                    if (!clientDB.some(c => c.address.toLowerCase() === tempStopData.address.toLowerCase())) {
+                    
+                    const exists = clientDB.some(c => c.address.toLowerCase() === tempStopData.address.toLowerCase());
+                    if (!exists) {
                         window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: tempStopData.name, address: tempStopData.address }); 
                     }
                 }
@@ -432,7 +543,6 @@
                 }
             };
 
-            // --- LOGOUT ACTION ---
             const handleLogout = () => {
                 if(window.fbSignOut && window.fbAuth) {
                     window.fbSignOut(window.fbAuth);
@@ -446,6 +556,14 @@
                 setPrintData({ driverName, stops });
                 setSelectedVehicleForPrint(vehicles.length > 0 ? vehicles[0].name : '');
                 setShowPrintModal(true);
+            };
+
+            const handleGlobalPrint = () => {
+                setShowGlobalPrint(true);
+                setTimeout(() => {
+                    window.print();
+                    setShowGlobalPrint(false);
+                }, 500);
             };
 
             const handlePrint = () => {
@@ -478,8 +596,19 @@
                 return fromDB ? fromDB.name : "Client";
             };
             const getWhatsappLink = (l) => `https://wa.me/?text=${encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`)}`;
-            const filteredClients = useMemo(() => { const t = newStopName.toLowerCase().trim(); return t ? clientDB.filter(c => (c.name || "").toLowerCase().includes(t)).slice(0, 5) : []; }, [newStopName, clientDB]);
             
+            const filteredClients = useMemo(() => { 
+                const t = newStopName.toLowerCase().trim(); 
+                if (!t) return [];
+                return clientDB.filter(c => (c.name || "").toLowerCase().includes(t)).slice(0, 5); 
+            }, [newStopName, clientDB]);
+            
+            const filteredClientDBList = useMemo(() => {
+                const t = clientFormName.toLowerCase().trim();
+                if (!t) return clientDB;
+                return clientDB.filter(c => (c.name || "").toLowerCase().includes(t));
+            }, [clientFormName, clientDB]);
+
             const recalculateRoute = async (dName, stops) => { 
                 setRecalculating(p => ({...p, [dName]: true})); 
                 try { 
@@ -535,19 +664,23 @@
 
             if (systemError) return <ConfigErrorScreen errorDetails={systemError} />;
             if (authLoading) return <div className="min-h-screen flex items-center justify-center text-ess-blue font-bold text-lg">Loading...</div>;
-            
-            // --- FIX APPLIED HERE: Replaced raw button with <LoginScreen /> ---
             if (!user) return <LoginScreen />;
 
             return (
                 <div className="min-h-screen text-slate-800 bg-white pb-24">
-                    {/* PRINT COMPONENT */}
+                    {/* INDIVIDUAL PRINT COMPONENT */}
                     {printData && showPrintModal && (
                         <PrintableSheet 
                             routeData={printData.stops} 
                             driverName={printData.driverName} 
-                            vehicle={selectedVehicleForPrint} 
+                            vehicle={selectedVehicleForPrint}
+                            config={companyConfig}
                         />
+                    )}
+
+                    {/* GLOBAL PRINT COMPONENT */}
+                    {showGlobalPrint && routes && (
+                        <GlobalManifest routes={routes} config={companyConfig} />
                     )}
 
                     {/* NORMAL UI */}
@@ -558,10 +691,10 @@
                                 <div className="hidden md:block pl-4 border-l border-slate-200"><h1 className="text-xl font-bold text-ess-blue leading-none">Route Planner</h1></div>
                             </div>
                             <div className="flex items-center gap-3">
-                                {/* NAVIGATION BUTTONS */}
                                 <button onClick={() => setView('input')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'input' || view === 'results' || view === 'global_map' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
                                 <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
                                 <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Van or Truck ID</button>
+                                <button onClick={() => setView('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Settings</button>
                                 
                                 <button onClick={handleLogout} className="text-sm font-medium text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 px-3 py-2 rounded-lg flex items-center gap-2 ml-2"><Icon name="log-out" className="h-4 w-4" /> Exit</button>
                             </div>
@@ -569,12 +702,37 @@
                     </header>
 
                     <main className="max-w-7xl mx-auto p-6 no-print">
-                        {/* VIEW: CLIENTS */}
-                        {view === 'clients' && (
-                            <div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Cloud Database</h2></div><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{clientDB.length} Clients</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex flex-col md:flex-row gap-4"><input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Client Name" value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} /><div className="flex-[2]"><GoogleAddressInput value={clientFormAddress} onChange={(e) => setClientFormAddress(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div><button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button></div></div><div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{clientDB.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{c.name}</td><td className="p-4 text-sm text-slate-600">{c.address}</td><td className="p-4 text-right"><div className="flex justify-end gap-2"><button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1"><Icon name="pencil" className="h-4 w-4"/></button><button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4"/></button></div></td></tr>))}</tbody></table></div></div></div>
+                        {/* VIEW: SETTINGS */}
+                        {view === 'settings' && (
+                            <div className="max-w-2xl mx-auto animate-fade-in">
+                                <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden p-6 space-y-8">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Manifest Header Info (Syncs Across Devices)</h2>
+                                        <div className="space-y-4">
+                                            <div><label className="block text-sm font-bold text-slate-500 mb-1">Company Name</label><input className="w-full p-2 border rounded" value={companyConfig.companyName} onChange={e => setCompanyConfig({...companyConfig, companyName: e.target.value})} /></div>
+                                            <div><label className="block text-sm font-bold text-slate-500 mb-1">Phone</label><input className="w-full p-2 border rounded" value={companyConfig.phone} onChange={e => setCompanyConfig({...companyConfig, phone: e.target.value})} /></div>
+                                            <div><label className="block text-sm font-bold text-slate-500 mb-1">Footer Address</label><input className="w-full p-2 border rounded" value={companyConfig.address} onChange={e => setCompanyConfig({...companyConfig, address: e.target.value})} /></div>
+                                            <button onClick={saveSettings} className="bg-slate-800 text-white px-4 py-2 rounded font-bold">Save Settings to Cloud</button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Account Security</h2>
+                                        <div className="space-y-4">
+                                            <p className="text-sm text-slate-600">Click below to receive an email to reset your password for <strong>{user.email}</strong>.</p>
+                                            <button onClick={handleChangePassword} className="bg-ess-blue text-white px-4 py-2 rounded font-bold">Send Password Reset Email</button>
+                                            {settingsMsg && <p className="text-sm text-green-600 font-bold">{settingsMsg}</p>}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         )}
 
-                        {/* VIEW: VEHICLES (NEW DEDICATED VIEW) */}
+                        {/* VIEW: CLIENTS */}
+                        {view === 'clients' && (
+                            <div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Cloud Database</h2></div><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{clientDB.length} Clients</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex flex-col md:flex-row gap-4"><input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} /><div className="flex-[2]"><GoogleAddressInput value={clientFormAddress} onChange={(e) => setClientFormAddress(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div><button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button></div></div><div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{c.name}</td><td className="p-4 text-sm text-slate-600">{c.address}</td><td className="p-4 text-right"><div className="flex justify-end gap-2"><button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1"><Icon name="pencil" className="h-4 w-4"/></button><button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4"/></button></div></td></tr>))}</tbody></table></div></div></div>
+                        )}
+
+                        {/* VIEW: VEHICLES */}
                         {view === 'vehicles' && (
                             <div className="max-w-2xl mx-auto animate-fade-in">
                                 <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden">
@@ -649,7 +807,7 @@
 
                                 {/* RIGHT COLUMN: SETTINGS & DRIVERS ONLY (NO VEHICLES) */}
                                 <div className="lg:col-span-4 space-y-6">
-                                    <div className="bg-ess-light px-4 py-2 rounded-lg border border-blue-100 flex items-center gap-2"><Icon name="map-pin" className="h-5 w-5 text-ess-blue shrink-0" /><div className="text-xs w-full"><span className="block text-slate-400 font-semibold uppercase">Base (Start/End)</span><GoogleAddressInput value={baseAddress} onChange={(e) => setBaseAddress(e.target.value)} className="bg-transparent font-bold text-slate-700 outline-none w-full" placeholder="Warehouse" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div></div>
+                                    <div className="bg-ess-light px-4 py-2 rounded-lg border border-blue-100 flex items-center gap-2"><Icon name="map-pin" className="h-5 w-5 text-ess-blue shrink-0" /><div className="text-xs w-full"><span className="block text-slate-400 font-semibold uppercase">Base (Start/End)</span><GoogleAddressInput value={baseAddress} onChange={handleBaseAddressChange} className="bg-transparent font-bold text-slate-700 outline-none w-full" placeholder="Warehouse" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div></div>
                                     
                                     {/* DRIVERS */}
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow">
@@ -657,8 +815,6 @@
                                         <div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div>
                                         <div className="space-y-3 max-h-[200px] overflow-y-auto pr-1">{drivers.map(driver => (<div key={driver.id} className="group relative"><label className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}><div className="flex items-center gap-3"><div className={`w-2 h-2 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div><span className={`font-medium ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span></div><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-5 h-5 accent-ess-green" /></label><button onClick={(e) => { e.preventDefault(); deleteDriver(driver.id); }} className="absolute -right-2 -top-2 bg-white text-slate-400 hover:text-red-500 border border-slate-200 rounded-full p-1 opacity-0 group-hover:opacity-100 shadow-sm"><Icon name="x" className="h-3 w-3" /></button></div>))}</div>
                                     </div>
-
-                                    {/* VEHICLES SECTION REMOVED HERE */}
 
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">
                                         {error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}
@@ -676,6 +832,10 @@
                                     <div className="flex gap-2">
                                         <button onClick={handleRestore} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="rotate-ccw" className="h-3 w-3" /> Reset</button>
                                         <button onClick={() => setView('global_map')} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="map" className="h-3 w-3" /> Map</button>
+                                        
+                                        {/* GLOBAL PRINT BUTTON */}
+                                        <button onClick={handleGlobalPrint} className="text-xs font-bold text-white bg-slate-800 hover:bg-black px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="printer" className="h-3 w-3" /> Print All Routes</button>
+                                        
                                         <button onClick={handleRecalculateAll} disabled={isRecalculatingAll} className="text-xs font-bold text-white bg-ess-blue hover:bg-sky-700 px-4 py-2 rounded-lg flex items-center gap-2">{isRecalculatingAll ? <div className="loader w-3 h-3"></div> : <><Icon name="refresh-cw" className="h-3 w-3" /> Update</>}</button>
                                     </div>
                                 </div>
@@ -800,7 +960,7 @@
                                         <p>Stops: {printData.stops.length}</p>
                                     </div>
                                 </div>
-                                <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+                                <div className="p-4 border-t border-slate-100 bg-white flex gap-3">
                                     <button onClick={() => setShowPrintModal(false)} className="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
                                     <button onClick={handlePrint} className="flex-1 py-3 bg-slate-800 text-white rounded-lg font-bold hover:bg-black flex items-center justify-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print Now</button>
                                 </div>
