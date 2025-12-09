@@ -72,10 +72,27 @@
         .card-shadow { box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.05); }
         .animate-fade-in { animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        .pac-container { z-index: 99999 !important; border-radius: 8px; margin-top: 4px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; font-family: 'Inter', sans-serif; }
-        .pac-item { padding: 10px 12px; cursor: pointer; font-size: 14px; }
+        
+        /* GOOGLE MAPS AUTOCOMPLETE FIXES */
+        .pac-container { 
+            z-index: 99999 !important; 
+            border-radius: 8px; 
+            margin-top: 4px; 
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); 
+            border: 1px solid #e2e8f0; 
+            font-family: 'Inter', sans-serif;
+            max-width: 90vw !important; 
+            white-space: normal !important;
+        }
+        .pac-item { 
+            padding: 10px 12px; 
+            cursor: pointer; 
+            font-size: 14px; 
+            white-space: normal !important; 
+        }
         .pac-item:hover { background-color: #f0f9ff; }
         .pac-item-query { font-size: 14px; color: #1e293b; font-weight: 600; }
+        
         .draggable-source { opacity: 0.4; border: 2px dashed #cbd5e1; background: #f1f5f9; }
         .drop-target { background-color: #eff6ff; border: 2px dashed #1b6e9b; }
         #global-map-container { height: 70vh; width: 100%; border-radius: 12px; }
@@ -170,7 +187,7 @@
             return <span dangerouslySetInnerHTML={{ __html: svgHtml }} style={{ display: 'contents' }} />;
         };
 
-        const GoogleAddressInput = ({ value, onChange, placeholder, className, disabled, isLoaded }) => {
+        const GoogleAddressInput = ({ value, onChange, placeholder, className, disabled, isLoaded, onKeyDown }) => {
             const inputRef = useRef(null);
             const autoCompleteRef = useRef(null);
             useEffect(() => {
@@ -186,7 +203,7 @@
                 };
                 attemptInitialization();
             }, [isLoaded]);
-            return <input ref={inputRef} type="text" value={value} onChange={onChange} className={className} placeholder={placeholder} disabled={disabled} autoComplete="off" />;
+            return <input ref={inputRef} type="text" value={value} onChange={onChange} onKeyDown={onKeyDown} className={className} placeholder={placeholder} disabled={disabled} autoComplete="off" />;
         };
 
         const GlobalMapView = ({ routes, baseAddress }) => {
@@ -346,24 +363,22 @@
             
             // CONFIG PERSISTENCE
             const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, EE. UU.');
-            const [dwellTime, setDwellTime] = useState(6); // HARDCODED 6 MINUTES
+            const [dwellTime, setDwellTime] = useState(6);
             const [companyConfig, setCompanyConfig] = useState({
                 companyName: "ECONOMY SIGN SUPPLY ORLANDO",
                 phone: "407-901-0900",
                 address: "8350 PARKLINE BLVD, ORLANDO, FLORIDA 32809"
             });
-            const [savedPin, setSavedPin] = useState('0000'); // Default PIN
+            const [savedPin, setSavedPin] = useState('0000'); 
 
             const [currentStops, setCurrentStops] = useState([]);
-            
-            // Input States
             const [newStopName, setNewStopName] = useState('');
             const [newStopAddress, setNewStopAddress] = useState('');
             const [newDriverName, setNewDriverName] = useState('');
             const [newVehicleName, setNewVehicleName] = useState(''); 
             const [showSuggestions, setShowSuggestions] = useState(false);
             
-            // Modal States
+            // Modals
             const [showAddDetailsModal, setShowAddDetailsModal] = useState(false); 
             const [tempStopData, setTempStopData] = useState(null);
             const [tempInvoices, setTempInvoices] = useState('');
@@ -405,7 +420,15 @@
             const [swappingDriver, setSwappingDriver] = useState(null);
             const [isRecalculatingAll, setIsRecalculatingAll] = useState(false);
 
-            // --- 1. DEFINED EARLY TO FIX ERROR ---
+            // --- KEYBOARD HANDLER FOR ENTER ---
+            const handleEnter = (e, callback) => {
+                if (e.key === 'Enter') {
+                    // Prevent default to avoid form submission if wrapped in form
+                    // e.preventDefault(); 
+                    callback();
+                }
+            };
+
             const handleLogout = () => {
                 if(window.fbSignOut && window.fbAuth) {
                     window.fbSignOut(window.fbAuth);
@@ -416,7 +439,7 @@
             
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             
-            // Helpers for User-Isolated Data
+            // Helpers
             const getUserCollection = (collName) => user ? window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, collName) : null;
             const getUserDocRef = (collName, docId) => user ? window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, collName, docId) : null;
 
@@ -429,10 +452,7 @@
                         if (data.firebaseConfig && data.firebaseConfig.apiKey) {
                             const tryInitFb = () => { if (window.initializeFirebaseGlobally) { if (window.initializeFirebaseGlobally(data.firebaseConfig)) setDbReady(true); } else setTimeout(tryInitFb, 50); };
                             tryInitFb();
-                        } else { 
-                            setSystemError("Missing Firebase Config.");
-                            setAuthLoading(false); 
-                        }
+                        } else { setSystemError("Missing Firebase Config."); setAuthLoading(false); }
                         if (data.googleApiKey) setGoogleApiKey(data.googleApiKey);
                     } catch (err) { setAuthLoading(false); }
                 };
@@ -450,18 +470,16 @@
                 initAuth();
             }, []);
 
-            // --- DATA SYNC (ISOLATED PER USER) ---
+            // --- DATA SYNC ---
             useEffect(() => {
                 if (!user || !window.fbDb || !dbReady) return;
                 
-                // Sync Main Collections (NOW PRIVATE)
                 window.fbOnSnapshot(window.fbQuery(getUserCollection("clients"), window.fbOrderBy("name")), (s) => setClientDB(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                 window.fbOnSnapshot(window.fbQuery(getUserCollection("drivers"), window.fbOrderBy("name")), (s) => setDrivers(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                 window.fbOnSnapshot(window.fbQuery(getUserCollection("draft_stops"), window.fbOrderBy("createdAt")), (s) => setCurrentStops(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                 window.fbOnSnapshot(window.fbQuery(getUserCollection("vehicles"), window.fbOrderBy("name")), (s) => setVehicles(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
 
-                // SYNC USER SETTINGS
-                const userSettingsRef = getUserDocRef("settings", "config"); 
+                const userSettingsRef = getUserDocRef("settings", "config");
                 window.fbOnSnapshot(userSettingsRef, (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
@@ -505,17 +523,10 @@
 
             const saveSettings = async () => {
                 if (window.fbDb && user) {
-                    const updateData = { 
-                        companyName: companyConfig.companyName,
-                        companyPhone: companyConfig.phone,
-                        companyAddress: companyConfig.address
-                    };
-                    if(newPin && newPin.length >= 4) {
-                        updateData.adminPin = newPin;
-                    }
+                    const updateData = { companyName: companyConfig.companyName, companyPhone: companyConfig.phone, companyAddress: companyConfig.address };
+                    if(newPin && newPin.length >= 4) updateData.adminPin = newPin;
                     await window.fbSetDoc(getUserDocRef("settings", "config"), updateData, { merge: true });
-                    alert("Settings saved!");
-                    setNewPin('');
+                    alert("Settings saved!"); setNewPin('');
                 }
             };
 
@@ -523,114 +534,47 @@
                 try {
                     await window.fbSendPasswordResetEmail(window.fbAuth, user.email);
                     setSettingsMsg("Reset email sent!");
-                } catch(e) {
-                    setSettingsMsg("Error: " + e.message);
-                }
+                } catch(e) { setSettingsMsg("Error: " + e.message); }
             };
 
             // --- PIN NAVIGATION LOGIC ---
             const handleNavClick = (targetView) => {
-                if (targetView === 'input' || targetView === 'results') {
-                    setView('input'); 
-                    return;
-                }
-                setPendingView(targetView);
-                setPinInput('');
-                setShowPinModal(true);
+                if (targetView === 'input' || targetView === 'results') { setView('input'); return; }
+                setPendingView(targetView); setPinInput(''); setShowPinModal(true);
             };
-
             const submitPin = () => {
-                if (pinInput === savedPin) {
-                    setShowPinModal(false);
-                    setView(pendingView);
-                } else {
-                    alert("Incorrect PIN");
-                    setPinInput('');
-                }
+                if (pinInput === savedPin) { setShowPinModal(false); setView(pendingView); } else { alert("Incorrect PIN"); setPinInput(''); }
             };
 
-            // --- NEW STOP FLOW (INPUT SCREEN) ---
+            // --- NEW STOP FLOW ---
             const initiateAddStop = () => {
                 if (!newStopAddress) return;
-                if (currentStops.some(s => s.address === newStopAddress)) {
-                    if (!confirm("This address is already in today's route! Add anyway?")) return;
-                }
-                setTempStopData({ name: newStopName || 'Client', address: newStopAddress });
-                setTempInvoices('');
-                setTempPieces('');
-                setShowAddDetailsModal(true);
+                if (currentStops.some(s => s.address === newStopAddress)) if (!confirm("Duplicate address. Continue?")) return;
+                setTempStopData({ name: newStopName || 'Client', address: newStopAddress }); setTempInvoices(''); setTempPieces(''); setShowAddDetailsModal(true);
             };
-
             const confirmAddStop = async () => {
-                // If this is for a manual stop on the Results page
                 if (targetDriverForManual && routes && routes[targetDriverForManual]) {
-                     const newStop = {
-                        nombre: tempStopData.name,
-                        direccion: tempStopData.address,
-                        invoices: tempInvoices,
-                        pieces: tempPieces,
-                        // Note: Backend will fill clean_address and coords during recalc
-                     };
-                     
-                     // Optimistic update locally
+                     const newStop = { nombre: tempStopData.name, direccion: tempStopData.address, invoices: tempInvoices, pieces: tempPieces };
                      const newRoutes = JSON.parse(JSON.stringify(routes));
                      newRoutes[targetDriverForManual].paradas.push(newStop);
                      setRoutes(newRoutes);
-                     
-                     // Trigger backend recalc
                      recalculateRoute(targetDriverForManual, newRoutes[targetDriverForManual].paradas);
-                     
-                     // Reset UI
-                     setShowManualStopModal(false);
-                     setTargetDriverForManual(null);
-                } 
-                // Else normal flow (Input page)
-                else if (window.fbDb && tempStopData) {
-                    await window.fbAddDoc(getUserCollection("draft_stops"), {
-                        name: tempStopData.name, 
-                        address: tempStopData.address,
-                        invoices: tempInvoices, 
-                        pieces: tempPieces,
-                        createdAt: Date.now()
-                    });
-                    const exists = clientDB.some(c => c.address.toLowerCase() === tempStopData.address.toLowerCase());
-                    if (!exists) {
-                        window.fbAddDoc(getUserCollection("clients"), { name: tempStopData.name, address: tempStopData.address }); 
-                    }
+                     setShowManualStopModal(false); setTargetDriverForManual(null);
+                } else if (window.fbDb && tempStopData) {
+                    await window.fbAddDoc(getUserCollection("draft_stops"), { name: tempStopData.name, address: tempStopData.address, invoices: tempInvoices, pieces: tempPieces, createdAt: Date.now() });
+                    if (!clientDB.some(c => c.address.toLowerCase() === tempStopData.address.toLowerCase())) window.fbAddDoc(getUserCollection("clients"), { name: tempStopData.name, address: tempStopData.address });
                 }
-                setNewStopName(''); setNewStopAddress(''); setShowSuggestions(false); setShowAddDetailsModal(false); setTempStopData(null);
-                setTempInvoices(''); setTempPieces('');
+                setNewStopName(''); setNewStopAddress(''); setShowSuggestions(false); setShowAddDetailsModal(false); setTempStopData(null); setTempInvoices(''); setTempPieces('');
             };
-
             const removeStop = async (id) => { if(window.fbDb) await window.fbDeleteDoc(getUserDocRef("draft_stops", id)); };
-            const clearDraftRoute = async () => {
-                if(confirm("Clear list?")) {
-                    if(window.fbDb && window.fbGetDocs) {
-                        const q = window.fbQuery(getUserCollection("draft_stops"));
-                        const snapshot = await window.fbGetDocs(q);
-                        await Promise.all(snapshot.docs.map(doc => window.fbDeleteDoc(doc.ref)));
-                    }
-                }
-            };
+            const clearDraftRoute = async () => { if(confirm("Clear list?")) { const q = window.fbQuery(getUserCollection("draft_stops")); const snapshot = await window.fbGetDocs(q); await Promise.all(snapshot.docs.map(doc => window.fbDeleteDoc(doc.ref))); } };
 
-            const openPrintModal = (driverName, stops) => {
-                setPrintData({ driverName, stops });
-                setSelectedVehicleForPrint(vehicles.length > 0 ? vehicles[0].name : '');
-                setShowPrintModal(true);
-            };
+            // --- PRINT ---
+            const openPrintModal = (driverName, stops) => { setPrintData({ driverName, stops }); setSelectedVehicleForPrint(vehicles.length > 0 ? vehicles[0].name : ''); setShowPrintModal(true); };
+            const handleGlobalPrint = () => { setShowGlobalPrint(true); setTimeout(() => { window.print(); setShowGlobalPrint(false); }, 500); };
+            const handlePrint = () => window.print();
 
-            const handleGlobalPrint = () => {
-                setShowGlobalPrint(true);
-                setTimeout(() => {
-                    window.print();
-                    setShowGlobalPrint(false);
-                }, 500);
-            };
-
-            const handlePrint = () => {
-                window.print();
-            };
-
+            // --- OPTIMIZATION ---
             const handleOptimize = async () => { 
                 const activeDrivers = drivers.filter(d => d.active); 
                 if (currentStops.length === 0) return setError('No stops.'); 
@@ -639,109 +583,31 @@
                     const res = await fetch('/optimizar', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ direcciones: currentStops, num_vans: activeDrivers.length, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); 
                     const d = await res.json(); 
                     if (!res.ok) throw new Error(d.error || 'Server error.');
-                    const assigned = {}; 
-                    Object.keys(d).forEach((k, i) => assigned[activeDrivers[i] ? activeDrivers[i].name : k] = d[k]); 
-                    setRoutes(assigned); 
-                    setOriginalRoutes(JSON.parse(JSON.stringify(assigned))); 
-                    setView('results'); 
+                    const assigned = {}; Object.keys(d).forEach((k, i) => assigned[activeDrivers[i] ? activeDrivers[i].name : k] = d[k]); 
+                    setRoutes(assigned); setOriginalRoutes(JSON.parse(JSON.stringify(assigned))); setView('results'); 
                 } catch (e) { setError(e.message); } finally { setLoading(false); } 
             };
-
             const selectClient = (c) => { setNewStopName(c.name); setNewStopAddress(c.address); setShowSuggestions(false); };
-            const getClientNameFromAddress = (address) => {
-                const fromDraft = currentStops.find(s => s.address === address);
-                if (fromDraft) return fromDraft.name;
-                const fromDB = clientDB.find(c => c.address === address);
-                return fromDB ? fromDB.name : "Client";
-            };
+            const getClientNameFromAddress = (address) => { const fromDraft = currentStops.find(s => s.address === address); if (fromDraft) return fromDraft.name; const fromDB = clientDB.find(c => c.address === address); return fromDB ? fromDB.name : "Client"; };
             const getWhatsappLink = (l) => `https://wa.me/?text=${encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`)}`;
-            
-            const filteredClients = useMemo(() => { 
-                const t = newStopName.toLowerCase().trim(); 
-                if (!t) return [];
-                return clientDB.filter(c => (c.name || "").toLowerCase().includes(t)).slice(0, 5); 
-            }, [newStopName, clientDB]);
-            
-            const filteredClientDBList = useMemo(() => {
-                const t = clientFormName.toLowerCase().trim();
-                if (!t) return clientDB;
-                return clientDB.filter(c => (c.name || "").toLowerCase().includes(t));
-            }, [clientFormName, clientDB]);
-
-            const recalculateRoute = async (dName, stops) => { 
-                setRecalculating(p => ({...p, [dName]: true})); 
-                try { 
-                    const res = await fetch('/recalcular', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); 
-                    const d = await res.json(); 
-                    setRoutes(p => ({...p, [dName]: {...p[dName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas || stops}})); 
-                } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [dName]: false})); } 
-            };
+            const filteredClients = useMemo(() => { const t = newStopName.toLowerCase().trim(); if (!t) return []; return clientDB.filter(c => (c.name || "").toLowerCase().includes(t)).slice(0, 5); }, [newStopName, clientDB]);
+            const filteredClientDBList = useMemo(() => { const t = clientFormName.toLowerCase().trim(); if (!t) return clientDB; return clientDB.filter(c => (c.name || "").toLowerCase().includes(t)); }, [clientFormName, clientDB]);
+            const recalculateRoute = async (dName, stops) => { setRecalculating(p => ({...p, [dName]: true})); try { const res = await fetch('/recalcular', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); setRoutes(p => ({...p, [dName]: {...p[dName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas || stops}})); } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [dName]: false})); } };
             const handleRecalculateAll = async () => { if (!routes) return; setIsRecalculatingAll(true); await Promise.all(Object.keys(routes).map(d => recalculateRoute(d, routes[d].paradas))); setIsRecalculatingAll(false); };
             const handleRestore = () => { if (confirm("Restore original routes?")) setRoutes(JSON.parse(JSON.stringify(originalRoutes))); };
-            const handleOptimizeRemaining = async (driverName) => {
-                const currentRoute = routes[driverName].paradas;
-                setRecalculating(p => ({...p, [driverName]: true})); 
-                try {
-                    const res = await fetch('/optimizar_restantes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: currentRoute, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) });
-                    const d = await res.json();
-                    if(!res.ok) throw new Error(d.error);
-                    setRoutes(p => ({...p, [driverName]: {...p[driverName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas}}));
-                } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [driverName]: false})); }
-            };
+            const handleOptimizeRemaining = async (driverName) => { const currentRoute = routes[driverName].paradas; setRecalculating(p => ({...p, [driverName]: true})); try { const res = await fetch('/optimizar_restantes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: currentRoute, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); if(!res.ok) throw new Error(d.error); setRoutes(p => ({...p, [driverName]: {...p[driverName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas}})); } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [driverName]: false})); } };
             const reverseRoute = (driverName) => { const newRoutes = JSON.parse(JSON.stringify(routes)); newRoutes[driverName].paradas.reverse(); setRoutes(newRoutes); recalculateRoute(driverName, newRoutes[driverName].paradas); };
-            const handleSwapDriver = (driverA, driverB) => {
-                if (driverA === driverB) { setSwappingDriver(null); return; }
-                const newRoutes = { ...routes }; const tempRoute = newRoutes[driverA]; newRoutes[driverA] = newRoutes[driverB]; newRoutes[driverB] = tempRoute;
-                setRoutes(newRoutes); setSwappingDriver(null);
-            };
-            
-            // --- MANUAL ROUTE/STOP ACTIONS ---
-            const handleAddRoute = () => {
-                setShowAddRouteModal(true);
-            };
-            
-            const confirmAddRoute = (driverToAdd) => {
-                if (!routes) return;
-                const newRoutes = { ...routes };
-                // Initialize empty route
-                newRoutes[driverToAdd] = { paradas: [], duracion_estimada: 0, link: "" };
-                setRoutes(newRoutes);
-                setShowAddRouteModal(false);
-            };
-            
-            const initiateManualStop = (driverName) => {
-                setTargetDriverForManual(driverName);
-                setNewStopName(''); setNewStopAddress(''); 
-                setTempStopData(null); setTempInvoices(''); setTempPieces('');
-                setShowManualStopModal(true); // Open specific modal or reuse standard one
-                // Reuse showAddDetailsModal flow logic partially
-            };
-            
-            // --- DRAG & DROP LOGIC ---
-            const handleDragStart = (e, driverName, stopIndex) => {
-                if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.closest('button')) { e.preventDefault(); return; }
-                setDraggedItem({ driverName, stopIndex }); e.dataTransfer.effectAllowed = 'move';
-                setTimeout(() => e.target.classList.add('draggable-source'), 0);
-            };
+            const handleSwapDriver = (driverA, driverB) => { if (driverA === driverB) { setSwappingDriver(null); return; } const newRoutes = { ...routes }; const tempRoute = newRoutes[driverA]; newRoutes[driverA] = newRoutes[driverB]; newRoutes[driverB] = tempRoute; setRoutes(newRoutes); setSwappingDriver(null); };
+            const handleAddRoute = () => setShowAddRouteModal(true);
+            const confirmAddRoute = (driverToAdd) => { if (!routes) return; const newRoutes = { ...routes }; newRoutes[driverToAdd] = { paradas: [], duracion_estimada: 0, link: "" }; setRoutes(newRoutes); setShowAddRouteModal(false); };
+            const initiateManualStop = (driverName) => { setTargetDriverForManual(driverName); setNewStopName(''); setNewStopAddress(''); setTempStopData(null); setTempInvoices(''); setTempPieces(''); setShowManualStopModal(true); };
+            const handleDragStart = (e, driverName, stopIndex) => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.closest('button')) { e.preventDefault(); return; } setDraggedItem({ driverName, stopIndex }); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => e.target.classList.add('draggable-source'), 0); };
             const handleDragEnd = (e) => { e.target.classList.remove('draggable-source'); setDraggedItem(null); setDragOverDriver(null); };
             const handleDragOverContainer = (e, driverName) => { e.preventDefault(); setDragOverDriver(driverName); };
-            const handleDrop = (e, targetDriverName, targetIndex = null) => {
-                e.preventDefault(); setDragOverDriver(null); if (!draggedItem) return;
-                const sourceDriver = draggedItem.driverName; const sourceIndex = draggedItem.stopIndex; const newRoutes = JSON.parse(JSON.stringify(routes));
-                const [movedStop] = newRoutes[sourceDriver].paradas.splice(sourceIndex, 1);
-                let destinationStops = newRoutes[targetDriverName].paradas;
-                if (targetIndex !== null) { let adjustedTargetIndex = targetIndex; if (sourceDriver === targetDriverName && sourceIndex < targetIndex) { adjustedTargetIndex = targetIndex - 0; } destinationStops.splice(adjustedTargetIndex, 0, movedStop); } else { destinationStops.push(movedStop); }
-                setRoutes(newRoutes); recalculateRoute(targetDriverName, newRoutes[targetDriverName].paradas);
-                if (sourceDriver !== targetDriverName) recalculateRoute(sourceDriver, newRoutes[sourceDriver].paradas);
-            };
-
+            const handleDrop = (e, targetDriverName, targetIndex = null) => { e.preventDefault(); setDragOverDriver(null); if (!draggedItem) return; const sourceDriver = draggedItem.driverName; const sourceIndex = draggedItem.stopIndex; const newRoutes = JSON.parse(JSON.stringify(routes)); const [movedStop] = newRoutes[sourceDriver].paradas.splice(sourceIndex, 1); let destinationStops = newRoutes[targetDriverName].paradas; if (targetIndex !== null) { let adjustedTargetIndex = targetIndex; if (sourceDriver === targetDriverName && sourceIndex < targetIndex) { adjustedTargetIndex = targetIndex - 0; } destinationStops.splice(adjustedTargetIndex, 0, movedStop); } else { destinationStops.push(movedStop); } setRoutes(newRoutes); recalculateRoute(targetDriverName, newRoutes[targetDriverName].paradas); if (sourceDriver !== targetDriverName) recalculateRoute(sourceDriver, newRoutes[sourceDriver].paradas); };
             const toggleStopSelection = (driverName, index) => { setSelectedStops(prev => { const exists = prev.find(p => p.driver === driverName && p.index === index); if (exists) return prev.filter(p => !(p.driver === driverName && p.index === index)); return [...prev, { driver: driverName, index }]; }); };
             const moveStop = (driverName, index, direction) => { const newRoutes = JSON.parse(JSON.stringify(routes)); const stops = newRoutes[driverName].paradas; const newIndex = index + direction; if (newIndex < 0 || newIndex >= stops.length) return; [stops[index], stops[newIndex]] = [stops[newIndex], stops[index]]; setRoutes(newRoutes); recalculateRoute(driverName, stops); };
-            const transferSelectedStops = (targetDriver) => {
-                if (selectedStops.length === 0) return; const newRoutes = JSON.parse(JSON.stringify(routes)); const sortedSelection = [...selectedStops].sort((a, b) => b.index - a.index);
-                sortedSelection.forEach(sel => { const [removed] = newRoutes[sel.driver].paradas.splice(sel.index, 1); newRoutes[targetDriver].paradas.push(removed); });
-                setRoutes(newRoutes); setSelectedStops([]); const affectedDrivers = new Set(sortedSelection.map(s => s.driver)); affectedDrivers.add(targetDriver); affectedDrivers.forEach(d => recalculateRoute(d, newRoutes[d].paradas));
-            };
+            const transferSelectedStops = (targetDriver) => { if (selectedStops.length === 0) return; const newRoutes = JSON.parse(JSON.stringify(routes)); const sortedSelection = [...selectedStops].sort((a, b) => b.index - a.index); sortedSelection.forEach(sel => { const [removed] = newRoutes[sel.driver].paradas.splice(sel.index, 1); newRoutes[targetDriver].paradas.push(removed); }); setRoutes(newRoutes); setSelectedStops([]); const affectedDrivers = new Set(sortedSelection.map(s => s.driver)); affectedDrivers.add(targetDriver); affectedDrivers.forEach(d => recalculateRoute(d, newRoutes[d].paradas)); };
 
             if (systemError) return <ConfigErrorScreen errorDetails={systemError} />;
             if (authLoading) return <div className="min-h-screen flex items-center justify-center text-ess-blue font-bold text-lg">Loading...</div>;
@@ -763,16 +629,16 @@
                                 
                                 {showManualStopModal && (
                                     <div className="mb-4 space-y-4">
-                                         <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client Name</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Name" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); setTempStopData(prev => ({...prev, name: e.target.value})); }} />
+                                         <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client Name</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Name" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); setTempStopData(prev => ({...prev, name: e.target.value})); }} onKeyDown={(e) => handleEnter(e, () => {})} />
                                          {showSuggestions && filteredClients.length > 0 && <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50">{filteredClients.map((c, i) => (<div key={i} onClick={() => { selectClient(c); setTempStopData({name: c.name, address: c.address}); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm font-bold">{c.name}</div>))}</div>}
                                          </div>
-                                         <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label><GoogleAddressInput value={newStopAddress} onChange={(e) => { setNewStopAddress(e.target.value); setTempStopData(prev => ({...prev, address: e.target.value})); }} className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div>
+                                         <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label><GoogleAddressInput value={newStopAddress} onChange={(e) => { setNewStopAddress(e.target.value); setTempStopData(prev => ({...prev, address: e.target.value})); }} onKeyDown={(e) => handleEnter(e, () => {})} className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div>
                                     </div>
                                 )}
 
                                 <div className="space-y-4">
-                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices (Optional)</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} autoFocus /></div>
-                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pieces Shipped</label><input type="number" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="0" value={tempPieces} onChange={e => setTempPieces(e.target.value)} /></div>
+                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices (Optional)</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} onKeyDown={(e) => handleEnter(e, confirmAddStop)} autoFocus /></div>
+                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pieces Shipped</label><input type="number" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="0" value={tempPieces} onChange={e => setTempPieces(e.target.value)} onKeyDown={(e) => handleEnter(e, confirmAddStop)} /></div>
                                 </div>
                                 <div className="mt-6 flex gap-3">
                                     <button onClick={() => { setShowAddDetailsModal(false); setShowManualStopModal(false); setTargetDriverForManual(null); }} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
@@ -789,12 +655,13 @@
                                 <h3 className="font-bold text-lg mb-4 text-slate-800">Add New Route</h3>
                                 <p className="text-sm text-slate-500 mb-4">Select a driver who doesn't have a route yet.</p>
                                 <div className="space-y-2 max-h-40 overflow-y-auto mb-4 border rounded p-2">
-                                    {drivers.filter(d => d.active && !routes[d.name]).map(d => (
+                                    {/* FIX 1: Show ALL drivers not in routes, ignore active status for manual selection */}
+                                    {drivers.filter(d => !routes[d.name]).map(d => (
                                         <button key={d.id} onClick={() => confirmAddRoute(d.name)} className="w-full text-left p-2 hover:bg-blue-50 rounded font-bold text-slate-700 flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full bg-green-500"></div> {d.name}
+                                            <div className={`w-2 h-2 rounded-full ${d.active ? 'bg-green-500' : 'bg-gray-400'}`}></div> {d.name}
                                         </button>
                                     ))}
-                                    {drivers.filter(d => d.active && !routes[d.name]).length === 0 && <p className="text-sm text-slate-400">All active drivers have routes.</p>}
+                                    {drivers.filter(d => !routes[d.name]).length === 0 && <p className="text-sm text-slate-400">All drivers have routes.</p>}
                                 </div>
                                 <div className="flex justify-end"><button onClick={() => setShowAddRouteModal(false)} className="text-slate-500 font-bold px-4">Cancel</button></div>
                             </div>
@@ -805,7 +672,7 @@
                         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm text-center">
                                 <h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center justify-center gap-2"><Icon name="lock" className="h-5 w-5" /> Enter Security PIN</h3>
-                                <input type="password" className="w-full p-3 border border-slate-300 rounded-lg outline-none text-center text-2xl tracking-widest" maxLength="6" value={pinInput} onChange={e => setPinInput(e.target.value)} autoFocus />
+                                <input type="password" className="w-full p-3 border border-slate-300 rounded-lg outline-none text-center text-2xl tracking-widest" maxLength="6" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={(e) => handleEnter(e, submitPin)} autoFocus />
                                 <div className="mt-6 flex gap-3">
                                     <button onClick={() => setShowPinModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
                                     <button onClick={submitPin} className="flex-1 py-3 bg-slate-800 text-white rounded-lg font-bold">Unlock</button>
@@ -895,7 +762,7 @@
                         )}
 
                         {view === 'clients' && (
-                            <div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients Database</h2></div><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{clientDB.length} Clients</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex flex-col md:flex-row gap-4"><input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} /><div className="flex-[2]"><GoogleAddressInput value={clientFormAddress} onChange={(e) => setClientFormAddress(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div><button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button></div></div><div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{c.name}</td><td className="p-4 text-sm text-slate-600">{c.address}</td><td className="p-4 text-right"><div className="flex justify-end gap-2"><button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1"><Icon name="pencil" className="h-4 w-4"/></button><button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4"/></button></div></td></tr>))}</tbody></table></div></div></div>
+                            <div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients Database</h2></div><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{clientDB.length} Clients</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex flex-col md:flex-row gap-4"><input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} /><div className="flex-[2]"><GoogleAddressInput value={clientFormAddress} onChange={(e) => setClientFormAddress(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div><button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button></div></div><div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{c.name}</td><td className="p-4 text-sm text-slate-600">{c.address}</td><td className="p-4 text-right"><div className="flex justify-end gap-2"><button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1"><Icon name="pencil" className="h-4 w-4"/></button><button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4"/></button></div></td></tr>))}</tbody></table></div></div></div>
                         )}
 
                         {view === 'vehicles' && (
@@ -907,7 +774,7 @@
                                     </div>
                                     <div className="p-6 bg-blue-50/50 border-b border-slate-200">
                                         <div className="flex gap-4">
-                                            <input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} />
+                                            <input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }})} />
                                             <button onClick={() => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }}} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="plus" className="h-4 w-4" /> Add Truck</button>
                                         </div>
                                     </div>
@@ -942,10 +809,10 @@
                                         <div className="grid md:grid-cols-2 gap-4 mb-4">
                                             <div className="relative">
                                                 <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client</label>
-                                                <input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Name" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); }} />
+                                                <input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Name" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); }} onKeyDown={(e) => handleEnter(e, initiateAddStop)} />
                                                 {showSuggestions && filteredClients.length > 0 && <div className="absolute top-full left-0 w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 overflow-hidden z-50">{filteredClients.map((c, i) => (<div key={i} onClick={() => selectClient(c)} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50"><div className="font-bold text-slate-700 text-sm">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
                                             </div>
-                                            <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label><GoogleAddressInput value={newStopAddress} onChange={(e) => setNewStopAddress(e.target.value)} className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Search Google Maps" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div>
+                                            <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label><GoogleAddressInput value={newStopAddress} onChange={(e) => setNewStopAddress(e.target.value)} onKeyDown={(e) => handleEnter(e, initiateAddStop)} className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Search Google Maps" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div>
                                         </div>
                                         <div className="flex justify-end"><button onClick={initiateAddStop} disabled={!newStopAddress} className="bg-ess-blue text-white px-6 py-2.5 rounded-lg font-bold shadow-md flex items-center gap-2 disabled:opacity-50"><Icon name="arrow-right" className="h-4 w-4" /> Next</button></div>
                                     </div>
@@ -973,11 +840,19 @@
                                     
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow">
                                         <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 pb-3 border-b border-slate-100"><Icon name="users" className="h-5 w-5 text-ess-blue" /> Drivers</h3>
-                                        <div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div>
-                                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-2 overflow-y-auto">
+                                        <div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }})} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div>
+                                        
+                                        {/* FIX 3: ADDED OVERFLOW-X-HIDDEN */}
+                                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-2 overflow-y-auto overflow-x-hidden">
                                             {drivers.map(driver => (
                                                 <div key={driver.id} className="group relative">
-                                                    <label className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer h-full ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}><div className="flex items-center gap-2 min-w-0"><div className={`w-2 h-2 shrink-0 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div><span className={`font-medium text-sm truncate ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span></div><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-4 h-4 accent-ess-green shrink-0 ml-2" /></label>
+                                                    <label className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer h-full ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <div className={`w-2 h-2 shrink-0 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div>
+                                                            <span className={`font-medium text-sm truncate ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span>
+                                                        </div>
+                                                        <input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-4 h-4 accent-ess-green shrink-0 ml-2" />
+                                                    </label>
                                                     <button onClick={(e) => { e.preventDefault(); deleteDriver(driver.id); }} className="absolute -right-1 -top-1 bg-white text-slate-400 hover:text-red-500 border border-slate-200 rounded-full p-0.5 opacity-0 group-hover:opacity-100 shadow-sm z-10"><Icon name="x" className="h-3 w-3" /></button>
                                                 </div>
                                             ))}
@@ -1052,7 +927,15 @@
                                             <div className="p-0 flex-1 overflow-y-auto max-h-[500px]">
                                                 <ul className="divide-y divide-slate-100">
                                                     {data.paradas.map((stop, index) => (
-                                                        <li key={index} className={`p-4 hover:bg-slate-50 transition-colors flex gap-3 group items-start cursor-grab active:cursor-grabbing ${selectedStops.find(s => s.driver === driverName && s.index === index) ? 'bg-blue-50' : ''}`} draggable="true" onDragStart={(e) => handleDragStart(e, driverName, index)} onDragEnd={handleDragEnd} onDrop={(e) => handleDrop(e, driverName, index)} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                                                        <li 
+                                                            key={index} 
+                                                            className={`p-4 hover:bg-slate-50 transition-colors flex gap-3 group items-start cursor-grab active:cursor-grabbing ${selectedStops.find(s => s.driver === driverName && s.index === index) ? 'bg-blue-50' : ''}`}
+                                                            draggable="true"
+                                                            onDragStart={(e) => handleDragStart(e, driverName, index)}
+                                                            onDragEnd={handleDragEnd}
+                                                            onDrop={(e) => handleDrop(e, driverName, index)} 
+                                                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                                        >
                                                             <div className="pt-1" onMouseDown={(e) => e.stopPropagation()}><input type="checkbox" className="custom-checkbox" checked={!!selectedStops.find(s => s.driver === driverName && s.index === index)} onChange={() => toggleStopSelection(driverName, index)} /></div>
                                                             <div className="flex flex-col items-center gap-1 pt-1"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center border border-slate-200">{index + 1}</span></div>
                                                             <div className="flex-1"><div className="font-bold text-sm text-slate-800">{getClientNameFromAddress(stop.direccion)}</div><div className="text-xs text-slate-500 mt-0.5">{stop.direccion}</div>{(stop.invoices || stop.pieces) && <div className="mt-1 flex gap-2"><span className="bg-yellow-50 text-yellow-700 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-mono">INV: {stop.invoices}</span><span className="bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded border border-blue-200 font-mono">PCS: {stop.pieces}</span></div>}</div>
