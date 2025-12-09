@@ -280,7 +280,7 @@
             );
         };
 
-        // --- GLOBAL MANIFEST COMPONENT (MANAGER VIEW) ---
+        // --- GLOBAL MANIFEST COMPONENT ---
         const GlobalManifest = ({ routes, config }) => {
             const today = new Date().toLocaleDateString('en-US');
             return (
@@ -288,7 +288,6 @@
                     <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
                         <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
                         <div className="text-right">
-                            {/* RENAMED TO ALL ROUTES SUMMARY */}
                             <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
                             <p className="text-lg font-bold">{today}</p>
                         </div>
@@ -345,8 +344,7 @@
             const [scriptLoaded, setScriptLoaded] = useState(false);
             const [view, setView] = useState('input'); 
             
-            // FEATURE 5 & 6: Config Persistence & Dwell Time
-            // NOW USING FIRESTORE FOR PERSISTENCE (Sync across devices)
+            // CONFIG PERSISTENCE
             const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, EE. UU.');
             const [dwellTime, setDwellTime] = useState(6); // HARDCODED 6 MINUTES
             const [companyConfig, setCompanyConfig] = useState({
@@ -354,6 +352,7 @@
                 phone: "407-901-0900",
                 address: "8350 PARKLINE BLVD, ORLANDO, FLORIDA 32809"
             });
+            const [savedPin, setSavedPin] = useState('0000'); // Default PIN
 
             const [currentStops, setCurrentStops] = useState([]);
             
@@ -370,6 +369,16 @@
             const [tempInvoices, setTempInvoices] = useState('');
             const [tempPieces, setTempPieces] = useState('');
 
+            // Feature: Add Route / Stop Manual
+            const [showAddRouteModal, setShowAddRouteModal] = useState(false);
+            const [showManualStopModal, setShowManualStopModal] = useState(false);
+            const [targetDriverForManual, setTargetDriverForManual] = useState(null);
+
+            // PIN Modal States
+            const [showPinModal, setShowPinModal] = useState(false);
+            const [pinInput, setPinInput] = useState('');
+            const [pendingView, setPendingView] = useState('');
+
             // Print States
             const [printData, setPrintData] = useState(null); 
             const [showPrintModal, setShowPrintModal] = useState(false);
@@ -377,8 +386,8 @@
             const [selectedVehicleForPrint, setSelectedVehicleForPrint] = useState('');
 
             // Settings States
-            const [settingsPwd, setSettingsPwd] = useState('');
             const [settingsMsg, setSettingsMsg] = useState('');
+            const [newPin, setNewPin] = useState('');
 
             const [routes, setRoutes] = useState(null);
             const [originalRoutes, setOriginalRoutes] = useState(null); 
@@ -395,6 +404,21 @@
             const [dragOverDriver, setDragOverDriver] = useState(null);
             const [swappingDriver, setSwappingDriver] = useState(null);
             const [isRecalculatingAll, setIsRecalculatingAll] = useState(false);
+
+            // --- 1. DEFINED EARLY TO FIX ERROR ---
+            const handleLogout = () => {
+                if(window.fbSignOut && window.fbAuth) {
+                    window.fbSignOut(window.fbAuth);
+                } else {
+                    window.location.reload();
+                }
+            };
+            
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            
+            // Helpers for User-Isolated Data
+            const getUserCollection = (collName) => user ? window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, collName) : null;
+            const getUserDocRef = (collName, docId) => user ? window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, collName, docId) : null;
 
             // --- INIT & AUTH ---
             useEffect(() => {
@@ -426,18 +450,18 @@
                 initAuth();
             }, []);
 
-            // --- DATA SYNC ---
+            // --- DATA SYNC (ISOLATED PER USER) ---
             useEffect(() => {
                 if (!user || !window.fbDb || !dbReady) return;
                 
-                // Sync Main Collections
-                window.fbOnSnapshot(window.fbQuery(window.fbCollection(window.fbDb, "clients"), window.fbOrderBy("name")), (s) => setClientDB(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-                window.fbOnSnapshot(window.fbQuery(window.fbCollection(window.fbDb, "drivers"), window.fbOrderBy("name")), (s) => setDrivers(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-                window.fbOnSnapshot(window.fbQuery(window.fbCollection(window.fbDb, "draft_stops"), window.fbOrderBy("createdAt")), (s) => setCurrentStops(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-                window.fbOnSnapshot(window.fbQuery(window.fbCollection(window.fbDb, "vehicles"), window.fbOrderBy("name")), (s) => setVehicles(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+                // Sync Main Collections (NOW PRIVATE)
+                window.fbOnSnapshot(window.fbQuery(getUserCollection("clients"), window.fbOrderBy("name")), (s) => setClientDB(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+                window.fbOnSnapshot(window.fbQuery(getUserCollection("drivers"), window.fbOrderBy("name")), (s) => setDrivers(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+                window.fbOnSnapshot(window.fbQuery(getUserCollection("draft_stops"), window.fbOrderBy("createdAt")), (s) => setCurrentStops(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+                window.fbOnSnapshot(window.fbQuery(getUserCollection("vehicles"), window.fbOrderBy("name")), (s) => setVehicles(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
 
-                // SYNC USER SETTINGS (Cloud Persistence for Base Address & Company Config)
-                const userSettingsRef = window.fbDoc(window.fbDb, "user_settings", user.uid);
+                // SYNC USER SETTINGS
+                const userSettingsRef = getUserDocRef("settings", "config"); 
                 window.fbOnSnapshot(userSettingsRef, (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
@@ -445,6 +469,7 @@
                         if (data.companyName) setCompanyConfig(prev => ({ ...prev, companyName: data.companyName }));
                         if (data.companyPhone) setCompanyConfig(prev => ({ ...prev, phone: data.companyPhone }));
                         if (data.companyAddress) setCompanyConfig(prev => ({ ...prev, address: data.companyAddress }));
+                        if (data.adminPin) setSavedPin(data.adminPin);
                     }
                 });
 
@@ -460,37 +485,37 @@
             }, [googleApiKey]);
 
             // --- ACTIONS ---
-            const addDriverToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(window.fbCollection(window.fbDb, "drivers"), { name, active: true }); };
-            const deleteDriver = async (id) => { if(window.fbDb && confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, "drivers", id)); };
-            const toggleDriver = async (id, status) => { if(window.fbDb) await window.fbUpdateDoc(window.fbDoc(window.fbDb, "drivers", id), { active: !status }); };
+            const addDriverToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("drivers"), { name, active: true }); };
+            const deleteDriver = async (id) => { if(window.fbDb && confirm('Delete?')) await window.fbDeleteDoc(getUserDocRef("drivers", id)); };
+            const toggleDriver = async (id, status) => { if(window.fbDb) await window.fbUpdateDoc(getUserDocRef("drivers", id), { active: !status }); };
             
-            const addVehicleToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(window.fbCollection(window.fbDb, "vehicles"), { name }); };
-            const deleteVehicle = async (id) => { if(window.fbDb && confirm('Delete Vehicle?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, "vehicles", id)); };
+            const addVehicleToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("vehicles"), { name }); };
+            const deleteVehicle = async (id) => { if(window.fbDb && confirm('Delete Vehicle?')) await window.fbDeleteDoc(getUserDocRef("vehicles", id)); };
 
-            const saveClient = async () => { if (!clientFormName || !window.fbDb) return; if (editingClientId) { await window.fbUpdateDoc(window.fbDoc(window.fbDb, "clients", editingClientId), { name: clientFormName, address: clientFormAddress }); setEditingClientId(null); } else { await window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: clientFormName, address: clientFormAddress }); } setClientFormName(''); setClientFormAddress(''); };
-            const deleteClient = async (id) => { if(window.fbDb && confirm('Delete?')) { await window.fbDeleteDoc(window.fbDoc(window.fbDb, "clients", id)); setSelectedClients(selectedClients.filter(c => c !== id)); } };
+            const saveClient = async () => { if (!clientFormName || !window.fbDb) return; if (editingClientId) { await window.fbUpdateDoc(getUserDocRef("clients", editingClientId), { name: clientFormName, address: clientFormAddress }); setEditingClientId(null); } else { await window.fbAddDoc(getUserCollection("clients"), { name: clientFormName, address: clientFormAddress }); } setClientFormName(''); setClientFormAddress(''); };
+            const deleteClient = async (id) => { if(window.fbDb && confirm('Delete?')) { await window.fbDeleteDoc(getUserDocRef("clients", id)); setSelectedClients(selectedClients.filter(c => c !== id)); } };
 
-            // --- FEATURE 5: Save Base Address (Cloud) ---
             const handleBaseAddressChange = async (e) => {
                 const val = e.target.value;
                 setBaseAddress(val);
-                // Save to Firestore
                 if (window.fbDb && user) {
-                    const userSettingsRef = window.fbDoc(window.fbDb, "user_settings", user.uid);
-                    await window.fbSetDoc(userSettingsRef, { baseAddress: val }, { merge: true });
+                    await window.fbSetDoc(getUserDocRef("settings", "config"), { baseAddress: val }, { merge: true });
                 }
             };
 
-            // --- FEATURE 3: Settings Save (Cloud) ---
             const saveSettings = async () => {
                 if (window.fbDb && user) {
-                    const userSettingsRef = window.fbDoc(window.fbDb, "user_settings", user.uid);
-                    await window.fbSetDoc(userSettingsRef, { 
+                    const updateData = { 
                         companyName: companyConfig.companyName,
                         companyPhone: companyConfig.phone,
                         companyAddress: companyConfig.address
-                    }, { merge: true });
-                    alert("Settings saved to cloud and synced!");
+                    };
+                    if(newPin && newPin.length >= 4) {
+                        updateData.adminPin = newPin;
+                    }
+                    await window.fbSetDoc(getUserDocRef("settings", "config"), updateData, { merge: true });
+                    alert("Settings saved!");
+                    setNewPin('');
                 }
             };
 
@@ -503,7 +528,28 @@
                 }
             };
 
-            // --- NEW STOP FLOW ---
+            // --- PIN NAVIGATION LOGIC ---
+            const handleNavClick = (targetView) => {
+                if (targetView === 'input' || targetView === 'results') {
+                    setView('input'); 
+                    return;
+                }
+                setPendingView(targetView);
+                setPinInput('');
+                setShowPinModal(true);
+            };
+
+            const submitPin = () => {
+                if (pinInput === savedPin) {
+                    setShowPinModal(false);
+                    setView(pendingView);
+                } else {
+                    alert("Incorrect PIN");
+                    setPinInput('');
+                }
+            };
+
+            // --- NEW STOP FLOW (INPUT SCREEN) ---
             const initiateAddStop = () => {
                 if (!newStopAddress) return;
                 if (currentStops.some(s => s.address === newStopAddress)) {
@@ -516,43 +562,57 @@
             };
 
             const confirmAddStop = async () => {
-                if (window.fbDb && tempStopData) {
-                    await window.fbAddDoc(window.fbCollection(window.fbDb, "draft_stops"), {
+                // If this is for a manual stop on the Results page
+                if (targetDriverForManual && routes && routes[targetDriverForManual]) {
+                     const newStop = {
+                        nombre: tempStopData.name,
+                        direccion: tempStopData.address,
+                        invoices: tempInvoices,
+                        pieces: tempPieces,
+                        // Note: Backend will fill clean_address and coords during recalc
+                     };
+                     
+                     // Optimistic update locally
+                     const newRoutes = JSON.parse(JSON.stringify(routes));
+                     newRoutes[targetDriverForManual].paradas.push(newStop);
+                     setRoutes(newRoutes);
+                     
+                     // Trigger backend recalc
+                     recalculateRoute(targetDriverForManual, newRoutes[targetDriverForManual].paradas);
+                     
+                     // Reset UI
+                     setShowManualStopModal(false);
+                     setTargetDriverForManual(null);
+                } 
+                // Else normal flow (Input page)
+                else if (window.fbDb && tempStopData) {
+                    await window.fbAddDoc(getUserCollection("draft_stops"), {
                         name: tempStopData.name, 
                         address: tempStopData.address,
                         invoices: tempInvoices, 
                         pieces: tempPieces,
                         createdAt: Date.now()
                     });
-                    
                     const exists = clientDB.some(c => c.address.toLowerCase() === tempStopData.address.toLowerCase());
                     if (!exists) {
-                        window.fbAddDoc(window.fbCollection(window.fbDb, "clients"), { name: tempStopData.name, address: tempStopData.address }); 
+                        window.fbAddDoc(getUserCollection("clients"), { name: tempStopData.name, address: tempStopData.address }); 
                     }
                 }
                 setNewStopName(''); setNewStopAddress(''); setShowSuggestions(false); setShowAddDetailsModal(false); setTempStopData(null);
+                setTempInvoices(''); setTempPieces('');
             };
 
-            const removeStop = async (id) => { if(window.fbDb) await window.fbDeleteDoc(window.fbDoc(window.fbDb, "draft_stops", id)); };
+            const removeStop = async (id) => { if(window.fbDb) await window.fbDeleteDoc(getUserDocRef("draft_stops", id)); };
             const clearDraftRoute = async () => {
                 if(confirm("Clear list?")) {
                     if(window.fbDb && window.fbGetDocs) {
-                        const q = window.fbQuery(window.fbCollection(window.fbDb, "draft_stops"));
+                        const q = window.fbQuery(getUserCollection("draft_stops"));
                         const snapshot = await window.fbGetDocs(q);
                         await Promise.all(snapshot.docs.map(doc => window.fbDeleteDoc(doc.ref)));
                     }
                 }
             };
 
-            const handleLogout = () => {
-                if(window.fbSignOut && window.fbAuth) {
-                    window.fbSignOut(window.fbAuth);
-                } else {
-                    window.location.reload();
-                }
-            };
-
-            // --- PRINT ACTIONS ---
             const openPrintModal = (driverName, stops) => {
                 setPrintData({ driverName, stops });
                 setSelectedVehicleForPrint(vehicles.length > 0 ? vehicles[0].name : '');
@@ -571,7 +631,6 @@
                 window.print();
             };
 
-            // --- OPTIMIZATION ---
             const handleOptimize = async () => { 
                 const activeDrivers = drivers.filter(d => d.active); 
                 if (currentStops.length === 0) return setError('No stops.'); 
@@ -588,7 +647,6 @@
                 } catch (e) { setError(e.message); } finally { setLoading(false); } 
             };
 
-            // --- HELPERS ---
             const selectClient = (c) => { setNewStopName(c.name); setNewStopAddress(c.address); setShowSuggestions(false); };
             const getClientNameFromAddress = (address) => {
                 const fromDraft = currentStops.find(s => s.address === address);
@@ -615,7 +673,7 @@
                 try { 
                     const res = await fetch('/recalcular', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); 
                     const d = await res.json(); 
-                    setRoutes(p => ({...p, [dName]: {...p[dName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: stops}})); 
+                    setRoutes(p => ({...p, [dName]: {...p[dName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas || stops}})); 
                 } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [dName]: false})); } 
             };
             const handleRecalculateAll = async () => { if (!routes) return; setIsRecalculatingAll(true); await Promise.all(Object.keys(routes).map(d => recalculateRoute(d, routes[d].paradas))); setIsRecalculatingAll(false); };
@@ -635,6 +693,28 @@
                 if (driverA === driverB) { setSwappingDriver(null); return; }
                 const newRoutes = { ...routes }; const tempRoute = newRoutes[driverA]; newRoutes[driverA] = newRoutes[driverB]; newRoutes[driverB] = tempRoute;
                 setRoutes(newRoutes); setSwappingDriver(null);
+            };
+            
+            // --- MANUAL ROUTE/STOP ACTIONS ---
+            const handleAddRoute = () => {
+                setShowAddRouteModal(true);
+            };
+            
+            const confirmAddRoute = (driverToAdd) => {
+                if (!routes) return;
+                const newRoutes = { ...routes };
+                // Initialize empty route
+                newRoutes[driverToAdd] = { paradas: [], duracion_estimada: 0, link: "" };
+                setRoutes(newRoutes);
+                setShowAddRouteModal(false);
+            };
+            
+            const initiateManualStop = (driverName) => {
+                setTargetDriverForManual(driverName);
+                setNewStopName(''); setNewStopAddress(''); 
+                setTempStopData(null); setTempInvoices(''); setTempPieces('');
+                setShowManualStopModal(true); // Open specific modal or reuse standard one
+                // Reuse showAddDetailsModal flow logic partially
             };
             
             // --- DRAG & DROP LOGIC ---
@@ -669,33 +749,114 @@
 
             return (
                 <div className="min-h-screen text-slate-800 bg-white pb-24">
-                    {/* INDIVIDUAL PRINT COMPONENT */}
-                    {printData && showPrintModal && (
-                        <PrintableSheet 
-                            routeData={printData.stops} 
-                            driverName={printData.driverName} 
-                            vehicle={selectedVehicleForPrint}
-                            config={companyConfig}
-                        />
+                    {/* COMPONENTS */}
+                    {printData && showPrintModal && <PrintableSheet routeData={printData.stops} driverName={printData.driverName} vehicle={selectedVehicleForPrint} config={companyConfig} />}
+                    {showGlobalPrint && routes && <GlobalManifest routes={routes} config={companyConfig} />}
+                    
+                    {/* ADD STOP MODAL (Shared for Input & Manual Add) */}
+                    {(showAddDetailsModal || showManualStopModal) && (
+                        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                                <h3 className="font-bold text-lg mb-4 text-slate-800">
+                                    {showManualStopModal ? `Add Stop to ${targetDriverForManual}` : "Add Stop Details"}
+                                </h3>
+                                
+                                {showManualStopModal && (
+                                    <div className="mb-4 space-y-4">
+                                         <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client Name</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Name" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); setTempStopData(prev => ({...prev, name: e.target.value})); }} />
+                                         {showSuggestions && filteredClients.length > 0 && <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50">{filteredClients.map((c, i) => (<div key={i} onClick={() => { selectClient(c); setTempStopData({name: c.name, address: c.address}); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm font-bold">{c.name}</div>))}</div>}
+                                         </div>
+                                         <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label><GoogleAddressInput value={newStopAddress} onChange={(e) => { setNewStopAddress(e.target.value); setTempStopData(prev => ({...prev, address: e.target.value})); }} className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div>
+                                    </div>
+                                )}
+
+                                <div className="space-y-4">
+                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices (Optional)</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} autoFocus /></div>
+                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pieces Shipped</label><input type="number" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="0" value={tempPieces} onChange={e => setTempPieces(e.target.value)} /></div>
+                                </div>
+                                <div className="mt-6 flex gap-3">
+                                    <button onClick={() => { setShowAddDetailsModal(false); setShowManualStopModal(false); setTargetDriverForManual(null); }} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
+                                    <button onClick={confirmAddStop} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg">Save Stop</button>
+                                </div>
+                            </div>
+                        </div>
                     )}
 
-                    {/* GLOBAL PRINT COMPONENT */}
-                    {showGlobalPrint && routes && (
-                        <GlobalManifest routes={routes} config={companyConfig} />
+                    {/* NEW ROUTE MODAL */}
+                    {showAddRouteModal && (
+                         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                                <h3 className="font-bold text-lg mb-4 text-slate-800">Add New Route</h3>
+                                <p className="text-sm text-slate-500 mb-4">Select a driver who doesn't have a route yet.</p>
+                                <div className="space-y-2 max-h-40 overflow-y-auto mb-4 border rounded p-2">
+                                    {drivers.filter(d => d.active && !routes[d.name]).map(d => (
+                                        <button key={d.id} onClick={() => confirmAddRoute(d.name)} className="w-full text-left p-2 hover:bg-blue-50 rounded font-bold text-slate-700 flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-green-500"></div> {d.name}
+                                        </button>
+                                    ))}
+                                    {drivers.filter(d => d.active && !routes[d.name]).length === 0 && <p className="text-sm text-slate-400">All active drivers have routes.</p>}
+                                </div>
+                                <div className="flex justify-end"><button onClick={() => setShowAddRouteModal(false)} className="text-slate-500 font-bold px-4">Cancel</button></div>
+                            </div>
+                         </div>
                     )}
 
-                    {/* NORMAL UI */}
+                    {showPinModal && (
+                        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm text-center">
+                                <h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center justify-center gap-2"><Icon name="lock" className="h-5 w-5" /> Enter Security PIN</h3>
+                                <input type="password" className="w-full p-3 border border-slate-300 rounded-lg outline-none text-center text-2xl tracking-widest" maxLength="6" value={pinInput} onChange={e => setPinInput(e.target.value)} autoFocus />
+                                <div className="mt-6 flex gap-3">
+                                    <button onClick={() => setShowPinModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
+                                    <button onClick={submitPin} className="flex-1 py-3 bg-slate-800 text-white rounded-lg font-bold">Unlock</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* ... (Print Modal omitted for brevity, logic remains) ... */}
+                    {showPrintModal && (
+                        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+                                <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold text-slate-800">Print Manifest</h3><button onClick={() => setShowPrintModal(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-5 w-5" /></button></div>
+                                <div className="p-6 space-y-6">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Truck for this Sheet</label>
+                                        <select className="w-full p-3 border border-slate-300 rounded-lg outline-none bg-white" value={selectedVehicleForPrint} onChange={e => setSelectedVehicleForPrint(e.target.value)}>
+                                            <option value="">-- Select Truck --</option>
+                                            {vehicles.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                                        </select>
+                                        {vehicles.length === 0 && <p className="text-xs text-red-500 mt-1">No trucks defined. Add them in Van/Truck ID tab.</p>}
+                                    </div>
+                                    <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 border border-blue-100">
+                                        <p className="font-bold mb-1">Ready to print for:</p>
+                                        <p>Driver: {printData.driverName}</p>
+                                        <p>Stops: {printData.stops.length}</p>
+                                    </div>
+                                </div>
+                                <div className="p-4 border-t border-slate-100 bg-white flex gap-3">
+                                    <button onClick={() => setShowPrintModal(false)} className="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
+                                    <button onClick={handlePrint} className="flex-1 py-3 bg-slate-800 text-white rounded-lg font-bold hover:bg-black flex items-center justify-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print Now</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* UI */}
                     <header className="bg-white border-b border-slate-200 sticky top-0 z-50 no-print">
                          <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
                             <div className="flex items-center gap-4">
                                 <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto"/>
-                                <div className="hidden md:block pl-4 border-l border-slate-200"><h1 className="text-xl font-bold text-ess-blue leading-none">Route Planner</h1></div>
+                                <div className="hidden md:block pl-4 border-l border-slate-200">
+                                    <h1 className="text-xl font-bold text-ess-blue leading-none">Route Planner</h1>
+                                    <p className="text-xs text-slate-400 mt-1">Logged as: <span className="font-bold text-ess-green">{user.email}</span></p>
+                                </div>
                             </div>
                             <div className="flex items-center gap-3">
-                                <button onClick={() => setView('input')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'input' || view === 'results' || view === 'global_map' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
-                                <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients Database</button>
-                                <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Van or Truck ID</button>
-                                <button onClick={() => setView('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Settings</button>
+                                <button onClick={() => handleNavClick('input')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'input' || view === 'results' || view === 'global_map' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
+                                <button onClick={() => handleNavClick('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients Database</button>
+                                <button onClick={() => handleNavClick('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Van or Truck ID</button>
+                                <button onClick={() => handleNavClick('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Settings</button>
                                 
                                 <button onClick={handleLogout} className="text-sm font-medium text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 px-3 py-2 rounded-lg flex items-center gap-2 ml-2"><Icon name="log-out" className="h-4 w-4" /> Exit</button>
                             </div>
@@ -703,7 +864,6 @@
                     </header>
 
                     <main className="max-w-7xl mx-auto p-6 no-print">
-                        {/* VIEW: SETTINGS */}
                         {view === 'settings' && (
                             <div className="max-w-2xl mx-auto animate-fade-in">
                                 <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden p-6 space-y-8">
@@ -713,7 +873,13 @@
                                             <div><label className="block text-sm font-bold text-slate-500 mb-1">Company Name</label><input className="w-full p-2 border rounded" value={companyConfig.companyName} onChange={e => setCompanyConfig({...companyConfig, companyName: e.target.value})} /></div>
                                             <div><label className="block text-sm font-bold text-slate-500 mb-1">Phone</label><input className="w-full p-2 border rounded" value={companyConfig.phone} onChange={e => setCompanyConfig({...companyConfig, phone: e.target.value})} /></div>
                                             <div><label className="block text-sm font-bold text-slate-500 mb-1">Footer Address</label><input className="w-full p-2 border rounded" value={companyConfig.address} onChange={e => setCompanyConfig({...companyConfig, address: e.target.value})} /></div>
-                                            <button onClick={saveSettings} className="bg-slate-800 text-white px-4 py-2 rounded font-bold">Save</button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">App Security</h2>
+                                        <div className="space-y-4">
+                                            <div><label className="block text-sm font-bold text-slate-500 mb-1">Change Security PIN (Default: 0000)</label><input type="text" className="w-full p-2 border rounded" maxLength="6" placeholder="New PIN" value={newPin} onChange={e => setNewPin(e.target.value)} /></div>
+                                            <button onClick={saveSettings} className="bg-slate-800 text-white px-4 py-2 rounded font-bold">Save All Settings</button>
                                         </div>
                                     </div>
                                     <div>
@@ -728,12 +894,10 @@
                             </div>
                         )}
 
-                        {/* VIEW: CLIENTS */}
                         {view === 'clients' && (
                             <div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients Database</h2></div><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{clientDB.length} Clients</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex flex-col md:flex-row gap-4"><input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} /><div className="flex-[2]"><GoogleAddressInput value={clientFormAddress} onChange={(e) => setClientFormAddress(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div><button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button></div></div><div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{c.name}</td><td className="p-4 text-sm text-slate-600">{c.address}</td><td className="p-4 text-right"><div className="flex justify-end gap-2"><button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1"><Icon name="pencil" className="h-4 w-4"/></button><button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4"/></button></div></td></tr>))}</tbody></table></div></div></div>
                         )}
 
-                        {/* VIEW: VEHICLES */}
                         {view === 'vehicles' && (
                             <div className="max-w-2xl mx-auto animate-fade-in">
                                 <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden">
@@ -772,8 +936,7 @@
 
                         {view === 'input' && (
                             <div className="grid lg:grid-cols-12 gap-8 animate-fade-in">
-                                {/* LEFT COLUMN: INPUT */}
-                                <div className="lg:col-span-8 space-y-6">
+                                <div className="lg:col-span-7 space-y-6">
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow relative z-20">
                                         <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2"><div className="bg-ess-green/10 p-2 rounded-full"><Icon name="plus" className="h-5 w-5 text-ess-green" /></div> Add Stop</h2>
                                         <div className="grid md:grid-cols-2 gap-4 mb-4">
@@ -787,7 +950,6 @@
                                         <div className="flex justify-end"><button onClick={initiateAddStop} disabled={!newStopAddress} className="bg-ess-blue text-white px-6 py-2.5 rounded-lg font-bold shadow-md flex items-center gap-2 disabled:opacity-50"><Icon name="arrow-right" className="h-4 w-4" /> Next</button></div>
                                     </div>
 
-                                    {/* STOP LIST */}
                                     <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden min-h-[300px]">
                                         <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold text-slate-700 flex items-center gap-2"><Icon name="list" className="h-5 w-5 text-slate-400" /> Today's Route</h3><div className="flex items-center gap-2">{currentStops.length > 0 && <button onClick={clearDraftRoute} className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 flex items-center gap-1"><Icon name="eraser" className="h-3 w-3" /> Clear</button>}<span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{currentStops.length} Stops</span></div></div>
                                         <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
@@ -806,22 +968,31 @@
                                     </div>
                                 </div>
 
-                                {/* RIGHT COLUMN: SETTINGS & DRIVERS ONLY (NO VEHICLES) */}
-                                <div className="lg:col-span-4 space-y-6">
+                                <div className="lg:col-span-5 space-y-6">
                                     <div className="bg-ess-light px-4 py-2 rounded-lg border border-blue-100 flex items-center gap-2"><Icon name="map-pin" className="h-5 w-5 text-ess-blue shrink-0" /><div className="text-xs w-full"><span className="block text-slate-400 font-semibold uppercase">Base (Start/End)</span><GoogleAddressInput value={baseAddress} onChange={handleBaseAddressChange} className="bg-transparent font-bold text-slate-700 outline-none w-full" placeholder="Warehouse" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div></div>
                                     
-                                    {/* DRIVERS */}
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow">
                                         <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 pb-3 border-b border-slate-100"><Icon name="users" className="h-5 w-5 text-ess-blue" /> Drivers</h3>
                                         <div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div>
-                                        <div className="space-y-3 max-h-[200px] overflow-y-auto pr-1">{drivers.map(driver => (<div key={driver.id} className="group relative"><label className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}><div className="flex items-center gap-3"><div className={`w-2 h-2 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div><span className={`font-medium ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span></div><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-5 h-5 accent-ess-green" /></label><button onClick={(e) => { e.preventDefault(); deleteDriver(driver.id); }} className="absolute -right-2 -top-2 bg-white text-slate-400 hover:text-red-500 border border-slate-200 rounded-full p-1 opacity-0 group-hover:opacity-100 shadow-sm"><Icon name="x" className="h-3 w-3" /></button></div>))}</div>
+                                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-2 overflow-y-auto">
+                                            {drivers.map(driver => (
+                                                <div key={driver.id} className="group relative">
+                                                    <label className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer h-full ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}><div className="flex items-center gap-2 min-w-0"><div className={`w-2 h-2 shrink-0 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div><span className={`font-medium text-sm truncate ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span></div><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-4 h-4 accent-ess-green shrink-0 ml-2" /></label>
+                                                    <button onClick={(e) => { e.preventDefault(); deleteDriver(driver.id); }} className="absolute -right-1 -top-1 bg-white text-slate-400 hover:text-red-500 border border-slate-200 rounded-full p-0.5 opacity-0 group-hover:opacity-100 shadow-sm z-10"><Icon name="x" className="h-3 w-3" /></button>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
 
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">
                                         {error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}
                                         
-                                        {/* VIEW ACTIVE ROUTES BUTTON */}
-                                        {!loading && routes && <button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-4 rounded-xl font-bold text-lg shadow-lg mb-3 transition-all flex justify-center items-center gap-2"><Icon name="map" className="h-6 w-6" /> VIEW ACTIVE ROUTES</button>}
+                                        {!loading && routes && (
+                                            <>
+                                                <p className="text-xs text-center text-slate-500 mb-1">If you haven't made any changes to the route, return to your routes here</p>
+                                                <button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-4 rounded-xl font-bold text-lg shadow-lg mb-3 transition-all flex justify-center items-center gap-2"><Icon name="map" className="h-6 w-6" /> VIEW ACTIVE ROUTES</button>
+                                            </>
+                                        )}
                                         
                                         <button onClick={handleOptimize} disabled={loading} className="w-full bg-ess-green hover:bg-green-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-green-600/20 transition-all flex justify-center items-center gap-2 disabled:opacity-75">{loading ? <div className="loader mr-2"></div> : <Icon name="zap" className="h-6 w-6" />} GENERATE</button>
                                     </div>
@@ -831,21 +1002,21 @@
 
                         {view === 'results' && routes && (
                             <div className="animate-fade-in space-y-8">
-                                {/* ACTION BAR */}
                                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                    <button onClick={() => setView('input')} className="text-slate-600 hover:text-ess-blue px-6 py-3 rounded-lg font-bold border border-slate-200 flex items-center gap-2"><Icon name="arrow-left" className="h-5 w-5" /> Back</button>
+                                    <div className="flex gap-2">
+                                         <button onClick={() => setView('input')} className="text-slate-600 hover:text-ess-blue px-6 py-3 rounded-lg font-bold border border-slate-200 flex items-center gap-2"><Icon name="arrow-left" className="h-5 w-5" /> Back</button>
+                                         <button onClick={handleAddRoute} className="text-xs font-bold text-white bg-ess-blue hover:bg-sky-700 px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="plus" className="h-4 w-4" /> Add New Route</button>
+                                    </div>
                                     <div className="flex gap-2">
                                         <button onClick={handleRestore} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="rotate-ccw" className="h-3 w-3" /> Reset</button>
                                         <button onClick={() => setView('global_map')} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="map" className="h-3 w-3" /> Map</button>
                                         
-                                        {/* GLOBAL PRINT BUTTON */}
-                                        <button onClick={handleGlobalPrint} className="text-xs font-bold text-white bg-slate-800 hover:bg-black px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="printer" className="h-3 w-3" /> All Routes Summary</button>
+                                        <button onClick={handleGlobalPrint} className="text-xs font-bold text-white bg-slate-800 hover:bg-black px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="printer" className="h-3 w-3" /> Print All Routes</button>
                                         
                                         <button onClick={handleRecalculateAll} disabled={isRecalculatingAll} className="text-xs font-bold text-white bg-ess-blue hover:bg-sky-700 px-4 py-2 rounded-lg flex items-center gap-2">{isRecalculatingAll ? <div className="loader w-3 h-3"></div> : <><Icon name="refresh-cw" className="h-3 w-3" /> Update</>}</button>
                                     </div>
                                 </div>
 
-                                {/* ROUTES GRID */}
                                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {Object.entries(routes).map(([driverName, data]) => (
                                         <div key={driverName} className={`bg-white rounded-xl border border-slate-200 card-shadow flex flex-col h-full overflow-hidden transition-colors duration-300 ${dragOverDriver === driverName ? 'drop-target' : 'hover:border-ess-blue'}`} onDragOver={(e) => handleDragOverContainer(e, driverName)} onDrop={(e) => handleDrop(e, driverName)}>
@@ -853,15 +1024,20 @@
                                                 <div className="flex justify-between items-center mb-4 relative">
                                                     <h3 className="font-bold text-xl text-slate-800 flex items-center gap-3">
                                                         <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm"><Icon name="user" className="h-5 w-5 text-ess-blue" /></div> {driverName}
-                                                        <button onClick={() => setSwappingDriver(swappingDriver === driverName ? null : driverName)} className="text-slate-400 hover:text-ess-blue p-1 rounded hover:bg-blue-50"><Icon name="arrow-left-right" className="h-4 w-4" /></button>
+                                                        
+                                                        {/* ADD STOP BUTTON (PLUS) */}
+                                                        <button 
+                                                            onClick={() => initiateManualStop(driverName)}
+                                                            className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded-full transition-colors shadow-sm ml-2"
+                                                            title="Add Stop Manually"
+                                                        >
+                                                            <Icon name="plus" className="h-4 w-4" />
+                                                        </button>
+                                                        
+                                                        <button onClick={() => setSwappingDriver(swappingDriver === driverName ? null : driverName)} className="text-slate-400 hover:text-ess-blue p-1 rounded hover:bg-blue-50 ml-auto"><Icon name="arrow-left-right" className="h-4 w-4" /></button>
                                                     </h3>
                                                     {swappingDriver === driverName && (
-                                                        <div className="absolute top-10 left-0 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-2 w-48 animate-fade-in">
-                                                            <p className="text-xs font-bold text-slate-500 mb-2 px-2">Swap with:</p>
-                                                            {Object.keys(routes).filter(d => d !== driverName).map(otherDriver => (
-                                                                <button key={otherDriver} onClick={() => handleSwapDriver(driverName, otherDriver)} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded text-sm text-slate-700 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-ess-green"></div>{otherDriver}</button>
-                                                            ))}
-                                                        </div>
+                                                        <div className="absolute top-10 left-0 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-2 w-48 animate-fade-in"><p className="text-xs font-bold text-slate-500 mb-2 px-2">Swap with:</p>{Object.keys(routes).filter(d => d !== driverName).map(otherDriver => (<button key={otherDriver} onClick={() => handleSwapDriver(driverName, otherDriver)} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded text-sm text-slate-700 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-ess-green"></div>{otherDriver}</button>))}</div>
                                                     )}
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
@@ -869,7 +1045,6 @@
                                                     <div className="flex gap-1">
                                                         <button onClick={() => reverseRoute(driverName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
                                                         <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize"><Icon name="wand-2" className="h-4 w-4" /></button>
-                                                        {/* PRINT BUTTON */}
                                                         <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded border border-slate-900 hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
                                                     </div>
                                                 </div>
@@ -877,28 +1052,11 @@
                                             <div className="p-0 flex-1 overflow-y-auto max-h-[500px]">
                                                 <ul className="divide-y divide-slate-100">
                                                     {data.paradas.map((stop, index) => (
-                                                        <li 
-                                                            key={index} 
-                                                            className={`p-4 hover:bg-slate-50 transition-colors flex gap-3 group items-start cursor-grab active:cursor-grabbing ${selectedStops.find(s => s.driver === driverName && s.index === index) ? 'bg-blue-50' : ''}`}
-                                                            draggable="true"
-                                                            onDragStart={(e) => handleDragStart(e, driverName, index)}
-                                                            onDragEnd={handleDragEnd}
-                                                            onDrop={(e) => handleDrop(e, driverName, index)} 
-                                                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                                                        >
-                                                            <div className="pt-1" onMouseDown={(e) => e.stopPropagation()}>
-                                                                <input type="checkbox" className="custom-checkbox" checked={!!selectedStops.find(s => s.driver === driverName && s.index === index)} onChange={() => toggleStopSelection(driverName, index)} />
-                                                            </div>
+                                                        <li key={index} className={`p-4 hover:bg-slate-50 transition-colors flex gap-3 group items-start cursor-grab active:cursor-grabbing ${selectedStops.find(s => s.driver === driverName && s.index === index) ? 'bg-blue-50' : ''}`} draggable="true" onDragStart={(e) => handleDragStart(e, driverName, index)} onDragEnd={handleDragEnd} onDrop={(e) => handleDrop(e, driverName, index)} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                                                            <div className="pt-1" onMouseDown={(e) => e.stopPropagation()}><input type="checkbox" className="custom-checkbox" checked={!!selectedStops.find(s => s.driver === driverName && s.index === index)} onChange={() => toggleStopSelection(driverName, index)} /></div>
                                                             <div className="flex flex-col items-center gap-1 pt-1"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center border border-slate-200">{index + 1}</span></div>
-                                                            <div className="flex-1">
-                                                                <div className="font-bold text-sm text-slate-800">{getClientNameFromAddress(stop.direccion)}</div>
-                                                                <div className="text-xs text-slate-500 mt-0.5">{stop.direccion}</div>
-                                                                {(stop.invoices || stop.pieces) && <div className="mt-1 flex gap-2"><span className="bg-yellow-50 text-yellow-700 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-mono">INV: {stop.invoices}</span><span className="bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded border border-blue-200 font-mono">PCS: {stop.pieces}</span></div>}
-                                                            </div>
-                                                            <div className="flex flex-col gap-1" onMouseDown={(e) => e.stopPropagation()}>
-                                                                <button onClick={() => moveStop(driverName, index, -1)} disabled={index === 0} className="p-1 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-up" className="h-4 w-4" /></button>
-                                                                <button onClick={() => moveStop(driverName, index, 1)} disabled={index === data.paradas.length - 1} className="p-1 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-down" className="h-4 w-4" /></button>
-                                                            </div>
+                                                            <div className="flex-1"><div className="font-bold text-sm text-slate-800">{getClientNameFromAddress(stop.direccion)}</div><div className="text-xs text-slate-500 mt-0.5">{stop.direccion}</div>{(stop.invoices || stop.pieces) && <div className="mt-1 flex gap-2"><span className="bg-yellow-50 text-yellow-700 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-mono">INV: {stop.invoices}</span><span className="bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded border border-blue-200 font-mono">PCS: {stop.pieces}</span></div>}</div>
+                                                            <div className="flex flex-col gap-1" onMouseDown={(e) => e.stopPropagation()}><button onClick={() => moveStop(driverName, index, -1)} disabled={index === 0} className="p-1 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-up" className="h-4 w-4" /></button><button onClick={() => moveStop(driverName, index, 1)} disabled={index === data.paradas.length - 1} className="p-1 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-down" className="h-4 w-4" /></button></div>
                                                         </li>
                                                     ))}
                                                 </ul>
@@ -910,69 +1068,9 @@
                                         </div>
                                     ))}
                                 </div>
-                                {/* FLOATING TOOLBAR */}
-                                {selectedStops.length > 0 && (
-                                    <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white p-4 rounded-xl shadow-2xl flex items-center gap-4 z-50 animate-fade-in w-11/12 max-w-lg">
-                                        <div className="font-bold whitespace-nowrap">{selectedStops.length} Selected</div>
-                                        <div className="h-6 w-px bg-slate-600"></div>
-                                        <div className="flex items-center gap-2 overflow-x-auto w-full">
-                                            <span className="text-xs text-slate-400 uppercase font-bold mr-2">Transfer to:</span>
-                                            {drivers.filter(d => d.active).map(driver => (
-                                                <button key={driver.id} onClick={() => transferSelectedStops(driver.name)} className="bg-white text-slate-900 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-ess-green hover:text-white transition-colors whitespace-nowrap">{driver.name}</button>
-                                            ))}
-                                        </div>
-                                        <button onClick={() => setSelectedStops([])} className="p-2 hover:bg-slate-700 rounded-full"><Icon name="x" className="h-5 w-5" /></button>
-                                    </div>
-                                )}
                             </div>
                         )}
                     </main>
-
-                    {/* MODAL: ADD DETAILS */}
-                    {showAddDetailsModal && (
-                        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
-                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
-                                <h3 className="font-bold text-lg mb-4 text-slate-800">Add Stop Details</h3>
-                                <div className="space-y-4">
-                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices (Optional)</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} autoFocus /></div>
-                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pieces Shipped</label><input type="number" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="0" value={tempPieces} onChange={e => setTempPieces(e.target.value)} /></div>
-                                </div>
-                                <div className="mt-6 flex gap-3">
-                                    <button onClick={() => setShowAddDetailsModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
-                                    <button onClick={confirmAddStop} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg">Save Stop</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* MODAL: PRINT PREVIEW */}
-                    {showPrintModal && (
-                        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
-                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-                                <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold text-slate-800">Print Manifest</h3><button onClick={() => setShowPrintModal(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-5 w-5" /></button></div>
-                                <div className="p-6 space-y-6">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Truck for this Sheet</label>
-                                        <select className="w-full p-3 border border-slate-300 rounded-lg outline-none bg-white" value={selectedVehicleForPrint} onChange={e => setSelectedVehicleForPrint(e.target.value)}>
-                                            <option value="">-- Select Truck --</option>
-                                            {vehicles.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                                        </select>
-                                        {vehicles.length === 0 && <p className="text-xs text-red-500 mt-1">No trucks defined. Add them in Van/Truck ID tab.</p>}
-                                    </div>
-                                    <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 border border-blue-100">
-                                        <p className="font-bold mb-1">Ready to print for:</p>
-                                        <p>Driver: {printData.driverName}</p>
-                                        <p>Stops: {printData.stops.length}</p>
-                                    </div>
-                                </div>
-                                <div className="p-4 border-t border-slate-100 bg-white flex gap-3">
-                                    <button onClick={() => setShowPrintModal(false)} className="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
-                                    <button onClick={handlePrint} className="flex-1 py-3 bg-slate-800 text-white rounded-lg font-bold hover:bg-black flex items-center justify-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print Now</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                 </div>
             );
         }
