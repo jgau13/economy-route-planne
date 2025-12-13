@@ -4,3 +4,4 @@ googlemaps
 ortools
 gunicorn
 python-dotenv
+requests
