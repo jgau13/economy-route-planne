@@ -239,13 +239,10 @@ def crear_modelo_datos_cvrp(lista_paradas, num_vans, base_address_text):
     total_paradas = len(paradas_validas)
     
     # Margen de holgura: permitimos un 20% más del promedio para flexibilidad
-    # Si hay 48 paradas y 4 vans, promedio = 12. Capacidad = 15.
-    # Si una zona tiene 20 paradas, 15 irán a una van, y 5 "desbordarán" a otra van.
-    # Esto evita sobrecargar una sola van con 20.
     avg_stops = math.ceil(total_paradas / datos['num_vehicles'])
-    vehicle_capacity = int(avg_stops * 1.3) # 30% de buffer para no ser tan rígidos
+    vehicle_capacity = int(avg_stops * 1.3) # 30% de buffer
     
-    # Aseguramos un mínimo razonable (ej. al menos 3 paradas)
+    # Aseguramos un mínimo razonable
     vehicle_capacity = max(vehicle_capacity, 3) 
     
     datos['vehicle_capacities'] = [vehicle_capacity] * datos['num_vehicles']
@@ -262,9 +259,7 @@ def resolver_cvrp(datos, dwell_time_minutos):
         to_node = manager.IndexToNode(to_index)
         val = datos['time_matrix'][from_node][to_node]
         if from_node != to_node:
-             # Penalizamos distancias largas para forzar clusters compactos (ZONAS)
-             # Multiplicamos el tiempo real para que el solver prefiera "ir cerca" 
-             # antes que "ir rápido pero lejos".
+             # Penalizamos ligeramente distancias largas para mantener la compacidad
              val = int(val * 1.0) 
         if to_node != 0: 
             val += int(dwell_time_minutos * 60)
@@ -273,7 +268,24 @@ def resolver_cvrp(datos, dwell_time_minutos):
     transit_callback_index = routing.RegisterTransitCallback(time_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
-    # 2. Dimensión de Capacidad (La clave para tu problema)
+    # 2. RESTRICTIVE TIME DIMENSION (4:30 HOURS LIMIT)
+    # 4.5 horas = 270 minutos = 16200 segundos
+    MAX_ROUTE_DURATION_SECONDS = 270 * 60
+    
+    routing.AddDimension(
+        transit_callback_index,
+        3600,  # Slack (Tiempo de espera permitido en ruta, 1h buffer)
+        MAX_ROUTE_DURATION_SECONDS, # Horizonte máximo estricto (4h 30m)
+        True,  # Start cumul to zero
+        'Time'
+    )
+    time_dimension = routing.GetDimensionOrDie('Time')
+    
+    # Esto ayuda a que, si una ruta es muy corta y otra muy larga, intente equilibrar,
+    # pero el límite de 4:30 es MANDATORIO (Hard Constraint).
+    time_dimension.SetGlobalSpanCostCoefficient(100)
+
+    # 3. Dimensión de Capacidad (La clave para tu problema de volumen)
     def demand_callback(from_index):
         from_node = manager.IndexToNode(from_index)
         return datos['demands'][from_node]
