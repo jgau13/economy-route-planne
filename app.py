@@ -4,6 +4,7 @@ import sys
 import urllib.parse
 import datetime
 import requests # NECESARIO PARA OSRM
+import math # NECESARIO PARA CALCULAR ÁNGULOS (ZONAS)
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import googlemaps
@@ -216,6 +217,7 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     fmt_almacen = base_address_text 
     pid_almacen = ""
 
+    # 1. Obtener Base Geocodificada
     if base_address_text:
         c, fmt, pid = obtener_datos_geo(base_address_text)
         if c: 
@@ -223,13 +225,16 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
             fmt_almacen = fmt
             pid_almacen = pid
         else:
-            # Fallback si falla la geocodificación de la base
             print("⚠️ No se pudo geocodificar la base, usando default.")
     
-    # Lista maestra de puntos: [Base, P1, P2, ...]
-    puntos = [coord_almacen]
-    
-    paradas_validas = [] 
+    # Parsing de coordenadas base para cálculos angulares
+    try:
+        base_lat, base_lon = map(float, coord_almacen.split(','))
+    except:
+        base_lat, base_lon = 0.0, 0.0
+
+    # 2. Recolectar todas las paradas válidas en una lista temporal
+    paradas_temp = [] 
     paradas_erroneas = []
     
     for item in lista_paradas:
@@ -242,14 +247,24 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
 
         c, fmt, pid = obtener_datos_geo(dir_txt)
         if c:
-            puntos.append(c)
-            paradas_validas.append({
+            # Calcular Ángulo Polar (0 a 360 grados) respecto a la base
+            # Esto es clave para la zonificación (Norte, Sur, Este, Oeste)
+            try:
+                p_lat, p_lon = map(float, c.split(','))
+                # atan2 devuelve radianes entre -pi y pi
+                angle = math.atan2(p_lat - base_lat, p_lon - base_lon)
+            except:
+                angle = 0
+            
+            paradas_temp.append({
                 "nombre": nombre_txt, 
                 "direccion": dir_txt,
                 "clean_address": fmt,
                 "place_id": pid,
                 "invoices": invoices,
-                "pieces": pieces
+                "pieces": pieces,
+                "coord_str": c,
+                "angle": angle # Guardamos el ángulo para ordenar
             })
         else:
             paradas_erroneas.append(dir_txt)
@@ -257,7 +272,15 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     if paradas_erroneas:
         return {"invalidas": paradas_erroneas}
 
-    if len(puntos) <= 1: return None
+    if not paradas_temp: return None
+
+    # 3. ORDENAR PARADAS POR ÁNGULO (SWEEP)
+    # Esto pre-agrupa las paradas por zonas geográficas antes de optimizar
+    paradas_temp.sort(key=lambda x: x['angle'])
+
+    # 4. Construir listas finales para el solver
+    puntos = [coord_almacen] + [p['coord_str'] for p in paradas_temp]
+    paradas_validas = paradas_temp # Ya ordenadas
 
     # AQUÍ LLAMAMOS A OSRM EN VEZ DE GOOGLE
     rows_matriz = obtener_matriz_segura(puntos)
@@ -268,7 +291,6 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     for fila in rows_matriz:
         fila_tiempos = []
         for elemento in fila['elements']:
-            # Aseguramos que sea int, aunque ya lo hicimos arriba, doble seguridad
             val = int(elemento.get('duration', {}).get('value', 999999))
             fila_tiempos.append(val)
         matriz_tiempos.append(fila_tiempos)
@@ -306,9 +328,16 @@ def resolver_vrp(datos, dwell_time_minutos):
     time_dimension.SetGlobalSpanCostCoefficient(100)
     
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
+    
+    # --- CAMBIO CRÍTICO PARA ZONIFICACIÓN ---
+    # Usamos PATH_CHEAPEST_ARC en lugar de PARALLEL_CHEAPEST_INSERTION.
+    # PATH_CHEAPEST_ARC construye ruta por ruta secuencialmente.
+    # Combinado con el ordenamiento angular (Sweep) hecho arriba, esto fuerza
+    # al algoritmo a llenar un vehículo en una zona (ej. Norte) antes de pasar a la siguiente (ej. Este).
+    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    
     search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-    search_parameters.time_limit.seconds = 2 
+    search_parameters.time_limit.seconds = 3 # Un segundo extra para mejor cálculo local
 
     solution = routing.SolveWithParameters(search_parameters)
     rutas_finales = {}
