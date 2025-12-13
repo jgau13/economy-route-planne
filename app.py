@@ -37,7 +37,7 @@ try:
 except ValueError as e:
     print(f"Error iniciando Google Maps: {e}", file=sys.stderr)
 
-ALMACEN_COORD = "28.450325,-81.396924" # Coordenadas aproximadas de ESS Orlando, ajusta si es necesario
+ALMACEN_COORD = "28.450325,-81.396924" # Coordenadas aproximadas de ESS Orlando
 
 # --- BASE DE DATOS ---
 def init_db():
@@ -128,8 +128,6 @@ def obtener_matriz_segura(puntos):
     if not coords_osrm: return None
 
     # URL del servicio público de OSRM (Gratis)
-    # Nota: Para uso muy intensivo en producción, se recomienda hostear tu propio OSRM,
-    # pero para <1000 peticiones diarias esto suele ir bien.
     coords_string = ";".join(coords_osrm)
     url = f"http://router.project-osrm.org/table/v1/driving/{coords_string}"
     
@@ -152,7 +150,7 @@ def obtener_matriz_segura(puntos):
             print("Error OSRM Response:", data.get('code'))
             return None
 
-        durations = data['durations'] # Matriz NxN en segundos
+        durations = data['durations'] # Matriz NxN en segundos (Floats)
 
         # CONVERTIR A FORMATO GOOGLE (Para no romper el resto del código)
         matriz_google_style = []
@@ -160,11 +158,15 @@ def obtener_matriz_segura(puntos):
         for fila in durations:
             fila_google = {'elements': []}
             for duracion_segundos in fila:
-                # Si es None (no hay ruta), ponemos infinito
-                val = duracion_segundos if duracion_segundos is not None else 9999999
+                # CORRECCIÓN CRÍTICA: Convertir Float a Int para OR-Tools
+                if duracion_segundos is not None:
+                    val = int(round(duracion_segundos))
+                else:
+                    val = 9999999
+                
                 fila_google['elements'].append({
                     'duration': {'value': val},
-                    'duration_in_traffic': {'value': val} # OSRM gratis no tiene tráfico real
+                    'duration_in_traffic': {'value': val} 
                 })
             matriz_google_style.append(fila_google)
             
@@ -266,7 +268,8 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     for fila in rows_matriz:
         fila_tiempos = []
         for elemento in fila['elements']:
-            val = elemento.get('duration', {}).get('value', 999999)
+            # Aseguramos que sea int, aunque ya lo hicimos arriba, doble seguridad
+            val = int(elemento.get('duration', {}).get('value', 999999))
             fila_tiempos.append(val)
         matriz_tiempos.append(fila_tiempos)
 
@@ -292,7 +295,7 @@ def resolver_vrp(datos, dwell_time_minutos):
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
         val = datos['time_matrix'][from_node][to_node]
-        if to_node != 0: val += dwell_time_minutos * 60
+        if to_node != 0: val += int(dwell_time_minutos * 60) # Asegurar int
         return val
 
     transit_callback_index = routing.RegisterTransitCallback(time_callback)
@@ -305,7 +308,7 @@ def resolver_vrp(datos, dwell_time_minutos):
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
     search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
     search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-    search_parameters.time_limit.seconds = 2 # Damos un poco más de tiempo
+    search_parameters.time_limit.seconds = 2 
 
     solution = routing.SolveWithParameters(search_parameters)
     rutas_finales = {}
@@ -391,7 +394,7 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
             idx_destino = mapa_indices[destino]
             try:
                 el = rows_matriz[idx_origen]['elements'][idx_destino]
-                val = el.get('duration', {}).get('value', 0)
+                val = int(el.get('duration', {}).get('value', 0)) # Asegurar Int
                 tiempo_total_segundos += val
             except: pass
         
@@ -447,10 +450,6 @@ def optimizar():
 
 @app.route('/optimizar_restantes', methods=['POST'])
 def optimizar_restantes():
-    # Lógica simplificada: Reutiliza el VRP con 1 solo vehículo y orden fijo al inicio
-    # Para simplicidad en esta versión híbrida, simplemente recalculamos el tiempo
-    # Si deseas reordenar el resto, se necesitaría reimplementar TSP parcial con OSRM
-    # Por ahora, para estabilidad, actuará como un recálculo de ruta simple.
     return recalcular_ruta()
 
 @app.route('/recalcular', methods=['POST'])
