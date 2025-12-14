@@ -527,6 +527,7 @@
             
             const [clientFormName, setClientFormName] = useState('');
             const [clientFormAddress, setClientFormAddress] = useState('');
+            const [showClientDbAddressSuggestions, setShowClientDbAddressSuggestions] = useState(false); // NUEVO ESTADO
             const [editingClientId, setEditingClientId] = useState(null);
             const [selectedStops, setSelectedStops] = useState([]);
             const [draggedItem, setDraggedItem] = useState(null);
@@ -777,7 +778,7 @@
             const getClientNameFromAddress = (address) => { const fromDraft = currentStops.find(s => s.address === address); if (fromDraft) return fromDraft.name; const fromDB = clientDB.find(c => c.address === address); return fromDB ? fromDB.name : "Client"; };
             const getWhatsappLink = (l) => `https://wa.me/?text=${encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`)}`;
             
-            // MODIFICADO: Ahora busca por nombre O por dirección
+            // MODIFICADO: Busca por nombre O por dirección (para el input de rutas)
             const filteredClients = useMemo(() => { 
                 const t = newStopName.toLowerCase().trim(); 
                 if (!t) return []; 
@@ -788,7 +789,28 @@
             }, [newStopName, clientDB]);
 
             const filteredClientsByAddress = useMemo(() => { const t = newStopAddress.toLowerCase().trim(); if (!t) return []; return clientDB.filter(c => (c.address || "").toLowerCase().includes(t)).slice(0, 5); }, [newStopAddress, clientDB]);
-            const filteredClientDBList = useMemo(() => { const t = clientFormName.toLowerCase().trim(); if (!t) return clientDB; return clientDB.filter(c => (c.name || "").toLowerCase().includes(t)); }, [clientFormName, clientDB]);
+            
+            // FILTRADO DE LA TABLA DE CLIENTES (Nombre o Dirección)
+            const filteredClientDBList = useMemo(() => { 
+                const nameTerm = clientFormName.toLowerCase().trim();
+                const addrTerm = clientFormAddress.toLowerCase().trim();
+                if (!nameTerm && !addrTerm) return clientDB;
+                
+                return clientDB.filter(c => {
+                    const matchName = !nameTerm || (c.name || "").toLowerCase().includes(nameTerm);
+                    const matchAddr = !addrTerm || (c.address || "").toLowerCase().includes(addrTerm);
+                    // Lógica AND: Si escribes en ambos campos, debe coincidir ambos. Si solo uno, filtra por ese.
+                    return matchName && matchAddr;
+                });
+            }, [clientFormName, clientFormAddress, clientDB]);
+
+            // SUGERENCIAS PARA EL CAMPO DIRECCIÓN EN CLIENTS DB
+            const suggestionsForClientDbAddress = useMemo(() => {
+                const t = clientFormAddress.toLowerCase().trim();
+                if (!t) return [];
+                return clientDB.filter(c => (c.address || "").toLowerCase().includes(t)).slice(0, 5);
+            }, [clientFormAddress, clientDB]);
+
 
             const recalculateRoute = async (dName, stops) => { setRecalculating(p => ({...p, [dName]: true})); try { const res = await fetch('/recalcular', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); setRoutes(p => ({...p, [dName]: {...p[dName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas || stops}})); } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [dName]: false})); } };
             const handleRecalculateAll = async () => { if (!routes) return; setIsRecalculatingAll(true); await Promise.all(Object.keys(routes).map(d => recalculateRoute(d, routes[d].paradas))); setIsRecalculatingAll(false); };
@@ -939,7 +961,46 @@
                     <main className="max-w-7xl mx-auto p-6 no-print">
                         {/* SETTINGS, CLIENTS, VEHICLES, GLOBAL MAP VIEWS ... */}
                         {view === 'settings' && (<div className="max-w-2xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden p-6 space-y-8"><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Data Management (Migrate User)</h2><div className="space-y-4"><p className="text-sm text-slate-600">Use this to move your data to a new account. Download backup from old account, then restore in new one.</p><div className="flex gap-4"><button onClick={handleBackup} className="flex-1 bg-slate-800 text-white px-4 py-2 rounded font-bold flex items-center justify-center gap-2"><Icon name="download" className="h-4 w-4" /> Download Backup</button><input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" /><button onClick={handleRestoreClick} className="flex-1 bg-ess-blue text-white px-4 py-2 rounded font-bold flex items-center justify-center gap-2"><Icon name="upload" className="h-4 w-4" /> Restore from Backup</button></div></div></div><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Manifest Header Info</h2><div className="space-y-4"><div><label className="block text-sm font-bold text-slate-500 mb-1">Company Name</label><input className="w-full p-2 border rounded" value={companyConfig.companyName} onChange={e => setCompanyConfig({...companyConfig, companyName: e.target.value})} /></div><div><label className="block text-sm font-bold text-slate-500 mb-1">Phone</label><input className="w-full p-2 border rounded" value={companyConfig.phone} onChange={e => setCompanyConfig({...companyConfig, phone: e.target.value})} /></div><div><label className="block text-sm font-bold text-slate-500 mb-1">Footer Address</label><input className="w-full p-2 border rounded" value={companyConfig.address} onChange={e => setCompanyConfig({...companyConfig, address: e.target.value})} /></div></div></div><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">App Security</h2><div className="space-y-4"><div><label className="block text-sm font-bold text-slate-500 mb-1">Change Security PIN (Default: 0000)</label><input type="text" className="w-full p-2 border rounded" maxLength="6" placeholder="New PIN" value={newPin} onChange={e => setNewPin(e.target.value)} /></div><button onClick={saveSettings} className="bg-slate-800 text-white px-4 py-2 rounded font-bold">Save All Settings</button></div></div><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Account Security</h2><div className="space-y-4"><p className="text-sm text-slate-600">Click below to receive an email to reset your password for <strong>{user.email}</strong>.</p><button onClick={handleChangePassword} className="bg-ess-blue text-white px-4 py-2 rounded font-bold">Send Password Reset Email</button>{settingsMsg && <p className="text-sm text-green-600 font-bold">{settingsMsg}</p>}</div></div></div></div>)}
-                        {view === 'clients' && (<div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients</h2></div><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{clientDB.length} Clients</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex flex-col md:flex-row gap-4"><input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} /><div className="flex-[2]"><GoogleAddressInput value={clientFormAddress} onChange={(e) => setClientFormAddress(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div><button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button></div></div><div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{c.name}</td><td className="p-4 text-sm text-slate-600">{c.address}</td><td className="p-4 text-right"><div className="flex justify-end gap-2"><button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1"><Icon name="pencil" className="h-4 w-4"/></button><button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4"/></button></div></td></tr>))}</tbody></table></div></div></div>)}
+                        {view === 'clients' && (<div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients</h2></div><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{clientDB.length} Clients</span></div>
+                            <div className="p-6 bg-blue-50/50 border-b border-slate-200">
+                                <div className="flex flex-col md:flex-row gap-4">
+                                    <input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} />
+                                    <div className="flex-[2] relative">
+                                        <GoogleAddressInput 
+                                            value={clientFormAddress} 
+                                            onChange={(e) => { 
+                                                setClientFormAddress(e.target.value);
+                                                setShowClientDbAddressSuggestions(true);
+                                            }} 
+                                            onKeyDown={(e) => handleEnter(e, saveClient)} 
+                                            className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" 
+                                            placeholder="Address" 
+                                            disabled={!scriptLoaded} 
+                                            isLoaded={scriptLoaded} 
+                                        />
+                                        {showClientDbAddressSuggestions && suggestionsForClientDbAddress.length > 0 && (
+                                            <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1">
+                                                <div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>
+                                                {suggestionsForClientDbAddress.map((c, i) => (
+                                                    <div key={i} onClick={() => { 
+                                                        setClientFormName(c.name); 
+                                                        setClientFormAddress(c.address);
+                                                        setEditingClientId(c.id);
+                                                        setShowClientDbAddressSuggestions(false);
+                                                    }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm">
+                                                        <div className="font-bold text-slate-700">{c.name}</div>
+                                                        <div className="text-xs text-slate-500 truncate">{c.address}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2">
+                                        <Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{c.name}</td><td className="p-4 text-sm text-slate-600">{c.address}</td><td className="p-4 text-right"><div className="flex justify-end gap-2"><button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1"><Icon name="pencil" className="h-4 w-4"/></button><button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4"/></button></div></td></tr>))}</tbody></table></div></div></div>)}
                         {view === 'vehicles' && (<div className="max-w-2xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="truck" className="h-5 w-5 text-ess-blue" /> Fleet Management</h2><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{vehicles.length} Trucks</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex gap-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }})} /><button onClick={() => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }}} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="plus" className="h-4 w-4" /> Add Truck</button></div></div><div className="max-h-[500px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{vehicles.length === 0 ? <tr><td className="p-8 text-center text-slate-400">No vehicles added yet.</td></tr> : vehicles.map(v => (<tr key={v.id} className="hover:bg-slate-50"><td className="p-4 font-bold text-slate-700 flex items-center gap-3"><div className="bg-blue-100 p-2 rounded-full"><Icon name="truck" className="h-4 w-4 text-ess-blue" /></div> {v.name}</td><td className="p-4 text-right"><button onClick={() => deleteVehicle(v.id)} className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-5 w-5" /></button></td></tr>))}</tbody></table></div></div></div>)}
                         {view === 'global_map' && <div className="flex flex-col h-[calc(100vh-120px)]"><div className="mb-4"><button onClick={() => setView('results')} className="text-slate-600 px-4 py-2 border rounded-lg bg-white hover:bg-slate-50 font-bold flex items-center gap-2 shadow-sm"><Icon name="arrow-left" className="h-4 w-4" /> Back to Results</button></div><div className="flex-1 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative"><GlobalMapView routes={routes} baseAddress={baseAddress} /></div></div>}
 
@@ -1101,4 +1162,3 @@
     </script>
 </body>
 </html>
-
