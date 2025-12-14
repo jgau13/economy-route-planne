@@ -217,15 +217,19 @@
             }, [isLoaded]);
             
             const handleInputKeyDown = (e) => { 
-                // CRITICAL FIX: Si se presiona Enter mientras hay una sugerencia de Google activa,
-                // detenemos la propagación para evitar guardar el dato incompleto.
-                // Google Maps maneja la clase .pac-item-selected para el ítem resaltado.
+                // CRITICAL FIX: Si se presiona Enter, verificamos si hay una sugerencia activa.
                 if (e.key === 'Enter') {
-                    const isSuggestionSelected = document.querySelector('.pac-item-selected');
-                    if (isSuggestionSelected) {
-                        // El usuario está seleccionando una dirección.
-                        // Prevenimos que el Enter dispare "Guardar" todavía.
-                        return;
+                    const pacContainer = document.querySelector('.pac-container');
+                    // Verificar si el contenedor está visible en pantalla
+                    const isVisible = pacContainer && pacContainer.offsetParent !== null;
+                    // Verificar si hay un elemento seleccionado
+                    const isSelected = document.querySelector('.pac-item-selected');
+                    
+                    // Si el menú está visible Y (hay una selección explícita O el usuario está "dentro" del flujo de selección)
+                    if (isVisible && isSelected) {
+                        e.preventDefault(); 
+                        e.stopPropagation();
+                        return; // Detenemos la propagación para que el padre NO intente guardar
                     }
                 }
                 if (onKeyDown) onKeyDown(e); 
