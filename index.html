@@ -217,18 +217,16 @@
             }, [isLoaded]);
             
             const handleInputKeyDown = (e) => { 
-                // CRITICAL FIX: Si se presiona Enter, verificamos si hay una sugerencia activa.
+                // CRITICAL FIX: Si se presiona Enter, verificamos si hay una sugerencia activa (resaltada).
                 if (e.key === 'Enter') {
-                    const pacContainer = document.querySelector('.pac-container');
-                    // Verificar si el contenedor está visible en pantalla
-                    const isVisible = pacContainer && pacContainer.offsetParent !== null;
-                    // Verificar si hay un elemento seleccionado
-                    const isSelected = document.querySelector('.pac-item-selected');
+                    // La clase .pac-item-selected indica que el usuario está "encima" de una sugerencia con el teclado
+                    const isSuggestionSelected = document.querySelector('.pac-item-selected');
                     
-                    // Si el menú está visible Y (hay una selección explícita)
-                    if (isVisible && isSelected) {
-                        // NO llamamos a preventDefault() para permitir que Google Maps rellene el input.
-                        // PERO SI detenemos la llamada a onKeyDown (que dispara el 'Next')
+                    if (isSuggestionSelected) {
+                        // Si hay una sugerencia seleccionada, evitamos que el Enter dispare "Guardar/Siguiente".
+                        // Solo queremos que Google Maps complete el texto.
+                        e.preventDefault(); 
+                        // No llamamos a onKeyDown (que es quien dispara initiateAddStop)
                         return; 
                     }
                 }
