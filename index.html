@@ -191,7 +191,7 @@
             return <span dangerouslySetInnerHTML={{ __html: svgHtml }} style={{ display: 'contents' }} />;
         };
 
-        // --- GOOGLE ADDRESS INPUT ---
+        // --- UPDATED ADDRESS INPUT WITH ENTER KEY FIX ---
         const GoogleAddressInput = ({ value, onChange, placeholder, className, disabled, isLoaded, onKeyDown, inputRef: propInputRef }) => {
             const innerRef = useRef(null);
             const inputRef = propInputRef || innerRef;
@@ -216,7 +216,21 @@
                 attemptInitialization();
             }, [isLoaded]);
             
-            const handleInputKeyDown = (e) => { if (onKeyDown) onKeyDown(e); };
+            const handleInputKeyDown = (e) => { 
+                // CRITICAL FIX: Si se presiona Enter mientras hay una sugerencia de Google activa,
+                // detenemos la propagación para evitar guardar el dato incompleto.
+                // Google Maps maneja la clase .pac-item-selected para el ítem resaltado.
+                if (e.key === 'Enter') {
+                    const isSuggestionSelected = document.querySelector('.pac-item-selected');
+                    if (isSuggestionSelected) {
+                        // El usuario está seleccionando una dirección.
+                        // Prevenimos que el Enter dispare "Guardar" todavía.
+                        return;
+                    }
+                }
+                if (onKeyDown) onKeyDown(e); 
+            };
+
             return <input ref={inputRef} type="text" value={value} onChange={onChange} onKeyDown={handleInputKeyDown} className={className} placeholder={placeholder} disabled={disabled} autoComplete="off" />;
         };
 
