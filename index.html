@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Route Planner</title>
+    <title>Economy Sign Supply Route Planner</title>
     
     <!-- React y ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -24,18 +24,18 @@
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, getDocs, setDoc, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // Función global para iniciar Firebase
+        // Función global para inyectar la configuración desde fuera o usarla si se pega aquí
         window.initializeFirebaseGlobally = (config) => {
             try {
-                if (!config.apiKey || config.apiKey.includes("TU_API_KEY")) {
-                    console.error("⚠️ Firebase Config no válida. Revisa tus variables de entorno.");
+                // Validación básica para evitar errores si la config está vacía
+                if (!config || !config.apiKey || config.apiKey.includes("Pega_aquí")) {
+                    console.warn("⚠️ Esperando configuración de Firebase válida...");
                     return false; 
                 }
                 const app = initializeApp(config);
                 const auth = getAuth(app);
                 const db = getFirestore(app);
 
-                // Exponemos las funciones de Firebase al objeto window para usarlas en React
                 window.fbAuth = auth;
                 window.fbDb = db;
                 window.fbSignIn = signInWithEmailAndPassword;
@@ -58,7 +58,7 @@
                 window.firebaseReady = true; 
                 return true;
             } catch (e) {
-                console.error("❌ Error Inicializando Firebase:", e);
+                console.error("❌ Firebase Initialization Error:", e);
                 window.firebaseInitError = e.message;
                 return false;
             }
@@ -79,6 +79,7 @@
         .animate-fade-in { animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         
+        /* GOOGLE MAPS AUTOCOMPLETE FIXES */
         .pac-container { 
             z-index: 99999 !important; 
             border-radius: 8px; 
@@ -89,16 +90,23 @@
             max-width: 90vw !important; 
             white-space: normal !important;
         }
-        .pac-item { padding: 10px 12px; cursor: pointer; font-size: 14px; white-space: normal !important; }
+        .pac-item { 
+            padding: 10px 12px; 
+            cursor: pointer; 
+            font-size: 14px; 
+            white-space: normal !important; 
+        }
         .pac-item:hover { background-color: #f0f9ff; }
         .pac-item-query { font-size: 14px; color: #1e293b; font-weight: 600; }
         
         .draggable-source { opacity: 0.4; border: 2px dashed #cbd5e1; background: #f1f5f9; }
         .drop-target { background-color: #eff6ff; border: 2px dashed #1b6e9b; }
+        
         .loader { border: 3px solid #f3f3f3; border-radius: 50%; border-top: 3px solid #1b6e9b; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .custom-checkbox { width: 20px; height: 20px; accent-color: #1b6e9b; cursor: pointer; }
 
+        /* PRINT STYLES - FIXED TO PORTRAIT */
         @media print {
             @page { size: portrait; margin: 0.5cm; }
             body * { visibility: hidden; }
@@ -114,17 +122,14 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // =========================================================
-        // PANTALLAS Y COMPONENTES
-        // =========================================================
-
+        // ... [ERROR SCREEN & LOGIN SCREEN] ...
         const ConfigErrorScreen = ({ errorDetails }) => (
             <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
                 <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-lg border-l-4 border-red-500">
-                    <h1 className="text-2xl font-bold text-red-600 mb-2 flex items-center gap-2"><Icon name="alert-triangle" className="h-8 w-8" /> Error de Configuración</h1>
-                    <p className="text-slate-600 mb-4 font-bold">No se pudo conectar.</p>
-                    <div className="bg-red-50 p-4 rounded-lg border border-red-200 text-sm font-mono text-red-800 mb-4 break-words">Detalle: {errorDetails || "Error desconocido"}</div>
-                    <button onClick={() => window.location.reload()} className="mt-6 w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-900 transition-colors">Reintentar</button>
+                    <h1 className="text-2xl font-bold text-red-600 mb-2 flex items-center gap-2"><Icon name="alert-triangle" className="h-8 w-8" /> System Error</h1>
+                    <p className="text-slate-600 mb-4 font-bold">Connection failed.</p>
+                    <div className="bg-red-50 p-4 rounded-lg border border-red-200 text-sm font-mono text-red-800 mb-4 break-words">Error: {errorDetails || "Unknown Configuration Error"}</div>
+                    <button onClick={() => window.location.reload()} className="mt-6 w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-900 transition-colors">Retry Connection</button>
                 </div>
             </div>
         );
@@ -138,35 +143,35 @@
 
             const handleLogin = async (e) => {
                 e.preventDefault(); setLoading(true); setError(''); setMsg('');
-                if (!window.fbSignIn) { setError("Sistema no listo. Refresca la página."); setLoading(false); return; }
+                if (!window.fbSignIn) { setError("System not ready. Please refresh."); setLoading(false); return; }
                 try { await window.fbSignIn(window.fbAuth, email, password); } 
-                catch (err) { console.error(err); setError("Acceso denegado. Revisa tus credenciales."); setLoading(false); }
+                catch (err) { console.error(err); setError("Access Denied. Check credentials."); setLoading(false); }
             };
 
             const handleForgotPassword = async () => {
-                if(!email) { setError("Ingresa tu email primero."); return; }
+                if(!email) { setError("Please enter your email first."); return; }
                 try {
                     await window.fbSendPasswordResetEmail(window.fbAuth, email);
-                    setMsg("Email de restablecimiento enviado.");
+                    setMsg("Password reset email sent! Check your inbox.");
                     setError('');
-                } catch (e) { setError("Error enviando email: " + e.message); }
+                } catch (e) { setError("Error sending email: " + e.message); }
             };
 
             return (
                 <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
                     <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-200">
                         <div className="text-center mb-8">
+                            <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-16 mx-auto mb-4"/>
                             <h1 className="text-2xl font-bold text-ess-blue">Route Planner</h1>
-                            <p className="text-sm text-slate-400">Login Seguro</p>
                         </div>
                         <form onSubmit={handleLogin} className="space-y-4">
-                            <div><label className="block text-sm font-bold text-slate-700 mb-1">Email</label><input type="email" required className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-ess-blue" value={email} onChange={e => setEmail(e.target.value)} /></div>
-                            <div><label className="block text-sm font-bold text-slate-700 mb-1">Password</label><input type="password" required className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-ess-blue" value={password} onChange={e => setPassword(e.target.value)} /></div>
+                            <div><label className="block text-sm font-bold text-slate-700 mb-1">Email</label><input type="email" required className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-ess-blue outline-none" value={email} onChange={e => setEmail(e.target.value)} /></div>
+                            <div><label className="block text-sm font-bold text-slate-700 mb-1">Password</label><input type="password" required className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-ess-blue outline-none" value={password} onChange={e => setPassword(e.target.value)} /></div>
                             {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg font-medium">{error}</div>}
                             {msg && <div className="p-3 bg-green-50 text-green-600 text-sm rounded-lg font-medium">{msg}</div>}
-                            <button type="submit" disabled={loading} className="w-full bg-ess-blue text-white py-3 rounded-lg font-bold hover:bg-sky-700 transition-colors flex justify-center">{loading ? <div className="loader"></div> : "Iniciar Sesión"}</button>
+                            <button type="submit" disabled={loading} className="w-full bg-ess-blue text-white py-3 rounded-lg font-bold hover:bg-sky-700 transition-colors flex justify-center">{loading ? <div className="loader"></div> : "Sign In"}</button>
                             <div className="text-center">
-                                <button type="button" onClick={handleForgotPassword} className="text-sm text-slate-500 hover:text-ess-blue underline">¿Olvidaste tu contraseña?</button>
+                                <button type="button" onClick={handleForgotPassword} className="text-sm text-slate-500 hover:text-ess-blue underline">Forgot your password?</button>
                             </div>
                         </form>
                     </div>
@@ -186,6 +191,7 @@
             return <span dangerouslySetInnerHTML={{ __html: svgHtml }} style={{ display: 'contents' }} />;
         };
 
+        // --- GOOGLE ADDRESS INPUT ---
         const GoogleAddressInput = ({ value, onChange, placeholder, className, disabled, isLoaded, onKeyDown, inputRef: propInputRef }) => {
             const innerRef = useRef(null);
             const inputRef = propInputRef || innerRef;
@@ -210,10 +216,11 @@
                 attemptInitialization();
             }, [isLoaded]);
             
-            return <input ref={inputRef} type="text" value={value} onChange={onChange} onKeyDown={(e) => onKeyDown && onKeyDown(e)} className={className} placeholder={placeholder} disabled={disabled} autoComplete="off" />;
+            const handleInputKeyDown = (e) => { if (onKeyDown) onKeyDown(e); };
+            return <input ref={inputRef} type="text" value={value} onChange={onChange} onKeyDown={handleInputKeyDown} className={className} placeholder={placeholder} disabled={disabled} autoComplete="off" />;
         };
 
-        // --- GLOBAL MAP VIEW (Marcadores Nativos) ---
+        // --- GLOBAL MAP VIEW (FIXED: NATIVE MARKERS) ---
         const GlobalMapView = ({ routes, baseAddress }) => {
             const mapRef = useRef(null);
             const googleMapRef = useRef(null);
@@ -278,7 +285,7 @@
                                     title: "Warehouse"
                                 });
                                 baseMarker.addListener("click", () => {
-                                    infoWindowRef.current.setContent(`<div style="padding:4px;"><h3 style="font-weight:bold;">🏭 Base</h3><p style="font-size:12px;">${baseAddress}</p></div>`);
+                                    infoWindowRef.current.setContent(`<div style="padding:4px;"><h3 style="font-weight:bold;">🏭 Warehouse</h3><p style="font-size:12px;">${baseAddress}</p></div>`);
                                     infoWindowRef.current.open(map, baseMarker);
                                 });
                                 markersRef.current.push(baseMarker);
@@ -315,38 +322,112 @@
             );
         };
 
+        // ... [PRINTABLE SHEET AND GLOBAL MANIFEST] ...
         const PrintableSheet = ({ routeData, driverName, vehicle, config }) => {
             const today = new Date();
+            const dateStr = today.toLocaleDateString('en-US');
+            const timeStr = today.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
             return (
                 <div id="printable-sheet" className="hidden print:block bg-white text-black p-4 font-sans text-sm">
                     <div className="flex justify-between items-start mb-6 border-b-2 border-black pb-4">
                         <div className="flex items-center gap-4">
+                            <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
                             <div>
                                 <h1 className="text-xl font-bold uppercase tracking-wide">Route Manifest</h1>
-                                <p className="font-bold text-md">{today.toLocaleDateString()}</p>
+                                <p className="font-bold text-md">{dateStr}</p>
                             </div>
                         </div>
                         <div className="text-right space-y-1">
                             <div className="text-base"><span className="font-bold">Driver:</span> {driverName}</div>
                             <div className="text-base"><span className="font-bold">Truck:</span> {vehicle || "_______"}</div>
+                            <div className="text-base"><span className="font-bold">Print Date:</span> {timeStr}</div>
                         </div>
                     </div>
                     <table className="w-full border-collapse border border-black mb-4">
-                        <thead><tr className="bg-white"><th className="border border-black p-1 w-8">#</th><th className="border border-black p-2 text-left">Customer / Address</th><th className="border border-black p-2 w-20">Invoices</th><th className="border border-black p-2 w-10">Pcs</th><th className="border border-black p-2 w-32">Signature</th></tr></thead>
+                        <thead>
+                            <tr className="bg-white">
+                                <th className="border border-black p-1 w-8 text-center text-xs">#</th>
+                                <th className="border border-black p-2 text-left w-auto">Customer / Address</th>
+                                <th className="border border-black p-2 w-20 text-center text-xs">Invoices</th>
+                                <th className="border border-black p-2 w-10 text-center text-xs">Pcs</th>
+                                <th className="border border-black p-2 w-12 text-center text-xs">COD</th>
+                                <th className="border border-black p-2 w-32 text-left text-xs">Signature</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             {routeData.map((stop, index) => (
                                 <tr key={index} className="h-14">
                                     <td className="border border-black p-1 text-center font-bold">{index + 1}</td>
-                                    <td className="border border-black p-2 align-top"><div className="font-bold text-sm truncate">{stop.nombre}</div><div className="text-[10px] text-gray-600 leading-tight">{stop.direccion}</div></td>
+                                    <td className="border border-black p-2 align-top">
+                                        <div className="font-bold text-sm truncate">{stop.nombre}</div>
+                                        <div className="text-[10px] text-gray-600 leading-tight">{stop.direccion}</div>
+                                    </td>
                                     <td className="border border-black p-1 text-center font-mono font-bold text-sm align-middle break-words">{stop.invoices || '-'}</td>
                                     <td className="border border-black p-1 text-center font-bold text-sm align-middle">{stop.pieces || '-'}</td>
+                                    <td className="border border-black p-1 text-center font-bold text-sm align-middle"></td>
                                     <td className="border border-black p-1"></td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                     <div className="flex justify-between items-end mt-4 pt-4 border-t border-black">
-                        <div className="text-[10px]"><div className="font-bold text-xs">{config.companyName || "COMPANY NAME"}</div><div>PHONE: {config.phone || "000-000-0000"}</div><div>{config.address || "Company Address"}</div></div>
+                        <div className="space-y-4">
+                            <div>Checked by: __________________________</div>
+                            <div>Time: __________________________</div>
+                        </div>
+                        <div className="text-right text-[10px]">
+                            <div className="font-bold text-xs">{config.companyName || "ECONOMY SIGN SUPPLY"}</div>
+                            <div>PHONE: {config.phone || "407-901-0900"}</div>
+                            <div>{config.address || "8350 PARKLINE BLVD, ORLANDO, FL 32809"}</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const GlobalManifest = ({ routes, config }) => {
+            const today = new Date().toLocaleDateString('en-US');
+            return (
+                <div id="global-manifest" className="hidden print:block bg-white text-black p-8 font-sans">
+                    <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
+                        <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
+                        <div className="text-right">
+                            <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
+                            <p className="text-lg font-bold">{today}</p>
+                        </div>
+                    </div>
+                    <div className="space-y-8">
+                        {Object.entries(routes).map(([driver, data], idx) => (
+                            <div key={idx} className="break-inside-avoid">
+                                <div className="bg-gray-100 border border-black p-2 font-bold text-lg mb-2 flex justify-between">
+                                    <span>{driver}</span>
+                                    <span>{data.paradas.length} Stops</span>
+                                </div>
+                                <table className="w-full border-collapse border border-black text-xs">
+                                    <thead>
+                                        <tr>
+                                            <th className="border border-black p-1 w-8">#</th>
+                                            <th className="border border-black p-1 text-left">Customer / Address</th>
+                                            <th className="border border-black p-1 w-20">Invoices</th>
+                                            <th className="border border-black p-1 w-12">Pcs</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {data.paradas.map((stop, sIdx) => (
+                                            <tr key={sIdx}>
+                                                <td className="border border-black p-1 text-center">{sIdx + 1}</td>
+                                                <td className="border border-black p-1">
+                                                    <span className="font-bold">{stop.nombre}</span> - {stop.direccion}
+                                                </td>
+                                                <td className="border border-black p-1 text-center">{stop.invoices}</td>
+                                                <td className="border border-black p-1 text-center">{stop.pieces}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ))}
                     </div>
                 </div>
             );
@@ -354,6 +435,7 @@
 
         // --- APP PRINCIPAL ---
         function App() {
+            // ... [STATES AND HOOKS] ...
             const [user, setUser] = useState(null);
             const [authLoading, setAuthLoading] = useState(true);
             const [dbReady, setDbReady] = useState(false);
@@ -366,36 +448,100 @@
             const [scriptLoaded, setScriptLoaded] = useState(false);
             const [view, setView] = useState('input'); 
             
-            const [baseAddress, setBaseAddress] = useState('Orlando, FL'); // Valor por defecto seguro
+            const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, EE. UU.');
             const [dwellTime, setDwellTime] = useState(6);
-            const [companyConfig, setCompanyConfig] = useState({ companyName: "MI EMPRESA", phone: "", address: "" });
+            const [companyConfig, setCompanyConfig] = useState({
+                companyName: "ECONOMY SIGN SUPPLY ORLANDO",
+                phone: "407-901-0900",
+                address: "8350 PARKLINE BLVD, ORLANDO, FLORIDA 32809"
+            });
             const [savedPin, setSavedPin] = useState('0000'); 
 
             const [currentStops, setCurrentStops] = useState([]);
-            const [routes, setRoutes] = useState(null);
-            const [loading, setLoading] = useState(false);
-            const [error, setError] = useState('');
             
-            // Estados para Inputs y Modales
             const [newStopName, setNewStopName] = useState('');
             const [newStopAddress, setNewStopAddress] = useState('');
             const [newDriverName, setNewDriverName] = useState('');
             const [newVehicleName, setNewVehicleName] = useState(''); 
             const [showSuggestions, setShowSuggestions] = useState(false);
+            const [showAddressSuggestions, setShowAddressSuggestions] = useState(false); 
+            const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1); 
+            
             const [showAddDetailsModal, setShowAddDetailsModal] = useState(false); 
             const [tempStopData, setTempStopData] = useState(null);
             const [tempInvoices, setTempInvoices] = useState('');
             const [tempPieces, setTempPieces] = useState('');
-            const [showPrintModal, setShowPrintModal] = useState(false);
-            const [printData, setPrintData] = useState(null);
-            const [selectedVehicleForPrint, setSelectedVehicleForPrint] = useState('');
-            const [viewingDriver, setViewingDriver] = useState(null);
 
+            const [showAddRouteModal, setShowAddRouteModal] = useState(false);
+            const [showManualStopModal, setShowManualStopModal] = useState(false);
+            const [targetDriverForManual, setTargetDriverForManual] = useState(null);
+
+            const [showPinModal, setShowPinModal] = useState(false);
+            const [pinInput, setPinInput] = useState('');
+            const [pendingView, setPendingView] = useState('');
+
+            const [printData, setPrintData] = useState(null); 
+            const [showPrintModal, setShowPrintModal] = useState(false);
+            const [showGlobalPrint, setShowGlobalPrint] = useState(false); 
+            const [selectedVehicleForPrint, setSelectedVehicleForPrint] = useState('');
+
+            const [settingsMsg, setSettingsMsg] = useState('');
+            const [newPin, setNewPin] = useState('');
+
+            const [routes, setRoutes] = useState(null);
+            const [originalRoutes, setOriginalRoutes] = useState(null); 
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [recalculating, setRecalculating] = useState({});
+            
+            const [clientFormName, setClientFormName] = useState('');
+            const [clientFormAddress, setClientFormAddress] = useState('');
+            const [editingClientId, setEditingClientId] = useState(null);
+            const [selectedStops, setSelectedStops] = useState([]);
+            const [draggedItem, setDraggedItem] = useState(null);
+            const [dragOverDriver, setDragOverDriver] = useState(null);
+            const [swappingDriver, setSwappingDriver] = useState(null);
+            const [isRecalculatingAll, setIsRecalculatingAll] = useState(false);
+            const [editingStop, setEditingStop] = useState(null);
+            const [editingDraftId, setEditingDraftId] = useState(null);
+            
+            // NEW STATE FOR SINGLE DRIVER MAP MODAL
+            const [viewingDriver, setViewingDriver] = useState(null);
+            
+            // NEW STATE FOR ROUTE HISTORY
+            const [showHistoryModal, setShowHistoryModal] = useState(false);
+            const [historyData, setHistoryData] = useState([]);
+
+            const clientInputRef = useRef(null);
+            const piecesInputRef = useRef(null);
             const mainClientInputRef = useRef(null); 
+
+            const handleEnter = (e, callback) => {
+                if (e.key === 'Enter') {
+                    callback();
+                }
+            };
+
+            const handleLogout = () => {
+                if(window.fbSignOut && window.fbAuth) {
+                    window.fbSignOut(window.fbAuth);
+                } else {
+                    window.location.reload();
+                }
+            };
+            
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             const getUserCollection = (collName) => user ? window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, collName) : null;
             const getUserDocRef = (collName, docId) => user ? window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, collName, docId) : null;
 
+            const formatClientName = (name) => {
+                if (!name) return "";
+                const trimmed = name.trim();
+                if (trimmed === trimmed.toUpperCase() && /[a-zA-Z]/.test(trimmed)) return trimmed;
+                return trimmed.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+            };
+
+            // ... [USE EFFECTS] ...
             useEffect(() => {
                 const fetchConfig = async () => {
                     try {
@@ -404,7 +550,7 @@
                         if (data.firebaseConfig && data.firebaseConfig.apiKey) {
                             const tryInitFb = () => { if (window.initializeFirebaseGlobally) { if (window.initializeFirebaseGlobally(data.firebaseConfig)) setDbReady(true); } else setTimeout(tryInitFb, 50); };
                             tryInitFb();
-                        } else { setSystemError("Falta Configuración de Firebase."); setAuthLoading(false); }
+                        } else { setSystemError("Missing Firebase Config."); setAuthLoading(false); }
                         if (data.googleApiKey) setGoogleApiKey(data.googleApiKey);
                     } catch (err) { setAuthLoading(false); }
                 };
@@ -415,7 +561,9 @@
                 const initAuth = () => {
                     if (window.fbOnAuthStateChanged) {
                         window.fbOnAuthStateChanged(window.fbAuth, (currentUser) => { setUser(currentUser); setAuthLoading(false); });
-                    } else { setTimeout(initAuth, 100); }
+                    } else {
+                        setTimeout(initAuth, 100);
+                    }
                 };
                 initAuth();
             }, []);
@@ -427,6 +575,9 @@
                 window.fbOnSnapshot(window.fbQuery(getUserCollection("draft_stops"), window.fbOrderBy("createdAt", "desc")), (s) => setCurrentStops(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                 window.fbOnSnapshot(window.fbQuery(getUserCollection("vehicles"), window.fbOrderBy("name")), (s) => setVehicles(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                 
+                // HISTORY SNAPSHOT
+                window.fbOnSnapshot(window.fbQuery(getUserCollection("route_history"), window.fbOrderBy("timestamp", "desc"), window.fbLimit(3)), (s) => setHistoryData(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+
                 const userSettingsRef = getUserDocRef("settings", "config");
                 window.fbOnSnapshot(userSettingsRef, (docSnap) => {
                     if (docSnap.exists()) {
@@ -449,124 +600,455 @@
                 document.head.appendChild(script);
             }, [googleApiKey]);
 
-            // Acciones Básicas
+            // ... [ACTION FUNCTIONS] ...
             const addDriverToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("drivers"), { name, active: true }); };
             const deleteDriver = async (id) => { if(window.fbDb && confirm('Delete?')) await window.fbDeleteDoc(getUserDocRef("drivers", id)); };
             const toggleDriver = async (id, status) => { if(window.fbDb) await window.fbUpdateDoc(getUserDocRef("drivers", id), { active: !status }); };
-            const handleLogout = () => { if(window.fbSignOut && window.fbAuth) window.fbSignOut(window.fbAuth); else window.location.reload(); };
+            const addVehicleToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("vehicles"), { name }); };
+            const deleteVehicle = async (id) => { if(window.fbDb && confirm('Delete Vehicle?')) await window.fbDeleteDoc(getUserDocRef("vehicles", id)); };
+            const saveClient = async () => { 
+                if (!clientFormName || !window.fbDb) return; 
+                const finalName = formatClientName(clientFormName);
+                if (editingClientId) { await window.fbUpdateDoc(getUserDocRef("clients", editingClientId), { name: finalName, address: clientFormAddress }); setEditingClientId(null); } 
+                else { await window.fbAddDoc(getUserCollection("clients"), { name: finalName, address: clientFormAddress }); } 
+                setClientFormName(''); setClientFormAddress(''); 
+            };
+            const deleteClient = async (id) => { if(window.fbDb && confirm('Delete?')) { await window.fbDeleteDoc(getUserDocRef("clients", id)); setSelectedClients(selectedClients.filter(c => c !== id)); } };
+            const handleBaseAddressChange = async (e) => {
+                const val = e.target.value; setBaseAddress(val);
+                if (window.fbDb && user) { await window.fbSetDoc(getUserDocRef("settings", "config"), { baseAddress: val }, { merge: true }); }
+            };
+            const saveSettings = async () => {
+                if (window.fbDb && user) {
+                    const updateData = { companyName: companyConfig.companyName, companyPhone: companyConfig.phone, companyAddress: companyConfig.address };
+                    if(newPin && newPin.length >= 4) { updateData.adminPin = newPin; }
+                    await window.fbSetDoc(getUserDocRef("settings", "config"), updateData, { merge: true });
+                    alert("Settings saved!"); setNewPin('');
+                }
+            };
+            const handleChangePassword = async () => {
+                try { await window.fbSendPasswordResetEmail(window.fbAuth, user.email); setSettingsMsg("Reset email sent!"); } 
+                catch(e) { setSettingsMsg("Error: " + e.message); }
+            };
+            const handleBackup = async () => {
+                if (!user || !window.fbDb) return;
+                const backupData = { clients: clientDB, drivers: drivers, vehicles: vehicles, stops: currentStops, settings: { baseAddress, companyConfig, savedPin }, timestamp: Date.now() };
+                const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `ess_route_backup_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+            };
+            const fileInputRef = useRef(null);
+            const handleRestoreClick = () => { fileInputRef.current.click(); };
+            const handleFileChange = async (e) => {
+                const file = e.target.files[0]; if (!file) return;
+                if (!confirm("⚠️ WARNING: This will overwrite your current data with the backup. Are you sure?")) { e.target.value = null; return; }
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result); setLoading(true);
+                        if (data.clients) { for (const c of data.clients) { await window.fbSetDoc(getUserDocRef("clients", c.id || crypto.randomUUID()), { name: c.name, address: c.address }, { merge: true }); } }
+                        if (data.drivers) { for (const d of data.drivers) { await window.fbSetDoc(getUserDocRef("drivers", d.id || crypto.randomUUID()), { name: d.name, active: d.active }, { merge: true }); } }
+                        if (data.vehicles) { for (const v of data.vehicles) { await window.fbSetDoc(getUserDocRef("vehicles", v.id || crypto.randomUUID()), { name: v.name }, { merge: true }); } }
+                        if (data.stops) { for (const s of data.stops) { await window.fbSetDoc(getUserDocRef("draft_stops", s.id || crypto.randomUUID()), s, { merge: true }); } }
+                        if (data.settings) {
+                            const settingsPayload = {};
+                            if (data.settings.baseAddress) settingsPayload.baseAddress = data.settings.baseAddress;
+                            if (data.settings.companyConfig) { settingsPayload.companyName = data.settings.companyConfig.companyName; settingsPayload.companyPhone = data.settings.companyConfig.phone; settingsPayload.companyAddress = data.settings.companyConfig.address; }
+                            if (data.settings.savedPin) settingsPayload.adminPin = data.settings.savedPin;
+                            await window.fbSetDoc(getUserDocRef("settings", "config"), settingsPayload, { merge: true });
+                        }
+                        alert("✅ Restore Complete! Data has been migrated."); window.location.reload();
+                    } catch (err) { console.error(err); alert("❌ Error restoring data: " + err.message); } finally { setLoading(false); e.target.value = null; }
+                };
+                reader.readAsText(file);
+            };
+            const handleNavClick = (targetView) => { if (targetView === 'input' || targetView === 'results') { setView('input'); return; } setPendingView(targetView); setPinInput(''); setShowPinModal(true); };
+            const submitPin = () => { if (pinInput === savedPin) { setShowPinModal(false); setView(pendingView); } else { alert("Incorrect PIN"); setPinInput(''); } };
+
+            const initiateAddStop = () => {
+                if (!newStopAddress) return;
+                if (currentStops.some(s => s.address === newStopAddress)) if (!confirm("Duplicate address. Continue?")) return;
+                setTempStopData({ name: newStopName || 'Client', address: newStopAddress }); setTempInvoices(''); setTempPieces(''); setShowAddDetailsModal(true);
+            };
+            const startEditDraft = (stop) => { setEditingDraftId(stop.id); setTempStopData({ name: stop.name, address: stop.address }); setTempInvoices(stop.invoices || ''); setTempPieces(stop.pieces || ''); setShowAddDetailsModal(true); };
             
+            const confirmAddStop = async () => {
+                const finalName = formatClientName(tempStopData.name);
+                if (editingDraftId && window.fbDb) {
+                     await window.fbUpdateDoc(getUserDocRef("draft_stops", editingDraftId), { name: finalName, address: tempStopData.address, invoices: tempInvoices, pieces: tempPieces });
+                     setEditingDraftId(null); setShowAddDetailsModal(false); setTempStopData(null); setTempInvoices(''); setTempPieces(''); setNewStopName(''); setNewStopAddress(''); setShowSuggestions(false); setShowAddressSuggestions(false); return;
+                } else if (editingStop && routes) {
+                    const newRoutes = JSON.parse(JSON.stringify(routes)); const stop = newRoutes[editingStop.driverName].paradas[editingStop.index]; stop.nombre = finalName; stop.direccion = tempStopData.address; stop.invoices = tempInvoices; stop.pieces = tempPieces; setRoutes(newRoutes); recalculateRoute(editingStop.driverName, newRoutes[editingStop.driverName].paradas); setShowAddDetailsModal(false); setEditingStop(null); setTempStopData(null);
+                } else if (targetDriverForManual && routes && routes[targetDriverForManual]) {
+                     const newStop = { nombre: finalName, direccion: tempStopData.address, invoices: tempInvoices, pieces: tempPieces }; const newRoutes = JSON.parse(JSON.stringify(routes)); newRoutes[targetDriverForManual].paradas.push(newStop); setRoutes(newRoutes); recalculateRoute(targetDriverForManual, newRoutes[targetDriverForManual].paradas); setShowManualStopModal(false); setTargetDriverForManual(null);
+                } else if (window.fbDb && tempStopData) {
+                    await window.fbAddDoc(getUserCollection("draft_stops"), { name: finalName, address: tempStopData.address, invoices: tempInvoices, pieces: tempPieces, createdAt: Date.now() });
+                    if (!clientDB.some(c => c.address.toLowerCase() === tempStopData.address.toLowerCase())) window.fbAddDoc(getUserCollection("clients"), { name: finalName, address: tempStopData.address });
+                }
+                setNewStopName(''); setNewStopAddress(''); setShowSuggestions(false); setShowAddressSuggestions(false); setShowAddDetailsModal(false); setTempStopData(null); setTempInvoices(''); setTempPieces('');
+                
+                setTimeout(() => { 
+                    if (mainClientInputRef.current) mainClientInputRef.current.focus(); 
+                }, 100);
+            };
+
+            const openEditStopModal = (driverName, index, stopData) => { setEditingStop({ driverName, index }); setTempStopData({ name: stopData.nombre, address: stopData.direccion }); setTempInvoices(stopData.invoices || ''); setTempPieces(stopData.pieces || ''); setShowAddDetailsModal(true); };
+            const deleteStopFromRoute = (driverName, index) => { if(!confirm("Remove this stop from route?")) return; const newRoutes = JSON.parse(JSON.stringify(routes)); newRoutes[driverName].paradas.splice(index, 1); setRoutes(newRoutes); recalculateRoute(driverName, newRoutes[driverName].paradas); };
+            const removeStop = async (id) => { if(window.fbDb) await window.fbDeleteDoc(getUserDocRef("draft_stops", id)); };
+            const clearDraftRoute = async () => { if(confirm("Clear list?")) { const q = window.fbQuery(getUserCollection("draft_stops")); const snapshot = await window.fbGetDocs(q); await Promise.all(snapshot.docs.map(doc => window.fbDeleteDoc(doc.ref))); } };
+            const openPrintModal = (driverName, stops) => { setPrintData({ driverName, stops }); setSelectedVehicleForPrint(vehicles.length > 0 ? vehicles[0].name : ''); setShowPrintModal(true); };
+            const handleGlobalPrint = () => { setShowGlobalPrint(true); setTimeout(() => { window.print(); setShowGlobalPrint(false); }, 500); };
+            const handlePrint = () => window.print();
+            
+            // --- OPTIMIZATION WITH AUTO-SAVE HISTORY ---
             const handleOptimize = async () => { 
-                const activeDrivers = drivers.filter(d => d.active); 
-                if (currentStops.length === 0) return setError('No hay paradas.'); 
-                setLoading(true); setError(''); 
+                const activeDrivers = drivers.filter(d => d.active); if (currentStops.length === 0) return setError('No stops.'); setLoading(true); setError(''); 
                 try { 
                     const res = await fetch('/optimizar', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ direcciones: currentStops, num_vans: activeDrivers.length, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); 
                     const d = await res.json(); 
                     if (!res.ok) throw new Error(d.error || 'Server error.');
                     const assigned = {}; Object.keys(d).forEach((k, i) => assigned[activeDrivers[i] ? activeDrivers[i].name : k] = d[k]); 
-                    setRoutes(assigned); 
+                    setRoutes(assigned); setOriginalRoutes(JSON.parse(JSON.stringify(assigned))); 
+                    
+                    // SAVE HISTORY
+                    if (window.fbDb) {
+                        const historyItem = { stops: currentStops, timestamp: Date.now() };
+                        await window.fbAddDoc(getUserCollection("route_history"), historyItem);
+                        // Clean up old history (> 3 items)
+                        if (historyData.length >= 3) {
+                             const oldest = historyData[historyData.length - 1]; // Assuming sorted desc
+                             if (oldest) await window.fbDeleteDoc(getUserDocRef("route_history", oldest.id));
+                        }
+                    }
+
                     setView('results'); 
                 } catch (e) { setError(e.message); } finally { setLoading(false); } 
             };
 
-            const initiateAddStop = () => {
-                if (!newStopAddress) return;
-                setTempStopData({ name: newStopName || 'Client', address: newStopAddress }); setTempInvoices(''); setTempPieces(''); setShowAddDetailsModal(true);
+            const restoreHistory = async (stops) => {
+                if(!confirm("Restore this route? Current stops will be overwritten.")) return;
+                setLoading(true);
+                // Clear current
+                const q = window.fbQuery(getUserCollection("draft_stops")); const snapshot = await window.fbGetDocs(q); await Promise.all(snapshot.docs.map(doc => window.fbDeleteDoc(doc.ref)));
+                // Restore new
+                for (const s of stops) {
+                    await window.fbAddDoc(getUserCollection("draft_stops"), { ...s, createdAt: Date.now() }); 
+                }
+                setLoading(false);
+                setShowHistoryModal(false);
+            };
+            
+            // HANDLER FOR SINGLE DRIVER MAP
+            const openDriverMap = (name, data) => {
+                setViewingDriver({ name, data });
             };
 
-            const confirmAddStop = async () => {
-                await window.fbAddDoc(getUserCollection("draft_stops"), { name: tempStopData.name, address: tempStopData.address, invoices: tempInvoices, pieces: tempPieces, createdAt: Date.now() });
-                setNewStopName(''); setNewStopAddress(''); setShowAddDetailsModal(false); setTempStopData(null);
-            };
+            const selectClient = (c) => { setNewStopName(c.name); setNewStopAddress(c.address); setShowSuggestions(false); setShowAddressSuggestions(false); setActiveSuggestionIndex(-1); };
+            const getClientNameFromAddress = (address) => { const fromDraft = currentStops.find(s => s.address === address); if (fromDraft) return fromDraft.name; const fromDB = clientDB.find(c => c.address === address); return fromDB ? fromDB.name : "Client"; };
+            const getWhatsappLink = (l) => `https://wa.me/?text=${encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`)}`;
+            
+            const filteredClients = useMemo(() => { const t = newStopName.toLowerCase().trim(); if (!t) return []; return clientDB.filter(c => (c.name || "").toLowerCase().includes(t)).slice(0, 5); }, [newStopName, clientDB]);
+            const filteredClientsByAddress = useMemo(() => { const t = newStopAddress.toLowerCase().trim(); if (!t) return []; return clientDB.filter(c => (c.address || "").toLowerCase().includes(t)).slice(0, 5); }, [newStopAddress, clientDB]);
+            const filteredClientDBList = useMemo(() => { const t = clientFormName.toLowerCase().trim(); if (!t) return clientDB; return clientDB.filter(c => (c.name || "").toLowerCase().includes(t)); }, [clientFormName, clientDB]);
 
-            const openDriverMap = (name, data) => setViewingDriver({ name, data });
-            const filteredClients = useMemo(() => clientDB.filter(c => (c.name || "").toLowerCase().includes(newStopName.toLowerCase())).slice(0, 5), [newStopName, clientDB]);
+            const recalculateRoute = async (dName, stops) => { setRecalculating(p => ({...p, [dName]: true})); try { const res = await fetch('/recalcular', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); setRoutes(p => ({...p, [dName]: {...p[dName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas || stops}})); } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [dName]: false})); } };
+            const handleRecalculateAll = async () => { if (!routes) return; setIsRecalculatingAll(true); await Promise.all(Object.keys(routes).map(d => recalculateRoute(d, routes[d].paradas))); setIsRecalculatingAll(false); };
+            const handleRestore = () => { if (confirm("Restore original routes?")) setRoutes(JSON.parse(JSON.stringify(originalRoutes))); };
+            const handleOptimizeRemaining = async (driverName) => {
+                const currentRoute = routes[driverName].paradas; setRecalculating(p => ({...p, [driverName]: true})); 
+                try { const res = await fetch('/optimizar_restantes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: currentRoute, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); if(!res.ok) throw new Error(d.error); setRoutes(p => ({...p, [driverName]: {...p[driverName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas}})); } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [driverName]: false})); }
+            };
+            const reverseRoute = (driverName) => { const newRoutes = JSON.parse(JSON.stringify(routes)); newRoutes[driverName].paradas.reverse(); setRoutes(newRoutes); recalculateRoute(driverName, newRoutes[driverName].paradas); };
+            const handleSwapDriver = (driverA, driverB) => { if (driverA === driverB) { setSwappingDriver(null); return; } const newRoutes = { ...routes }; const tempRoute = newRoutes[driverA]; newRoutes[driverA] = newRoutes[driverB]; newRoutes[driverB] = tempRoute; setRoutes(newRoutes); setSwappingDriver(null); };
+            const handleAddRoute = () => setShowAddRouteModal(true);
+            const confirmAddRoute = (driverToAdd) => { if (!routes) return; const newRoutes = { ...routes }; newRoutes[driverToAdd] = { paradas: [], duracion_estimada: 0, link: "" }; setRoutes(newRoutes); setShowAddRouteModal(false); };
+            const initiateManualStop = (driverName) => { setTargetDriverForManual(driverName); setNewStopName(''); setNewStopAddress(''); setTempStopData(null); setTempInvoices(''); setTempPieces(''); setShowManualStopModal(true); };
+            
+            const handleClientKeyDown = (e) => {
+                if (showSuggestions && filteredClients.length > 0) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveSuggestionIndex(prev => (prev < filteredClients.length - 1 ? prev + 1 : prev)); } 
+                    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveSuggestionIndex(prev => (prev > -1 ? prev - 1 : -1)); } 
+                    else if (e.key === 'Enter') { if (activeSuggestionIndex >= 0) { e.preventDefault(); selectClient(filteredClients[activeSuggestionIndex]); } else { handleEnter(e, initiateAddStop); } } 
+                    else if (e.key === 'Escape') { setShowSuggestions(false); setActiveSuggestionIndex(-1); }
+                } else { handleEnter(e, initiateAddStop); }
+            };
+            
+            // Drag & Drop
+            const handleDragStart = (e, driverName, stopIndex) => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.closest('button')) { e.preventDefault(); return; } setDraggedItem({ driverName, stopIndex }); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => e.target.classList.add('draggable-source'), 0); };
+            const handleDragEnd = (e) => { e.target.classList.remove('draggable-source'); setDraggedItem(null); setDragOverDriver(null); };
+            const handleDragOverContainer = (e, driverName) => { e.preventDefault(); setDragOverDriver(driverName); };
+            const handleDrop = (e, targetDriverName, targetIndex = null) => { e.preventDefault(); setDragOverDriver(null); if (!draggedItem) return; const sourceDriver = draggedItem.driverName; const sourceIndex = draggedItem.stopIndex; const newRoutes = JSON.parse(JSON.stringify(routes)); const [movedStop] = newRoutes[sourceDriver].paradas.splice(sourceIndex, 1); let destinationStops = newRoutes[targetDriverName].paradas; if (targetIndex !== null) { let adjustedTargetIndex = targetIndex; if (sourceDriver === targetDriverName && sourceIndex < targetIndex) { adjustedTargetIndex = targetIndex - 0; } destinationStops.splice(adjustedTargetIndex, 0, movedStop); } else { destinationStops.push(movedStop); } setRoutes(newRoutes); recalculateRoute(targetDriverName, newRoutes[targetDriverName].paradas); if (sourceDriver !== targetDriverName) recalculateRoute(sourceDriver, newRoutes[sourceDriver].paradas); };
+            const toggleStopSelection = (driverName, index) => { setSelectedStops(prev => { const exists = prev.find(p => p.driver === driverName && p.index === index); if (exists) return prev.filter(p => !(p.driver === driverName && p.index === index)); return [...prev, { driver: driverName, index }]; }); };
+            const moveStop = (driverName, index, direction) => { const newRoutes = JSON.parse(JSON.stringify(routes)); const stops = newRoutes[driverName].paradas; const newIndex = index + direction; if (newIndex < 0 || newIndex >= stops.length) return; [stops[index], stops[newIndex]] = [stops[newIndex], stops[index]]; setRoutes(newRoutes); recalculateRoute(driverName, stops); };
+            const transferSelectedStops = (targetDriver) => { if (selectedStops.length === 0) return; const newRoutes = JSON.parse(JSON.stringify(routes)); const sortedSelection = [...selectedStops].sort((a, b) => b.index - a.index); sortedSelection.forEach(sel => { const [removed] = newRoutes[sel.driver].paradas.splice(sel.index, 1); newRoutes[targetDriver].paradas.push(removed); }); setRoutes(newRoutes); setSelectedStops([]); const affectedDrivers = new Set(sortedSelection.map(s => s.driver)); affectedDrivers.add(targetDriver); affectedDrivers.forEach(d => recalculateRoute(d, newRoutes[d].paradas)); };
 
             if (systemError) return <ConfigErrorScreen errorDetails={systemError} />;
-            if (authLoading) return <div className="min-h-screen flex items-center justify-center text-ess-blue font-bold text-lg">Cargando...</div>;
+            if (authLoading) return <div className="min-h-screen flex items-center justify-center text-ess-blue font-bold text-lg">Loading...</div>;
             if (!user) return <LoginScreen />;
 
             return (
                 <div className="min-h-screen text-slate-800 bg-white pb-24">
-                    {/* MODALES Y MAPAS */}
+                    {/* COMPONENTS */}
                     {printData && showPrintModal && <PrintableSheet routeData={printData.stops} driverName={printData.driverName} vehicle={selectedVehicleForPrint} config={companyConfig} />}
-                    {viewingDriver && (<div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 animate-fade-in"><div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden relative"><div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center z-10 relative"><h3 className="font-bold text-slate-800 flex items-center gap-2"><Icon name="map" className="h-5 w-5 text-ess-blue" /> Ruta: {viewingDriver.name}</h3><button onClick={() => setViewingDriver(null)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-6 w-6" /></button></div><div className="flex-1 relative w-full h-full"><GlobalMapView routes={{ [viewingDriver.name]: viewingDriver.data }} baseAddress={baseAddress} /></div></div></div>)}
-                    {showAddDetailsModal && (<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print animate-fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm"><h3 className="font-bold text-lg mb-4 text-slate-800">Detalles de Parada</h3><div className="space-y-4"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cliente</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none bg-slate-50" value={tempStopData?.name || ''} disabled /></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices (Opcional)</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} autoFocus /></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Piezas</label><input type="number" className="w-full p-3 border border-slate-300 rounded-lg outline-none" value={tempPieces} onChange={e => setTempPieces(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && confirmAddStop()} /></div></div><div className="mt-6 flex gap-3"><button onClick={() => setShowAddDetailsModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancelar</button><button onClick={confirmAddStop} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg">Guardar</button></div></div></div>)}
+                    {showGlobalPrint && routes && <GlobalManifest routes={routes} config={companyConfig} />}
+                    
+                    {/* HISTORY MODAL */}
+                    {showHistoryModal && (
+                        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+                                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icon name="clock" className="h-5 w-5" /> Recent History (Last 3)</h3>
+                                    <button onClick={() => setShowHistoryModal(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-5 w-5" /></button>
+                                </div>
+                                <div className="space-y-3">
+                                    {historyData.length === 0 && <p className="text-slate-400 text-sm text-center py-4">No history available yet.</p>}
+                                    {historyData.map((item, idx) => (
+                                        <div key={item.id} className="border border-slate-200 rounded-lg p-3 hover:bg-slate-50 flex justify-between items-center">
+                                            <div>
+                                                <div className="font-bold text-sm text-slate-700">Route #{idx + 1}</div>
+                                                <div className="text-xs text-slate-500">{new Date(item.timestamp).toLocaleString()}</div>
+                                                <div className="text-xs font-bold text-ess-blue mt-1">{item.stops.length} Stops</div>
+                                            </div>
+                                            <button onClick={() => restoreHistory(item.stops)} disabled={loading} className="bg-white border border-slate-300 text-slate-700 hover:bg-blue-50 hover:text-ess-blue px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors">Restore</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
-                    {/* HEADER */}
+                    {/* ADD/EDIT MODAL */}
+                    {(showAddDetailsModal || showManualStopModal) && (
+                        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                                <h3 className="font-bold text-lg mb-4 text-slate-800">{editingDraftId ? 'Edit Draft Stop' : (editingStop ? 'Edit Stop Details' : (showManualStopModal ? `Add Stop to ${targetDriverForManual}` : "Add Stop Details"))}</h3>
+                                {showManualStopModal && (
+                                    <div className="mb-4 space-y-4">
+                                                 <div className="relative">
+                                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client Name</label>
+                                                     <input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Name" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); setTempStopData(prev => ({...prev, name: e.target.value})); setActiveSuggestionIndex(-1); }} onKeyDown={(e) => handleEnter(e, () => {})} />
+                                                     {showSuggestions && filteredClients.length > 0 && <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50">{filteredClients.map((c, i) => (<div key={i} onClick={() => { selectClient(c); setTempStopData({name: c.name, address: c.address}); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm font-bold">{c.name}</div>))}</div>}
+                                                 </div>
+                                                 <div className="relative">
+                                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label>
+                                                     <GoogleAddressInput value={newStopAddress} onChange={(e) => { setNewStopAddress(e.target.value); setTempStopData(prev => ({...prev, address: e.target.value})); setShowAddressSuggestions(true); }} onKeyDown={(e) => handleEnter(e, () => {})} className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} />
+                                                     {showAddressSuggestions && filteredClientsByAddress.length > 0 && <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{filteredClientsByAddress.map((c, i) => (<div key={i} onClick={() => { selectClient(c); setTempStopData({name: c.name, address: c.address}); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
+                                                 </div>
+                                    </div>
+                                )}
+                                <div className="space-y-4">
+                                    {!showManualStopModal && <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Client Name</label><input ref={clientInputRef} type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none bg-slate-50 text-slate-500" value={tempStopData?.name || ''} disabled /></div>}
+                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices (Optional)</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} onKeyDown={(e) => handleEnter(e, () => piecesInputRef.current?.focus())} autoFocus /></div>
+                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pieces Shipped</label><input ref={piecesInputRef} type="number" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="0" value={tempPieces} onChange={e => setTempPieces(e.target.value)} onKeyDown={(e) => handleEnter(e, confirmAddStop)} /></div>
+                                </div>
+                                <div className="mt-6 flex gap-3">
+                                    <button onClick={() => { setShowAddDetailsModal(false); setShowManualStopModal(false); setTargetDriverForManual(null); setEditingStop(null); setEditingDraftId(null); setTempStopData(null); }} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
+                                    <button onClick={confirmAddStop} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg">Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* [NEW ROUTE, PIN MODAL, PRINT MODAL - SAME AS BEFORE] */}
+                    {showAddRouteModal && (<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print animate-fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm"><h3 className="font-bold text-lg mb-4 text-slate-800">Add New Route</h3><p className="text-sm text-slate-500 mb-4">Select a driver who doesn't have a route yet.</p><div className="space-y-2 max-h-40 overflow-y-auto mb-4 border rounded p-2">{drivers.filter(d => !routes[d.name]).map(d => (<button key={d.id} onClick={() => confirmAddRoute(d.name)} className="w-full text-left p-2 hover:bg-blue-50 rounded font-bold text-slate-700 flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${d.active ? 'bg-green-500' : 'bg-gray-400'}`}></div> {d.name}</button>))}{drivers.filter(d => !routes[d.name]).length === 0 && <p className="text-sm text-slate-400">All drivers have routes.</p>}</div><div className="flex justify-end"><button onClick={() => setShowAddRouteModal(false)} className="text-slate-500 font-bold px-4">Cancel</button></div></div></div>)}
+                    {showPinModal && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print animate-fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm text-center"><h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center justify-center gap-2"><Icon name="lock" className="h-5 w-5" /> Enter Security PIN</h3><input type="password" className="w-full p-3 border border-slate-300 rounded-lg outline-none text-center text-2xl tracking-widest" maxLength="6" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={(e) => handleEnter(e, submitPin)} autoFocus /><div className="mt-6 flex gap-3"><button onClick={() => setShowPinModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button><button onClick={submitPin} className="flex-1 py-3 bg-slate-800 text-white rounded-lg font-bold">Unlock</button></div></div></div>)}
+                    {showPrintModal && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print animate-fade-in"><div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"><div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold text-slate-800">Print Manifest</h3><button onClick={() => setShowPrintModal(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-5 w-5" /></button></div><div className="p-6 space-y-6"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Truck for this Sheet</label><select className="w-full p-3 border border-slate-300 rounded-lg outline-none bg-white" value={selectedVehicleForPrint} onChange={e => setSelectedVehicleForPrint(e.target.value)}><option value="">-- Select Truck --</option>{vehicles.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}</select>{vehicles.length === 0 && <p className="text-xs text-red-500 mt-1">No trucks defined. Add them in Van/Truck ID tab.</p>}</div><div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 border border-blue-100"><p className="font-bold mb-1">Ready to print for:</p><p>Driver: {printData.driverName}</p><p>Stops: {printData.stops.length}</p></div></div><div className="p-4 border-t border-slate-100 bg-white flex gap-3"><button onClick={() => setShowPrintModal(false)} className="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-600 hover:bg-slate-50">Cancel</button><button onClick={handlePrint} className="flex-1 py-3 bg-slate-800 text-white rounded-lg font-bold hover:bg-black flex items-center justify-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print Now</button></div></div></div>)}
+
+                    {/* SINGLE DRIVER MAP MODAL */}
+                    {viewingDriver && (
+                        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden relative">
+                                <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center z-10 relative">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                        <Icon name="map" className="h-5 w-5 text-ess-blue" /> 
+                                        Route: {viewingDriver.name}
+                                    </h3>
+                                    <button onClick={() => setViewingDriver(null)} className="text-slate-400 hover:text-red-500">
+                                        <Icon name="x" className="h-6 w-6" />
+                                    </button>
+                                </div>
+                                <div className="flex-1 relative w-full h-full">
+                                     <GlobalMapView 
+                                        routes={{ [viewingDriver.name]: viewingDriver.data }} 
+                                        baseAddress={baseAddress} 
+                                     />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* HEADER, MAIN TABS ... */}
                     <header className="bg-white border-b border-slate-200 sticky top-0 z-50 no-print">
                          <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-                            <div className="flex items-center gap-4"><h1 className="text-xl font-bold text-ess-blue leading-none">Route Planner</h1></div>
+                            <div className="flex items-center gap-4">
+                                <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto"/>
+                                <div className="hidden md:block pl-4 border-l border-slate-200">
+                                    <h1 className="text-xl font-bold text-ess-blue leading-none">Route Planner</h1>
+                                    <p className="text-xs text-slate-400 mt-1">Logged as: <span className="font-bold text-ess-green">{user.email}</span></p>
+                                </div>
+                            </div>
                             <div className="flex items-center gap-3">
-                                <button onClick={() => setView('input')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'input' ? 'bg-ess-blue text-white' : 'text-slate-600 bg-slate-50'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
-                                <button onClick={handleLogout} className="text-sm font-medium text-red-500 hover:bg-red-50 px-3 py-2 rounded-lg ml-2">Salir</button>
+                                <button onClick={() => handleNavClick('input')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'input' || view === 'results' || view === 'global_map' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
+                                <button onClick={() => handleNavClick('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients Database</button>
+                                <button onClick={() => handleNavClick('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Van or Truck ID</button>
+                                <button onClick={() => handleNavClick('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Settings</button>
+                                <button onClick={handleLogout} className="text-sm font-medium text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 px-3 py-2 rounded-lg flex items-center gap-2 ml-2"><Icon name="log-out" className="h-4 w-4" /> Exit</button>
                             </div>
                         </div>
                     </header>
 
-                    {/* MAIN */}
                     <main className="max-w-7xl mx-auto p-6 no-print">
+                        {/* SETTINGS, CLIENTS, VEHICLES, GLOBAL MAP VIEWS ... */}
+                        {view === 'settings' && (<div className="max-w-2xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden p-6 space-y-8"><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Data Management (Migrate User)</h2><div className="space-y-4"><p className="text-sm text-slate-600">Use this to move your data to a new account. Download backup from old account, then restore in new one.</p><div className="flex gap-4"><button onClick={handleBackup} className="flex-1 bg-slate-800 text-white px-4 py-2 rounded font-bold flex items-center justify-center gap-2"><Icon name="download" className="h-4 w-4" /> Download Backup</button><input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" /><button onClick={handleRestoreClick} className="flex-1 bg-ess-blue text-white px-4 py-2 rounded font-bold flex items-center justify-center gap-2"><Icon name="upload" className="h-4 w-4" /> Restore from Backup</button></div></div></div><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Manifest Header Info</h2><div className="space-y-4"><div><label className="block text-sm font-bold text-slate-500 mb-1">Company Name</label><input className="w-full p-2 border rounded" value={companyConfig.companyName} onChange={e => setCompanyConfig({...companyConfig, companyName: e.target.value})} /></div><div><label className="block text-sm font-bold text-slate-500 mb-1">Phone</label><input className="w-full p-2 border rounded" value={companyConfig.phone} onChange={e => setCompanyConfig({...companyConfig, phone: e.target.value})} /></div><div><label className="block text-sm font-bold text-slate-500 mb-1">Footer Address</label><input className="w-full p-2 border rounded" value={companyConfig.address} onChange={e => setCompanyConfig({...companyConfig, address: e.target.value})} /></div></div></div><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">App Security</h2><div className="space-y-4"><div><label className="block text-sm font-bold text-slate-500 mb-1">Change Security PIN (Default: 0000)</label><input type="text" className="w-full p-2 border rounded" maxLength="6" placeholder="New PIN" value={newPin} onChange={e => setNewPin(e.target.value)} /></div><button onClick={saveSettings} className="bg-slate-800 text-white px-4 py-2 rounded font-bold">Save All Settings</button></div></div><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Account Security</h2><div className="space-y-4"><p className="text-sm text-slate-600">Click below to receive an email to reset your password for <strong>{user.email}</strong>.</p><button onClick={handleChangePassword} className="bg-ess-blue text-white px-4 py-2 rounded font-bold">Send Password Reset Email</button>{settingsMsg && <p className="text-sm text-green-600 font-bold">{settingsMsg}</p>}</div></div></div></div>)}
+                        {view === 'clients' && (<div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients Database</h2></div><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{clientDB.length} Clients</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex flex-col md:flex-row gap-4"><input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} /><div className="flex-[2]"><GoogleAddressInput value={clientFormAddress} onChange={(e) => setClientFormAddress(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div><button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button></div></div><div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{c.name}</td><td className="p-4 text-sm text-slate-600">{c.address}</td><td className="p-4 text-right"><div className="flex justify-end gap-2"><button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1"><Icon name="pencil" className="h-4 w-4"/></button><button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4"/></button></div></td></tr>))}</tbody></table></div></div></div>)}
+                        {view === 'vehicles' && (<div className="max-w-2xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="truck" className="h-5 w-5 text-ess-blue" /> Fleet Management</h2><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{vehicles.length} Trucks</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex gap-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }})} /><button onClick={() => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }}} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="plus" className="h-4 w-4" /> Add Truck</button></div></div><div className="max-h-[500px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{vehicles.length === 0 ? <tr><td className="p-8 text-center text-slate-400">No vehicles added yet.</td></tr> : vehicles.map(v => (<tr key={v.id} className="hover:bg-slate-50"><td className="p-4 font-bold text-slate-700 flex items-center gap-3"><div className="bg-blue-100 p-2 rounded-full"><Icon name="truck" className="h-4 w-4 text-ess-blue" /></div> {v.name}</td><td className="p-4 text-right"><button onClick={() => deleteVehicle(v.id)} className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-5 w-5" /></button></td></tr>))}</tbody></table></div></div></div>)}
+                        {view === 'global_map' && <div className="flex flex-col h-[calc(100vh-120px)]"><div className="mb-4"><button onClick={() => setView('results')} className="text-slate-600 px-4 py-2 border rounded-lg bg-white hover:bg-slate-50 font-bold flex items-center gap-2 shadow-sm"><Icon name="arrow-left" className="h-4 w-4" /> Back to Results</button></div><div className="flex-1 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative"><GlobalMapView routes={routes} baseAddress={baseAddress} /></div></div>}
+
                         {view === 'input' && (
                             <div className="grid lg:grid-cols-12 gap-8 animate-fade-in">
                                 <div className="lg:col-span-7 space-y-6">
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow relative z-20">
-                                            <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">Agregar Parada</h2>
+                                            <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2"><div className="bg-ess-green/10 p-2 rounded-full"><Icon name="plus" className="h-5 w-5 text-ess-green" /></div> Add Stop</h2>
                                             <div className="grid md:grid-cols-2 gap-4 mb-4">
                                                 <div className="relative">
-                                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Cliente</label>
-                                                    <input ref={mainClientInputRef} type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Nombre" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); }} />
-                                                    {showSuggestions && filteredClients.length > 0 && <div className="absolute top-full left-0 w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 overflow-hidden z-50">{filteredClients.map((c, i) => (<div key={i} onClick={() => { setNewStopName(c.name); setNewStopAddress(c.address); setShowSuggestions(false); }} className="p-3 cursor-pointer hover:bg-blue-50 border-b border-slate-50"><div className="font-bold text-slate-700 text-sm">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
+                                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client</label>
+                                                    <input ref={mainClientInputRef} type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Name" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); setActiveSuggestionIndex(-1); }} onKeyDown={handleClientKeyDown} />
+                                                    {showSuggestions && filteredClients.length > 0 && <div className="absolute top-full left-0 w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 overflow-hidden z-50">{filteredClients.map((c, i) => (<div key={i} onClick={() => selectClient(c)} className={`p-3 cursor-pointer border-b border-slate-50 ${i === activeSuggestionIndex ? 'bg-blue-100' : 'hover:bg-blue-50'}`}><div className="font-bold text-slate-700 text-sm">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
                                                 </div>
                                                 <div className="relative">
-                                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Dirección</label>
-                                                    <GoogleAddressInput value={newStopAddress} onChange={(e) => setNewStopAddress(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && initiateAddStop()} className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Buscar en Google Maps" disabled={!scriptLoaded} isLoaded={scriptLoaded} />
+                                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label>
+                                                    <GoogleAddressInput value={newStopAddress} onChange={(e) => { setNewStopAddress(e.target.value); setShowAddressSuggestions(true); }} onKeyDown={(e) => handleEnter(e, initiateAddStop)} className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Search Google Maps" disabled={!scriptLoaded} isLoaded={scriptLoaded} />
+                                                    {showAddressSuggestions && filteredClientsByAddress.length > 0 && <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{filteredClientsByAddress.map((c, i) => (<div key={i} onClick={() => { selectClient(c); setTempStopData({name: c.name, address: c.address}); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
                                                 </div>
                                             </div>
-                                            <div className="flex justify-end"><button onClick={initiateAddStop} disabled={!newStopAddress} className="bg-ess-blue text-white px-6 py-2.5 rounded-lg font-bold shadow-md flex items-center gap-2 disabled:opacity-50">Siguiente</button></div>
+                                            <div className="flex justify-end"><button onClick={initiateAddStop} disabled={!newStopAddress} className="bg-ess-blue text-white px-6 py-2.5 rounded-lg font-bold shadow-md flex items-center gap-2 disabled:opacity-50"><Icon name="arrow-right" className="h-4 w-4" /> Next</button></div>
                                     </div>
+
                                     <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden min-h-[300px]">
-                                            <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold text-slate-700">Ruta de Hoy ({currentStops.length})</h3></div>
+                                            <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="font-bold text-slate-700 flex items-center gap-2"><Icon name="list" className="h-5 w-5 text-slate-400" /> Today's Route</h3>
+                                                    {/* NEW HISTORY BUTTON */}
+                                                    <button onClick={() => setShowHistoryModal(true)} className="text-xs bg-slate-100 text-slate-600 hover:text-ess-blue px-2 py-1 rounded-lg border border-slate-200 flex items-center gap-1 ml-2 transition-colors shadow-sm" title="View History"><Icon name="clock" className="h-3 w-3" /> History</button>
+                                                </div>
+                                                <div className="flex items-center gap-2">{currentStops.length > 0 && <button onClick={clearDraftRoute} className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 flex items-center gap-1"><Icon name="eraser" className="h-3 w-3" /> Clear</button>}<span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{currentStops.length} Stops</span></div>
+                                            </div>
                                             <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
                                                 {currentStops.map((stop, idx) => (
                                                     <div key={stop.id} className="p-4 flex items-center gap-4 hover:bg-slate-50 group">
                                                         <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 font-bold text-sm border border-slate-200">{idx + 1}</div>
-                                                        <div className="flex-1"><h4 className="font-bold text-slate-800">{stop.name}</h4><p className="text-sm text-slate-500">{stop.address}</p></div>
-                                                        <button onClick={async () => { if(window.fbDb) await window.fbDeleteDoc(getUserDocRef("draft_stops", stop.id)); }} className="text-red-500 hover:bg-red-50 p-2 rounded"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                        <div className="flex-1">
+                                                            <h4 className="font-bold text-slate-800">{stop.name}</h4>
+                                                            <p className="text-sm text-slate-500 flex items-center gap-1"><Icon name="map-pin" className="h-3 w-3" /> {stop.address}</p>
+                                                            {(stop.invoices || stop.pieces) && <div className="flex gap-3 mt-1 text-xs font-mono text-slate-500 bg-slate-100 inline-block px-2 py-1 rounded"><span>Inv: {stop.invoices || '-'}</span><span>Pcs: {stop.pieces || '-'}</span></div>}
+                                                        </div>
+                                                        <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button onClick={() => startEditDraft(stop)} className="p-2 text-slate-300 hover:text-ess-blue hover:bg-blue-50 rounded-lg transition-colors"><Icon name="pencil" className="h-4 w-4" /></button>
+                                                            <button onClick={() => removeStop(stop.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                        </div>
                                                     </div>
                                                 ))}
                                             </div>
                                     </div>
                                 </div>
+
                                 <div className="lg:col-span-5 space-y-6">
-                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow">
-                                        <h3 className="font-bold text-slate-700 mb-4 pb-3 border-b border-slate-100">Conductores Activos</h3>
-                                        <div className="grid gap-2 mb-4">{drivers.map(driver => (<label key={driver.id} className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer ${driver.active ? 'border-green-500 bg-green-50' : 'border-slate-200'}`}><span className="font-bold text-sm">{driver.name}</span><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="accent-green-600" /></label>))}</div>
-                                        <div className="flex gap-2"><input type="text" className="flex-1 p-2 border rounded text-sm" placeholder="Nuevo Conductor" value={newDriverName} onChange={e => setNewDriverName(e.target.value)} /><button onClick={() => { if(newDriverName) { addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded">+</button></div>
-                                    </div>
-                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">
-                                        {error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}
-                                        {routes && <button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-4 rounded-xl font-bold text-lg shadow-lg mb-3">VER RESULTADOS</button>}
-                                        <button onClick={handleOptimize} disabled={loading} className="w-full bg-ess-green hover:bg-green-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg disabled:opacity-75">{loading ? "Calculando..." : "GENERAR RUTA"}</button>
-                                    </div>
+                                    <div className="bg-ess-light px-4 py-2 rounded-lg border border-blue-100 flex items-center gap-2"><Icon name="map-pin" className="h-5 w-5 text-ess-blue shrink-0" /><div className="text-xs w-full"><span className="block text-slate-400 font-semibold uppercase">Base (Start/End)</span><GoogleAddressInput value={baseAddress} onChange={handleBaseAddressChange} className="bg-transparent font-bold text-slate-700 outline-none w-full" placeholder="Warehouse" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div></div>
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 pb-3 border-b border-slate-100"><Icon name="users" className="h-5 w-5 text-ess-blue" /> Drivers</h3><div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }})} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div><div className="grid grid-cols-1 xl:grid-cols-2 gap-2 overflow-y-auto overflow-x-hidden">{drivers.map(driver => (<div key={driver.id} className="group relative"><label className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer h-full ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}><div className="flex items-center gap-2 min-w-0"><div className={`w-2 h-2 shrink-0 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div><span className={`font-medium text-sm truncate ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span></div><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-4 h-4 accent-ess-green shrink-0 ml-2" /></label><button onClick={(e) => { e.preventDefault(); deleteDriver(driver.id); }} className="absolute -right-1 -top-1 bg-white text-slate-400 hover:text-red-500 border border-slate-200 rounded-full p-0.5 opacity-0 group-hover:opacity-100 shadow-sm z-10"><Icon name="x" className="h-3 w-3" /></button></div>))}</div></div>
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">{error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}{!loading && routes && (<><p className="text-xs text-center text-slate-500 mb-1">If you haven't made any changes to the route, return to your routes here</p><button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-4 rounded-xl font-bold text-lg shadow-lg mb-3 transition-all flex justify-center items-center gap-2"><Icon name="map" className="h-6 w-6" /> VIEW ACTIVE ROUTES</button></>)}<button onClick={handleOptimize} disabled={loading} className="w-full bg-ess-green hover:bg-green-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-green-600/20 transition-all flex justify-center items-center gap-2 disabled:opacity-75">{loading ? <div className="loader mr-2"></div> : <Icon name="zap" className="h-6 w-6" />} GENERATE</button></div>
                                 </div>
                             </div>
                         )}
 
                         {view === 'results' && routes && (
-                            <div className="animate-fade-in space-y-8">
-                                <button onClick={() => setView('input')} className="text-slate-600 px-6 py-3 rounded-lg font-bold border border-slate-200 bg-white hover:bg-slate-50">← Volver</button>
+                            <div className="animate-fade-in space-y-8 relative">
+                                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                    <div className="flex gap-2">
+                                         <button onClick={() => setView('input')} className="text-slate-600 hover:text-ess-blue px-6 py-3 rounded-lg font-bold border border-slate-200 flex items-center gap-2"><Icon name="arrow-left" className="h-5 w-5" /> Back</button>
+                                         <button onClick={handleAddRoute} className="text-xs font-bold text-white bg-ess-blue hover:bg-sky-700 px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="plus" className="h-4 w-4" /> Add New Route</button>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={handleRestore} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="rotate-ccw" className="h-3 w-3" /> Reset</button>
+                                        <button onClick={() => setView('global_map')} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="map" className="h-3 w-3" /> Map</button>
+                                        <button onClick={handleGlobalPrint} className="text-xs font-bold text-white bg-slate-800 hover:bg-black px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="printer" className="h-3 w-3" /> Print All Routes</button>
+                                        <button onClick={handleRecalculateAll} disabled={isRecalculatingAll} className="text-xs font-bold text-white bg-ess-blue hover:bg-sky-700 px-4 py-2 rounded-lg flex items-center gap-2">{isRecalculatingAll ? <div className="loader w-3 h-3"></div> : <><Icon name="refresh-cw" className="h-3 w-3" /> Update</>}</button>
+                                    </div>
+                                </div>
+
                                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
                                     {Object.entries(routes).map(([driverName, data]) => (
-                                        <div key={driverName} className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden">
-                                            <div className="bg-slate-50 p-5 border-b border-slate-100 flex justify-between items-center"><h3 className="font-bold text-xl text-slate-800">{driverName}</h3><div className="text-xs font-bold bg-white px-2 py-1 rounded border">{Math.round(data.duracion_estimada / 60)}h {Math.round(data.duracion_estimada % 60)}m</div></div>
-                                            <ul className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">{data.paradas.map((stop, i) => (<li key={i} className="p-3 flex gap-3 hover:bg-slate-50"><span className="font-bold text-slate-400">#{i+1}</span><div><div className="font-bold text-sm">{stop.nombre}</div><div className="text-xs text-slate-500">{stop.direccion}</div></div></li>))}</ul>
-                                            <div className="p-4 bg-slate-50 border-t flex gap-2">
-                                                <button onClick={() => openDriverMap(driverName, data)} className="flex-1 bg-white border font-bold py-2 rounded text-sm hover:bg-blue-50">Ver Mapa</button>
-                                                <button onClick={() => { setPrintData({ driverName, stops: data.paradas }); setShowPrintModal(true); }} className="px-3 bg-slate-800 text-white rounded"><Icon name="printer" className="h-4 w-4" /></button>
+                                        <div key={driverName} className={`bg-white rounded-xl border border-slate-200 card-shadow flex flex-col h-full overflow-hidden transition-colors duration-300 ${dragOverDriver === driverName ? 'drop-target' : 'hover:border-ess-blue'}`} onDragOver={(e) => handleDragOverContainer(e, driverName)} onDrop={(e) => handleDrop(e, driverName)}>
+                                            <div className="bg-slate-50 p-5 border-b border-slate-100">
+                                                <div className="flex justify-between items-center mb-4 relative">
+                                                    <h3 className="font-bold text-xl text-slate-800 flex items-center gap-3">
+                                                        <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm"><Icon name="user" className="h-5 w-5 text-ess-blue" /></div> {driverName}
+                                                        <button onClick={() => initiateManualStop(driverName)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded-full transition-colors shadow-sm ml-2" title="Add Stop Manually"><Icon name="plus" className="h-4 w-4" /></button>
+                                                        <button onClick={() => setSwappingDriver(swappingDriver === driverName ? null : driverName)} className="text-slate-400 hover:text-ess-blue p-1 rounded hover:bg-blue-50 ml-auto"><Icon name="arrow-left-right" className="h-4 w-4" /></button>
+                                                    </h3>
+                                                    {swappingDriver === driverName && (<div className="absolute top-10 left-0 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-2 w-48 animate-fade-in"><p className="text-xs font-bold text-slate-500 mb-2 px-2">Swap with:</p>{Object.keys(routes).filter(d => d !== driverName).map(otherDriver => (<button key={otherDriver} onClick={() => handleSwapDriver(driverName, otherDriver)} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded text-sm text-slate-700 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-ess-green"></div>{otherDriver}</button>))}</div>)}
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
+                                                    <div className="bg-white p-2 rounded border border-slate-100 flex items-center gap-2">{recalculating[driverName] ? <div className="loader w-3 h-3"></div> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(data.duracion_estimada / 60)}h {Math.round(data.duracion_estimada % 60)}m</>}</div>
+                                                    <div className="flex gap-1">
+                                                        <button onClick={() => reverseRoute(driverName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
+                                                        <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize"><Icon name="wand-2" className="h-4 w-4" /></button>
+                                                        <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded border border-slate-900 hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="p-0 flex-1 overflow-y-auto max-h-[500px]">
+                                                <ul className="divide-y divide-slate-100">
+                                                    {data.paradas.map((stop, index) => (
+                                                        <li key={index} className={`relative pr-8 p-4 hover:bg-slate-50 transition-colors flex gap-3 group items-start cursor-grab active:cursor-grabbing ${selectedStops.find(s => s.driver === driverName && s.index === index) ? 'bg-blue-50' : ''}`} draggable="true" onDragStart={(e) => handleDragStart(e, driverName, index)} onDragEnd={handleDragEnd} onDrop={(e) => handleDrop(e, driverName, index)} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                                                            <div className="pt-1" onMouseDown={(e) => e.stopPropagation()}><input type="checkbox" className="custom-checkbox" checked={!!selectedStops.find(s => s.driver === driverName && s.index === index)} onChange={() => toggleStopSelection(driverName, index)} /></div>
+                                                            <div className="flex flex-col items-center gap-1 pt-1"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center border border-slate-200">{index + 1}</span></div>
+                                                            <div className="flex-1"><div className="font-bold text-sm text-slate-800">{getClientNameFromAddress(stop.direccion)}</div><div className="text-xs text-slate-500 mt-0.5">{stop.direccion}</div>{(stop.invoices || stop.pieces) && <div className="mt-1 flex gap-2"><span className="bg-yellow-50 text-yellow-700 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-mono">INV: {stop.invoices}</span><span className="bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded border border-blue-200 font-mono">PCS: {stop.pieces}</span></div>}</div>
+                                                            
+                                                            <div className="absolute right-2 top-2 bottom-2 flex flex-col justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onMouseDown={(e) => e.stopPropagation()}>
+                                                                <div className="flex gap-1 justify-end">
+                                                                    <button onClick={() => openEditStopModal(driverName, index, stop)} className="p-0.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded"><Icon name="pencil" className="h-3.5 w-3.5" /></button>
+                                                                    <button onClick={() => deleteStopFromRoute(driverName, index)} className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Icon name="trash-2" className="h-3.5 w-3.5" /></button>
+                                                                </div>
+                                                                <div className="flex gap-1 justify-end">
+                                                                    <button onClick={() => moveStop(driverName, index, -1)} disabled={index === 0} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-up" className="h-3.5 w-3.5" /></button>
+                                                                    <button onClick={() => moveStop(driverName, index, 1)} disabled={index === data.paradas.length - 1} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-down" className="h-3.5 w-3.5" /></button>
+                                                                </div>
+                                                            </div>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                            <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex gap-2">
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); openDriverMap(driverName, data); }}
+                                                    className="flex-1 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"
+                                                >
+                                                    <Icon name="map" className="h-4 w-4" /> View Map
+                                                </button>
+                                                
+                                                <a 
+                                                    href={data.link} 
+                                                    target="_blank" 
+                                                    rel="noreferrer" 
+                                                    className="px-4 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue hover:text-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"
+                                                    title="Open in Google Maps"
+                                                >
+                                                    <Icon name="send" className="h-4 w-4" />
+                                                </a>
+
+                                                <a 
+                                                    href={getWhatsappLink(data.link)} 
+                                                    target="_blank" 
+                                                    rel="noreferrer" 
+                                                    className="px-4 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"
+                                                    title="Send via WhatsApp"
+                                                >
+                                                    <Icon name="message-circle" className="h-4 w-4" />
+                                                </a>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
+                                {selectedStops.length > 0 && (<div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 animate-fade-in border border-slate-700"><div className="flex items-center gap-2"><span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{selectedStops.length}</span><span className="font-bold text-sm">Selected</span></div><div className="h-6 w-px bg-slate-600"></div><div className="flex gap-2"><span className="text-xs text-slate-400 self-center uppercase font-bold mr-1">Move to:</span>{Object.keys(routes).map(driver => (<button key={driver} onClick={() => transferSelectedStops(driver)} className="px-3 py-1.5 bg-slate-700 hover:bg-ess-blue rounded-lg text-xs font-bold transition-colors border border-slate-600 hover:border-ess-blue">{driver}</button>))}</div><button onClick={() => setSelectedStops([])} className="ml-2 text-slate-400 hover:text-white p-1 hover:bg-slate-700 rounded-full transition-colors"><Icon name="x" className="h-5 w-5" /></button></div>)}
                             </div>
                         )}
                     </main>
