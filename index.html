@@ -777,7 +777,16 @@
             const getClientNameFromAddress = (address) => { const fromDraft = currentStops.find(s => s.address === address); if (fromDraft) return fromDraft.name; const fromDB = clientDB.find(c => c.address === address); return fromDB ? fromDB.name : "Client"; };
             const getWhatsappLink = (l) => `https://wa.me/?text=${encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`)}`;
             
-            const filteredClients = useMemo(() => { const t = newStopName.toLowerCase().trim(); if (!t) return []; return clientDB.filter(c => (c.name || "").toLowerCase().includes(t)).slice(0, 5); }, [newStopName, clientDB]);
+            // MODIFICADO: Ahora busca por nombre O por dirección
+            const filteredClients = useMemo(() => { 
+                const t = newStopName.toLowerCase().trim(); 
+                if (!t) return []; 
+                return clientDB.filter(c => 
+                    (c.name || "").toLowerCase().includes(t) || 
+                    (c.address || "").toLowerCase().includes(t)
+                ).slice(0, 5); 
+            }, [newStopName, clientDB]);
+
             const filteredClientsByAddress = useMemo(() => { const t = newStopAddress.toLowerCase().trim(); if (!t) return []; return clientDB.filter(c => (c.address || "").toLowerCase().includes(t)).slice(0, 5); }, [newStopAddress, clientDB]);
             const filteredClientDBList = useMemo(() => { const t = clientFormName.toLowerCase().trim(); if (!t) return clientDB; return clientDB.filter(c => (c.name || "").toLowerCase().includes(t)); }, [clientFormName, clientDB]);
 
