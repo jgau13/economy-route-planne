@@ -196,6 +196,9 @@
             const innerRef = useRef(null);
             const inputRef = propInputRef || innerRef;
             const onChangeRef = useRef(onChange);
+            
+            // CONTUNDENTE: Referencia para saber si el usuario está navegando con flechas
+            const usedArrowsRef = useRef(false);
 
             useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
 
@@ -217,19 +220,31 @@
             }, [isLoaded]);
             
             const handleInputKeyDown = (e) => { 
-                // SOLUCIÓN CONTUNDENTE: Detectar si estamos sobre una sugerencia de Google.
-                // .pac-item-selected es la clase que Google pone al ítem resaltado con flechas.
-                if (e.key === 'Enter') {
-                    const suggestionSelected = document.querySelector('.pac-item-selected');
-                    if (suggestionSelected) {
-                        // Si hay una sugerencia resaltada, el usuario le dio Enter para SELECCIONARLA.
-                        // No queremos que esto dispare el "Guardar/Siguiente".
-                        // Solo queremos que Google rellene el input (lo cual hará nativamente).
-                        return; // Detenemos aquí. No llamamos a onKeyDown.
-                    }
+                // 1. Detectar uso de flechas: El usuario está navegando el menú
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    usedArrowsRef.current = true;
+                    // Dejamos que Google maneje el movimiento visual
+                    return; 
                 }
-                
-                // Si no hay sugerencia seleccionada, entonces sí es un Enter para avanzar.
+
+                // 2. Detectar Enter
+                if (e.key === 'Enter') {
+                    if (usedArrowsRef.current) {
+                        // El usuario estaba usando flechas, así que este Enter es para SELECCIONAR
+                        // Detenemos todo para que NO se dispare el "Guardar/Next"
+                        usedArrowsRef.current = false; // Reseteamos
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
+                    // Si no usó flechas (escribió y dio Enter, o ya seleccionó), dejamos pasar el evento
+                } else {
+                    // Cualquier otra tecla (letras, números) resetea el estado de flechas
+                    // porque el usuario volvió a escribir
+                    usedArrowsRef.current = false;
+                }
+
+                // Ejecutamos la acción original si no fue bloqueada
                 if (onKeyDown) onKeyDown(e); 
             };
 
