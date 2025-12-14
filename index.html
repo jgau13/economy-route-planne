@@ -217,19 +217,19 @@
             }, [isLoaded]);
             
             const handleInputKeyDown = (e) => { 
-                // CRITICAL FIX: Si se presiona Enter, verificamos si hay una sugerencia activa (resaltada).
+                // SOLUCIÓN CONTUNDENTE: Detectar si estamos sobre una sugerencia de Google.
+                // .pac-item-selected es la clase que Google pone al ítem resaltado con flechas.
                 if (e.key === 'Enter') {
-                    // La clase .pac-item-selected indica que el usuario está "encima" de una sugerencia con el teclado
-                    const isSuggestionSelected = document.querySelector('.pac-item-selected');
-                    
-                    if (isSuggestionSelected) {
-                        // Si hay una sugerencia seleccionada, evitamos que el Enter dispare "Guardar/Siguiente".
-                        // Solo queremos que Google Maps complete el texto.
-                        e.preventDefault(); 
-                        // No llamamos a onKeyDown (que es quien dispara initiateAddStop)
-                        return; 
+                    const suggestionSelected = document.querySelector('.pac-item-selected');
+                    if (suggestionSelected) {
+                        // Si hay una sugerencia resaltada, el usuario le dio Enter para SELECCIONARLA.
+                        // No queremos que esto dispare el "Guardar/Siguiente".
+                        // Solo queremos que Google rellene el input (lo cual hará nativamente).
+                        return; // Detenemos aquí. No llamamos a onKeyDown.
                     }
                 }
+                
+                // Si no hay sugerencia seleccionada, entonces sí es un Enter para avanzar.
                 if (onKeyDown) onKeyDown(e); 
             };
 
