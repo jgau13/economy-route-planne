@@ -225,11 +225,11 @@
                     // Verificar si hay un elemento seleccionado
                     const isSelected = document.querySelector('.pac-item-selected');
                     
-                    // Si el menú está visible Y (hay una selección explícita O el usuario está "dentro" del flujo de selección)
+                    // Si el menú está visible Y (hay una selección explícita)
                     if (isVisible && isSelected) {
-                        e.preventDefault(); 
-                        e.stopPropagation();
-                        return; // Detenemos la propagación para que el padre NO intente guardar
+                        // NO llamamos a preventDefault() para permitir que Google Maps rellene el input.
+                        // PERO SI detenemos la llamada a onKeyDown (que dispara el 'Next')
+                        return; 
                     }
                 }
                 if (onKeyDown) onKeyDown(e); 
