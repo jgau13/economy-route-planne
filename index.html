@@ -101,6 +101,8 @@
         
         .draggable-source { opacity: 0.4; border: 2px dashed #cbd5e1; background: #f1f5f9; }
         .drop-target { background-color: #eff6ff; border: 2px dashed #1b6e9b; }
+        .zone-target { border: 2px dashed #cbd5e1; background-color: #f8fafc; transition: all 0.2s; }
+        .zone-target.drag-over { border-color: #1b6e9b; background-color: #eff6ff; }
         
         .loader { border: 3px solid #f3f3f3; border-radius: 50%; border-top: 3px solid #1b6e9b; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -122,7 +124,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // ... [ERROR SCREEN & LOGIN SCREEN] ...
+        // ... [ERROR SCREEN & LOGIN SCREEN SAME AS BEFORE] ...
         const ConfigErrorScreen = ({ errorDetails }) => (
             <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
                 <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-lg border-l-4 border-red-500">
@@ -191,7 +193,7 @@
             return <span dangerouslySetInnerHTML={{ __html: svgHtml }} style={{ display: 'contents' }} />;
         };
 
-        // --- UPDATED ADDRESS INPUT WITH ENTER KEY FIX ---
+        // --- UPDATED ADDRESS INPUT WITH ROBUST ENTER KEY HANDLING ---
         const GoogleAddressInput = ({ value, onChange, placeholder, className, disabled, isLoaded, onKeyDown, inputRef: propInputRef }) => {
             const innerRef = useRef(null);
             const inputRef = propInputRef || innerRef;
@@ -223,7 +225,6 @@
                 // 1. Detectar uso de flechas: El usuario está navegando el menú
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                     usedArrowsRef.current = true;
-                    // Dejamos que Google maneje el movimiento visual
                     return; 
                 }
 
@@ -231,16 +232,20 @@
                 if (e.key === 'Enter') {
                     if (usedArrowsRef.current) {
                         // El usuario estaba usando flechas, así que este Enter es para SELECCIONAR
-                        // Detenemos todo para que NO se dispare el "Guardar/Next"
                         usedArrowsRef.current = false; // Reseteamos
                         e.preventDefault();
                         e.stopPropagation();
+                        return; // Detenemos todo para que NO se dispare el "Guardar/Next"
+                    }
+                    
+                    // Doble verificación: Si hay un elemento seleccionado visualmente por Google
+                    const suggestionSelected = document.querySelector('.pac-item-selected');
+                    if (suggestionSelected) {
+                        e.preventDefault();
                         return;
                     }
-                    // Si no usó flechas (escribió y dio Enter, o ya seleccionó), dejamos pasar el evento
                 } else {
                     // Cualquier otra tecla (letras, números) resetea el estado de flechas
-                    // porque el usuario volvió a escribir
                     usedArrowsRef.current = false;
                 }
 
@@ -475,6 +480,9 @@
             const [clientDB, setClientDB] = useState([]);
             const [drivers, setDrivers] = useState([]);
             const [vehicles, setVehicles] = useState([]);
+            const [zones, setZones] = useState([]); // NUEVO: Estado de Zonas
+            const [driverZones, setDriverZones] = useState({}); // Mapa driver -> zona
+            
             const [googleApiKey, setGoogleApiKey] = useState(null);
             const [scriptLoaded, setScriptLoaded] = useState(false);
             const [view, setView] = useState('input'); 
@@ -494,6 +502,8 @@
             const [newStopAddress, setNewStopAddress] = useState('');
             const [newDriverName, setNewDriverName] = useState('');
             const [newVehicleName, setNewVehicleName] = useState(''); 
+            const [newZoneName, setNewZoneName] = useState(''); // NUEVO
+            
             const [showSuggestions, setShowSuggestions] = useState(false);
             const [showAddressSuggestions, setShowAddressSuggestions] = useState(false); 
             const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1); 
@@ -527,12 +537,17 @@
             
             const [clientFormName, setClientFormName] = useState('');
             const [clientFormAddress, setClientFormAddress] = useState('');
-            const [showClientDbAddressSuggestions, setShowClientDbAddressSuggestions] = useState(false); // NUEVO ESTADO
+            const [showClientDbAddressSuggestions, setShowClientDbAddressSuggestions] = useState(false); // NUEVO
             const [editingClientId, setEditingClientId] = useState(null);
             const [selectedStops, setSelectedStops] = useState([]);
+            
+            // Drag & Drop States
             const [draggedItem, setDraggedItem] = useState(null);
             const [dragOverDriver, setDragOverDriver] = useState(null);
+            const [dragOverZone, setDragOverZone] = useState(null); // NUEVO
             const [swappingDriver, setSwappingDriver] = useState(null);
+            const [assigningZoneForDriver, setAssigningZoneForDriver] = useState(null); // NUEVO
+            
             const [isRecalculatingAll, setIsRecalculatingAll] = useState(false);
             const [editingStop, setEditingStop] = useState(null);
             const [editingDraftId, setEditingDraftId] = useState(null);
@@ -606,6 +621,8 @@
                 window.fbOnSnapshot(window.fbQuery(getUserCollection("drivers"), window.fbOrderBy("name")), (s) => setDrivers(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                 window.fbOnSnapshot(window.fbQuery(getUserCollection("draft_stops"), window.fbOrderBy("createdAt", "desc")), (s) => setCurrentStops(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                 window.fbOnSnapshot(window.fbQuery(getUserCollection("vehicles"), window.fbOrderBy("name")), (s) => setVehicles(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+                // ZONAS LISTENER
+                window.fbOnSnapshot(window.fbQuery(getUserCollection("zones"), window.fbOrderBy("name")), (s) => setZones(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                 
                 // HISTORY SNAPSHOT
                 window.fbOnSnapshot(window.fbQuery(getUserCollection("route_history"), window.fbOrderBy("timestamp", "desc"), window.fbLimit(3)), (s) => setHistoryData(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
@@ -638,6 +655,9 @@
             const toggleDriver = async (id, status) => { if(window.fbDb) await window.fbUpdateDoc(getUserDocRef("drivers", id), { active: !status }); };
             const addVehicleToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("vehicles"), { name }); };
             const deleteVehicle = async (id) => { if(window.fbDb && confirm('Delete Vehicle?')) await window.fbDeleteDoc(getUserDocRef("vehicles", id)); };
+            const addZoneToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("zones"), { name }); };
+            const deleteZone = async (id) => { if(window.fbDb && confirm('Delete Zone?')) await window.fbDeleteDoc(getUserDocRef("zones", id)); };
+
             const saveClient = async () => { 
                 if (!clientFormName || !window.fbDb) return; 
                 const finalName = formatClientName(clientFormName);
@@ -778,7 +798,7 @@
             const getClientNameFromAddress = (address) => { const fromDraft = currentStops.find(s => s.address === address); if (fromDraft) return fromDraft.name; const fromDB = clientDB.find(c => c.address === address); return fromDB ? fromDB.name : "Client"; };
             const getWhatsappLink = (l) => `https://wa.me/?text=${encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`)}`;
             
-            // MODIFICADO: Busca por nombre O por dirección (para el input de rutas)
+            // FILTRADO INPUT PRINCIPAL (Nombre O Dirección)
             const filteredClients = useMemo(() => { 
                 const t = newStopName.toLowerCase().trim(); 
                 if (!t) return []; 
@@ -790,27 +810,23 @@
 
             const filteredClientsByAddress = useMemo(() => { const t = newStopAddress.toLowerCase().trim(); if (!t) return []; return clientDB.filter(c => (c.address || "").toLowerCase().includes(t)).slice(0, 5); }, [newStopAddress, clientDB]);
             
-            // FILTRADO DE LA TABLA DE CLIENTES (Nombre o Dirección)
+            // FILTRADO CLIENTS TAB (Nombre Y/O Dirección)
             const filteredClientDBList = useMemo(() => { 
                 const nameTerm = clientFormName.toLowerCase().trim();
                 const addrTerm = clientFormAddress.toLowerCase().trim();
                 if (!nameTerm && !addrTerm) return clientDB;
-                
                 return clientDB.filter(c => {
                     const matchName = !nameTerm || (c.name || "").toLowerCase().includes(nameTerm);
                     const matchAddr = !addrTerm || (c.address || "").toLowerCase().includes(addrTerm);
-                    // Lógica AND: Si escribes en ambos campos, debe coincidir ambos. Si solo uno, filtra por ese.
                     return matchName && matchAddr;
                 });
             }, [clientFormName, clientFormAddress, clientDB]);
 
-            // SUGERENCIAS PARA EL CAMPO DIRECCIÓN EN CLIENTS DB
             const suggestionsForClientDbAddress = useMemo(() => {
                 const t = clientFormAddress.toLowerCase().trim();
                 if (!t) return [];
                 return clientDB.filter(c => (c.address || "").toLowerCase().includes(t)).slice(0, 5);
             }, [clientFormAddress, clientDB]);
-
 
             const recalculateRoute = async (dName, stops) => { setRecalculating(p => ({...p, [dName]: true})); try { const res = await fetch('/recalcular', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); setRoutes(p => ({...p, [dName]: {...p[dName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas || stops}})); } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [dName]: false})); } };
             const handleRecalculateAll = async () => { if (!routes) return; setIsRecalculatingAll(true); await Promise.all(Object.keys(routes).map(d => recalculateRoute(d, routes[d].paradas))); setIsRecalculatingAll(false); };
@@ -834,11 +850,50 @@
                 } else { handleEnter(e, initiateAddStop); }
             };
             
-            // Drag & Drop
-            const handleDragStart = (e, driverName, stopIndex) => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.closest('button')) { e.preventDefault(); return; } setDraggedItem({ driverName, stopIndex }); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => e.target.classList.add('draggable-source'), 0); };
-            const handleDragEnd = (e) => { e.target.classList.remove('draggable-source'); setDraggedItem(null); setDragOverDriver(null); };
-            const handleDragOverContainer = (e, driverName) => { e.preventDefault(); setDragOverDriver(driverName); };
-            const handleDrop = (e, targetDriverName, targetIndex = null) => { e.preventDefault(); setDragOverDriver(null); if (!draggedItem) return; const sourceDriver = draggedItem.driverName; const sourceIndex = draggedItem.stopIndex; const newRoutes = JSON.parse(JSON.stringify(routes)); const [movedStop] = newRoutes[sourceDriver].paradas.splice(sourceIndex, 1); let destinationStops = newRoutes[targetDriverName].paradas; if (targetIndex !== null) { let adjustedTargetIndex = targetIndex; if (sourceDriver === targetDriverName && sourceIndex < targetIndex) { adjustedTargetIndex = targetIndex - 0; } destinationStops.splice(adjustedTargetIndex, 0, movedStop); } else { destinationStops.push(movedStop); } setRoutes(newRoutes); recalculateRoute(targetDriverName, newRoutes[targetDriverName].paradas); if (sourceDriver !== targetDriverName) recalculateRoute(sourceDriver, newRoutes[sourceDriver].paradas); };
+            // --- LOGICA DRAG & DROP UNIFICADA (DRIVER vs STOP) ---
+            const handleDragStartStop = (e, driverName, stopIndex) => { 
+                e.stopPropagation(); // Evitar arrastrar el driver
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') { e.preventDefault(); return; } 
+                setDraggedItem({ type: 'stop', driverName, stopIndex }); 
+                e.dataTransfer.effectAllowed = 'move'; 
+            };
+            const handleDragStartDriver = (e, driverName) => {
+                setDraggedItem({ type: 'driver', driverName });
+                e.dataTransfer.effectAllowed = 'move';
+            };
+            const handleDragEnd = () => { setDraggedItem(null); setDragOverDriver(null); setDragOverZone(null); };
+            
+            // Drop en un Conductor (para paradas)
+            const handleDropOnDriver = (e, targetDriverName) => {
+                e.preventDefault(); setDragOverDriver(null);
+                if (!draggedItem || draggedItem.type !== 'stop') return;
+                const sourceDriver = draggedItem.driverName; const sourceIndex = draggedItem.stopIndex;
+                const newRoutes = JSON.parse(JSON.stringify(routes));
+                const [movedStop] = newRoutes[sourceDriver].paradas.splice(sourceIndex, 1);
+                newRoutes[targetDriverName].paradas.push(movedStop);
+                setRoutes(newRoutes);
+                // Opcional: Recalcular rutas automáticamente al soltar
+                // recalculateRoute(targetDriverName, newRoutes[targetDriverName].paradas);
+            };
+
+            // Drop en una Zona (para conductores)
+            const handleDropOnZone = (e, zoneId) => {
+                e.preventDefault(); setDragOverZone(null);
+                if (!draggedItem || draggedItem.type !== 'driver') return;
+                setDriverZones(prev => ({ ...prev, [draggedItem.driverName]: zoneId }));
+            };
+            
+            // Eliminar de zona (volver a "Sin Asignar")
+            const handleRemoveFromZone = (driverName) => {
+                const newZones = { ...driverZones };
+                delete newZones[driverName];
+                setDriverZones(newZones);
+            };
+
+            // Helpers de renderizado para Resultados
+            const getDriversInZone = (zoneId) => Object.keys(routes).filter(dName => driverZones[dName] === zoneId);
+            const getUnassignedDrivers = () => Object.keys(routes).filter(dName => !driverZones[dName]);
+
             const toggleStopSelection = (driverName, index) => { setSelectedStops(prev => { const exists = prev.find(p => p.driver === driverName && p.index === index); if (exists) return prev.filter(p => !(p.driver === driverName && p.index === index)); return [...prev, { driver: driverName, index }]; }); };
             const moveStop = (driverName, index, direction) => { const newRoutes = JSON.parse(JSON.stringify(routes)); const stops = newRoutes[driverName].paradas; const newIndex = index + direction; if (newIndex < 0 || newIndex >= stops.length) return; [stops[index], stops[newIndex]] = [stops[newIndex], stops[index]]; setRoutes(newRoutes); recalculateRoute(driverName, stops); };
             const transferSelectedStops = (targetDriver) => { if (selectedStops.length === 0) return; const newRoutes = JSON.parse(JSON.stringify(routes)); const sortedSelection = [...selectedStops].sort((a, b) => b.index - a.index); sortedSelection.forEach(sel => { const [removed] = newRoutes[sel.driver].paradas.splice(sel.index, 1); newRoutes[targetDriver].paradas.push(removed); }); setRoutes(newRoutes); setSelectedStops([]); const affectedDrivers = new Set(sortedSelection.map(s => s.driver)); affectedDrivers.add(targetDriver); affectedDrivers.forEach(d => recalculateRoute(d, newRoutes[d].paradas)); };
@@ -921,7 +976,7 @@
                             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden relative">
                                 <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center z-10 relative">
                                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                        <Icon name="map" className="h-5 w-5 text-ess-blue" /> 
+                                        <Icon name="map" className="h-5 w-5 text-ess-blue" /> 
                                         Route: {viewingDriver.name}
                                     </h3>
                                     <button onClick={() => setViewingDriver(null)} className="text-slate-400 hover:text-red-500">
@@ -929,9 +984,9 @@
                                     </button>
                                 </div>
                                 <div className="flex-1 relative w-full h-full">
-                                     <GlobalMapView 
-                                        routes={{ [viewingDriver.name]: viewingDriver.data }} 
-                                        baseAddress={baseAddress} 
+                                     <GlobalMapView 
+                                        routes={{ [viewingDriver.name]: viewingDriver.data }} 
+                                        baseAddress={baseAddress} 
                                      />
                                 </div>
                             </div>
@@ -959,197 +1014,291 @@
                     </header>
 
                     <main className="max-w-7xl mx-auto p-6 no-print">
-                        {/* SETTINGS, CLIENTS, VEHICLES, GLOBAL MAP VIEWS ... */}
-                        {view === 'settings' && (<div className="max-w-2xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden p-6 space-y-8"><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Data Management (Migrate User)</h2><div className="space-y-4"><p className="text-sm text-slate-600">Use this to move your data to a new account. Download backup from old account, then restore in new one.</p><div className="flex gap-4"><button onClick={handleBackup} className="flex-1 bg-slate-800 text-white px-4 py-2 rounded font-bold flex items-center justify-center gap-2"><Icon name="download" className="h-4 w-4" /> Download Backup</button><input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" /><button onClick={handleRestoreClick} className="flex-1 bg-ess-blue text-white px-4 py-2 rounded font-bold flex items-center justify-center gap-2"><Icon name="upload" className="h-4 w-4" /> Restore from Backup</button></div></div></div><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Manifest Header Info</h2><div className="space-y-4"><div><label className="block text-sm font-bold text-slate-500 mb-1">Company Name</label><input className="w-full p-2 border rounded" value={companyConfig.companyName} onChange={e => setCompanyConfig({...companyConfig, companyName: e.target.value})} /></div><div><label className="block text-sm font-bold text-slate-500 mb-1">Phone</label><input className="w-full p-2 border rounded" value={companyConfig.phone} onChange={e => setCompanyConfig({...companyConfig, phone: e.target.value})} /></div><div><label className="block text-sm font-bold text-slate-500 mb-1">Footer Address</label><input className="w-full p-2 border rounded" value={companyConfig.address} onChange={e => setCompanyConfig({...companyConfig, address: e.target.value})} /></div></div></div><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">App Security</h2><div className="space-y-4"><div><label className="block text-sm font-bold text-slate-500 mb-1">Change Security PIN (Default: 0000)</label><input type="text" className="w-full p-2 border rounded" maxLength="6" placeholder="New PIN" value={newPin} onChange={e => setNewPin(e.target.value)} /></div><button onClick={saveSettings} className="bg-slate-800 text-white px-4 py-2 rounded font-bold">Save All Settings</button></div></div><div><h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Account Security</h2><div className="space-y-4"><p className="text-sm text-slate-600">Click below to receive an email to reset your password for <strong>{user.email}</strong>.</p><button onClick={handleChangePassword} className="bg-ess-blue text-white px-4 py-2 rounded font-bold">Send Password Reset Email</button>{settingsMsg && <p className="text-sm text-green-600 font-bold">{settingsMsg}</p>}</div></div></div></div>)}
-                        {view === 'clients' && (<div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients</h2></div><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{clientDB.length} Clients</span></div>
-                            <div className="p-6 bg-blue-50/50 border-b border-slate-200">
-                                <div className="flex flex-col md:flex-row gap-4">
-                                    <input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} />
-                                    <div className="flex-[2] relative">
-                                        <GoogleAddressInput 
-                                            value={clientFormAddress} 
-                                            onChange={(e) => { 
-                                                setClientFormAddress(e.target.value);
-                                                setShowClientDbAddressSuggestions(true);
-                                            }} 
-                                            onKeyDown={(e) => handleEnter(e, saveClient)} 
-                                            className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" 
-                                            placeholder="Address" 
-                                            disabled={!scriptLoaded} 
-                                            isLoaded={scriptLoaded} 
-                                        />
-                                        {showClientDbAddressSuggestions && suggestionsForClientDbAddress.length > 0 && (
-                                            <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1">
-                                                <div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>
-                                                {suggestionsForClientDbAddress.map((c, i) => (
-                                                    <div key={i} onClick={() => { 
-                                                        setClientFormName(c.name); 
-                                                        setClientFormAddress(c.address);
-                                                        setEditingClientId(c.id);
-                                                        setShowClientDbAddressSuggestions(false);
-                                                    }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm">
-                                                        <div className="font-bold text-slate-700">{c.name}</div>
-                                                        <div className="text-xs text-slate-500 truncate">{c.address}</div>
+                        {/* VISTA PLANNER (INPUT) */}
+                        {view === 'input' && (
+                            <div className="grid lg:grid-cols-12 gap-8 animate-fade-in">
+                                <div className="lg:col-span-7 space-y-6">
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow">
+                                        <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2"><Icon name="plus" className="h-5 w-5 text-ess-green" /> Add Stop</h2>
+                                        <div className="grid md:grid-cols-2 gap-4 mb-4">
+                                            <div className="relative">
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client</label>
+                                                <input ref={mainClientInputRef} type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Name" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); setActiveSuggestionIndex(-1); }} onKeyDown={handleClientKeyDown} />
+                                                {showSuggestions && filteredClients.length > 0 && <div className="absolute top-full left-0 w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 overflow-hidden z-50">{filteredClients.map((c, i) => (<div key={i} onClick={() => selectClient(c)} className={`p-3 cursor-pointer border-b border-slate-50 ${i === activeSuggestionIndex ? 'bg-blue-100' : 'hover:bg-blue-50'}`}><div className="font-bold text-slate-700 text-sm">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
+                                            </div>
+                                            <div className="relative">
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label>
+                                                <GoogleAddressInput value={newStopAddress} onChange={(e) => { setNewStopAddress(e.target.value); setShowAddressSuggestions(true); }} onKeyDown={(e) => handleEnter(e, initiateAddStop)} className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Search Google Maps" disabled={!scriptLoaded} isLoaded={scriptLoaded} />
+                                                {showAddressSuggestions && filteredClientsByAddress.length > 0 && <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{filteredClientsByAddress.map((c, i) => (<div key={i} onClick={() => { selectClient(c); setTempStopData({name: c.name, address: c.address}); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-end"><button onClick={initiateAddStop} disabled={!newStopAddress} className="bg-ess-blue text-white px-6 py-2.5 rounded-lg font-bold shadow-md flex items-center gap-2 disabled:opacity-50">Next</button></div>
+                                    </div>
+                                    <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden min-h-[300px]">
+                                        <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
+                                            <h3 className="font-bold text-slate-700">Today's Route ({currentStops.length})</h3>
+                                            {currentStops.length > 0 && <button onClick={clearDraftRoute} className="text-red-500 text-xs font-bold flex items-center gap-1"><Icon name="eraser" className="h-3 w-3" /> Clear</button>}
+                                        </div>
+                                        <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+                                            {currentStops.map((stop, idx) => (
+                                                <div key={stop.id} className="p-4 flex items-center gap-4 hover:bg-slate-50 group">
+                                                    <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center font-bold text-sm text-slate-500 border border-slate-200">{idx+1}</div>
+                                                    <div className="flex-1">
+                                                        <h4 className="font-bold text-slate-800">{stop.name}</h4>
+                                                        <p className="text-sm text-slate-500 flex items-center gap-1"><Icon name="map-pin" className="h-3 w-3" /> {stop.address}</p>
+                                                        {(stop.invoices || stop.pieces) && <div className="flex gap-3 mt-1 text-xs font-mono text-slate-500 bg-slate-100 inline-block px-2 py-1 rounded"><span>Inv: {stop.invoices || '-'}</span><span>Pcs: {stop.pieces || '-'}</span></div>}
+                                                    </div>
+                                                    <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button onClick={() => startEditDraft(stop)} className="p-2 text-slate-300 hover:text-ess-blue hover:bg-blue-50 rounded-lg transition-colors"><Icon name="pencil" className="h-4 w-4" /></button>
+                                                        <button onClick={() => removeStop(stop.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="lg:col-span-5 space-y-6">
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow">
+                                        <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 pb-3 border-b border-slate-100"><Icon name="users" className="h-5 w-5 text-ess-blue" /> Drivers</h3>
+                                        <div className="grid gap-2 mb-4 overflow-y-auto max-h-[300px]">{drivers.map(d => <label key={d.id} className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer ${d.active ? 'border-green-500 bg-green-50/30' : 'border-slate-200 bg-slate-50 opacity-60'}`}><span className="font-bold text-sm text-slate-700">{d.name}</span><input type="checkbox" checked={d.active} onChange={() => toggleDriver(d.id, d.active)} className="accent-green-600 w-4 h-4" /></label>)}</div>
+                                        <div className="flex gap-2"><input className="flex-1 p-2 border rounded text-sm outline-none" placeholder="New Driver" value={newDriverName} onChange={e => setNewDriverName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newDriverName){addDriverToFb(newDriverName); setNewDriverName('')}})} /><button onClick={() => {if(newDriverName){addDriverToFb(newDriverName); setNewDriverName('')}}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">
+                                        {error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}
+                                        {routes && (<><p className="text-xs text-center text-slate-500 mb-1">Return to routes</p><button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-4 rounded-xl font-bold text-lg shadow-lg mb-3 transition-all flex justify-center items-center gap-2"><Icon name="map" className="h-6 w-6" /> VIEW ACTIVE ROUTES</button></>)}
+                                        <button onClick={handleOptimize} disabled={loading} className="w-full bg-ess-green hover:bg-green-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-green-600/20 transition-all flex justify-center items-center gap-2 disabled:opacity-75">{loading ? <div className="loader mr-2"></div> : <Icon name="zap" className="h-6 w-6" />} GENERATE ROUTE</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* VISTA CLIENTES */}
+                        {view === 'clients' && (
+                            <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden animate-fade-in">
+                                <div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients</h2><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{clientDB.length} Clients</span></div>
+                                <div className="p-6 bg-blue-50/50 border-b border-slate-200">
+                                    <div className="flex flex-col md:flex-row gap-4">
+                                        <input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} />
+                                        <div className="flex-[2] relative">
+                                            <GoogleAddressInput value={clientFormAddress} onChange={(e) => { setClientFormAddress(e.target.value); setShowClientDbAddressSuggestions(true); }} onKeyDown={(e) => handleEnter(e, saveClient)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} />
+                                            {showClientDbAddressSuggestions && suggestionsForClientDbAddress.length > 0 && (<div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{suggestionsForClientDbAddress.map((c, i) => (<div key={i} onClick={() => { setClientFormName(c.name); setClientFormAddress(c.address); setEditingClientId(c.id); setShowClientDbAddressSuggestions(false); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>)}
+                                        </div>
+                                        <button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button>
+                                    </div>
+                                </div>
+                                <div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{c.name}</td><td className="p-4 text-sm text-slate-600">{c.address}</td><td className="p-4 text-right"><div className="flex justify-end gap-2"><button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1"><Icon name="pencil" className="h-4 w-4"/></button><button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4"/></button></div></td></tr>))}</tbody></table></div>
+                            </div>
+                        )}
+
+                        {/* VISTA SETTINGS (Con Gestión de Zonas) */}
+                        {view === 'settings' && (
+                            <div className="max-w-2xl mx-auto bg-white rounded-xl border border-slate-200 card-shadow p-6 space-y-8 animate-fade-in">
+                                <div><h2 className="text-xl font-bold mb-4 border-b pb-2">Settings</h2><div><label className="block text-sm font-bold text-slate-500">Company Name</label><input className="w-full p-2 border rounded" value={companyConfig.companyName} onChange={e => setCompanyConfig({...companyConfig, companyName: e.target.value})} /></div></div>
+                                <div>
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2">Zone Management</h2>
+                                    <div className="flex gap-2 mb-4"><input className="flex-1 p-2 border rounded" placeholder="New Zone Name" value={newZoneName} onChange={e => setNewZoneName(e.target.value)} /><button onClick={() => { if(newZoneName){ addZoneToFb(newZoneName); setNewZoneName(''); }}} className="bg-ess-green text-white px-3 rounded">+</button></div>
+                                    <div className="flex flex-wrap gap-2">{zones.map(z => <div key={z.id} className="bg-slate-100 px-3 py-1 rounded-full flex items-center gap-2 border shadow-sm"><span className="font-bold text-sm text-slate-600">{z.name}</span><button onClick={() => deleteZone(z.id)} className="text-red-500 hover:text-red-700"><Icon name="x" className="h-3 w-3" /></button></div>)}</div>
+                                    {zones.length === 0 && <p className="text-sm text-slate-400 italic">No zones created yet.</p>}
+                                </div>
+                                <div><h2 className="text-xl font-bold mb-4 border-b pb-2">Actions</h2><div className="flex gap-4"><button onClick={handleBackup} className="bg-slate-800 text-white px-4 py-2 rounded font-bold flex items-center gap-2"><Icon name="download" className="h-4 w-4"/> Backup</button><input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" /><button onClick={handleRestoreClick} className="bg-blue-600 text-white px-4 py-2 rounded font-bold flex items-center gap-2"><Icon name="upload" className="h-4 w-4"/> Restore</button></div></div>
+                                <button onClick={saveSettings} className="w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-black">Save All Settings</button>
+                            </div>
+                        )}
+
+                        {/* VISTA VEHICULOS */}
+                        {view === 'vehicles' && (<div className="max-w-2xl mx-auto bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden animate-fade-in"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="truck" className="h-5 w-5 text-ess-blue" /> Fleet Management</h2><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{vehicles.length} Trucks</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex gap-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }})} /><button onClick={() => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }}} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="plus" className="h-4 w-4" /> Add Truck</button></div></div><div className="max-h-[500px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{vehicles.length === 0 ? <tr><td className="p-8 text-center text-slate-400">No vehicles added yet.</td></tr> : vehicles.map(v => (<tr key={v.id} className="hover:bg-slate-50"><td className="p-4 font-bold text-slate-700 flex items-center gap-3"><div className="bg-blue-100 p-2 rounded-full"><Icon name="truck" className="h-4 w-4 text-ess-blue" /></div> {v.name}</td><td className="p-4 text-right"><button onClick={() => deleteVehicle(v.id)} className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-5 w-5" /></button></td></tr>))}</tbody></table></div></div>)}
+
+                        {/* VISTA RESULTADOS (CON ZONAS) */}
+                        {view === 'results' && routes && (
+                            <div className="animate-fade-in space-y-8">
+                                {/* Navbar Resultados */}
+                                <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setView('input')} className="text-slate-600 px-4 py-2 border rounded bg-white hover:bg-slate-50 flex items-center gap-2"><Icon name="arrow-left" className="h-4 w-4" /> Back</button>
+                                        <button onClick={handleAddRoute} className="text-xs font-bold text-white bg-ess-blue hover:bg-sky-700 px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="plus" className="h-4 w-4" /> Add Route</button>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={handleRestore} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="rotate-ccw" className="h-3 w-3" /> Reset</button>
+                                        <button onClick={() => setView('global_map')} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="map" className="h-3 w-3" /> Map</button>
+                                        <button onClick={() => setShowGlobalPrint(true)} className="text-xs font-bold text-white bg-slate-800 px-3 py-2 rounded flex items-center gap-2"><Icon name="printer" className="h-3 w-3" /> Print All</button>
+                                        <button onClick={handleRecalculateAll} disabled={isRecalculatingAll} className="text-xs font-bold text-white bg-ess-blue hover:bg-sky-700 px-4 py-2 rounded-lg flex items-center gap-2">{isRecalculatingAll ? <div className="loader w-3 h-3"></div> : <><Icon name="refresh-cw" className="h-3 w-3" /> Update</>}</button>
+                                    </div>
+                                </div>
+
+                                {/* Layout de Zonas */}
+                                <div className="flex flex-col md:flex-row gap-6 pb-20">
+                                    
+                                    {/* Columna Izquierda: Unassigned Drivers */}
+                                    <div className="md:w-1/4 flex-shrink-0 space-y-4">
+                                        <h3 className="font-bold text-slate-500 text-sm uppercase tracking-wide flex items-center gap-2"><Icon name="users" className="h-4 w-4"/> Unassigned Drivers</h3>
+                                        <div className="space-y-4 min-h-[200px] p-2 rounded-xl bg-slate-100 border border-slate-200"
+                                            onDragOver={(e) => { e.preventDefault(); setDragOverZone('unassigned'); }}
+                                            onDrop={(e) => { if(draggedItem?.type === 'driver') { handleRemoveFromZone(draggedItem.driverName); setDragOverZone(null); } }}
+                                            style={{ backgroundColor: dragOverZone === 'unassigned' ? '#eff6ff' : '' }}
+                                        >
+                                            {getUnassignedDrivers().map((driverName) => (
+                                                <div key={driverName} draggable="true" onDragStart={(e) => handleDragStartDriver(e, driverName)} className="cursor-move">
+                                                    {/* Tarjeta de Conductor */}
+                                                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+                                                        <div className="bg-white p-3 border-b border-slate-100 flex justify-between items-center">
+                                                            <h4 className="font-bold text-slate-800 flex items-center gap-2"><div className="bg-slate-100 p-1.5 rounded"><Icon name="user" className="h-4 w-4 text-ess-blue" /></div> {driverName}</h4>
+                                                            <div className="relative">
+                                                                <input type="checkbox" className="custom-checkbox" checked={assigningZoneForDriver === driverName} onChange={() => setAssigningZoneForDriver(assigningZoneForDriver === driverName ? null : driverName)} />
+                                                                {/* Menú Rápido de Zona */}
+                                                                {assigningZoneForDriver === driverName && (
+                                                                    <div className="absolute right-0 top-6 w-40 bg-white border border-slate-200 shadow-xl rounded-lg z-50 py-1">
+                                                                        <div className="text-xs font-bold text-slate-400 px-3 py-1 border-b bg-slate-50">Move to Zone:</div>
+                                                                        {zones.map(z => (
+                                                                            <button key={z.id} onClick={() => { setDriverZones(p => ({...p, [driverName]: z.id})); setAssigningZoneForDriver(null); }} className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-slate-700 font-medium">{z.name}</button>
+                                                                        ))}
+                                                                        {zones.length === 0 && <div className="px-3 py-2 text-xs text-slate-400 italic">No zones created</div>}
+                                                                        <div className="border-t my-1"></div>
+                                                                        <button onClick={() => { handleRemoveFromZone(driverName); setAssigningZoneForDriver(null); }} className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-red-600 font-bold">Unassign</button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        {/* Lista de Paradas (Drag & Drop Interno) */}
+                                                        <ul className="divide-y divide-slate-100 max-h-[150px] overflow-y-auto bg-slate-50/50" onDragOver={(e) => {e.preventDefault(); e.stopPropagation(); setDragOverDriver(driverName)}} onDrop={(e) => handleDropOnDriver(e, driverName)}>
+                                                            {routes[driverName].paradas.map((stop, i) => (
+                                                                <li key={i} draggable="true" onDragStart={(e) => handleDragStartStop(e, driverName, i)} className={`p-2 text-xs flex gap-2 hover:bg-white cursor-grab ${selectedStops.find(s=>s.driver===driverName && s.index===i) ? 'bg-blue-100' : ''}`} onClick={(e)=>{ e.stopPropagation(); toggleStopSelection(driverName, i); }}>
+                                                                    <span className="font-bold text-slate-400 shrink-0">#{i+1}</span>
+                                                                    <div className="truncate text-slate-600 font-medium">{stop.nombre}</div>
+                                                                </li>
+                                                            ))}
+                                                            {routes[driverName].paradas.length === 0 && <li className="p-4 text-center text-xs text-slate-400 italic">Drop stops here</li>}
+                                                        </ul>
+                                                        <div className="p-2 bg-slate-50 border-t flex justify-between text-xs items-center">
+                                                            <div className="text-slate-500 font-mono font-bold">{Math.round(routes[driverName].duracion_estimada / 60)}h {Math.round(routes[driverName].duracion_estimada % 60)}m</div>
+                                                            <div className="flex gap-1">
+                                                                <button onClick={() => setViewingDriver({name:driverName, data:routes[driverName]})} className="bg-white border p-1 rounded hover:text-ess-blue" title="Map"><Icon name="map" className="h-3 w-3"/></button>
+                                                                <button onClick={() => {setPrintData({driverName, stops:routes[driverName].paradas}); setShowPrintModal(true);}} className="bg-white border p-1 rounded hover:text-slate-800" title="Print"><Icon name="printer" className="h-3 w-3"/></button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {getUnassignedDrivers().length === 0 && <div className="text-center text-xs text-slate-400 py-8 italic border-2 border-dashed border-slate-200 rounded-lg">All drivers assigned to zones</div>}
+                                        </div>
+                                    </div>
+
+                                    {/* Columna Derecha: Zonas */}
+                                    <div className="flex-1">
+                                        <h3 className="font-bold text-slate-500 text-sm uppercase tracking-wide mb-4 flex items-center gap-2"><Icon name="grid" className="h-4 w-4"/> Zones Overview</h3>
+                                        {zones.length === 0 ? (
+                                            <div className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl p-8 text-center">
+                                                <p className="text-slate-400 font-bold mb-2">No zones created.</p>
+                                                <button onClick={() => setView('settings')} className="text-ess-blue text-sm hover:underline">Go to Settings to create zones</button>
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                                {zones.map(zone => (
+                                                    <div key={zone.id} 
+                                                        className={`zone-target min-h-[150px] rounded-xl p-3 flex flex-col gap-3 ${dragOverZone === zone.id ? 'drag-over' : ''}`}
+                                                        onDragOver={(e) => { e.preventDefault(); setDragOverZone(zone.id); }}
+                                                        onDragLeave={() => setDragOverZone(null)}
+                                                        onDrop={(e) => handleDropOnZone(e, zone.id)}
+                                                    >
+                                                        <div className="text-center font-bold text-slate-600 border-b border-dashed border-slate-300 pb-2 uppercase tracking-wider text-xs">{zone.name}</div>
+                                                        
+                                                        {/* Drivers in Zone */}
+                                                        {getDriversInZone(zone.id).map((driverName) => (
+                                                            <div key={driverName} draggable="true" onDragStart={(e) => handleDragStartDriver(e, driverName)} className="cursor-move">
+                                                                {/* Misma tarjeta de conductor (Mini versión) */}
+                                                                <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                                                                    <div className="p-2 bg-blue-50 border-b border-blue-100 flex justify-between items-center">
+                                                                        <div className="font-bold text-sm text-ess-blue truncate flex items-center gap-1"><Icon name="truck" className="h-3 w-3"/> {driverName}</div>
+                                                                        <input type="checkbox" className="custom-checkbox h-4 w-4" checked={assigningZoneForDriver === driverName} onChange={() => setAssigningZoneForDriver(assigningZoneForDriver === driverName ? null : driverName)} />
+                                                                        {assigningZoneForDriver === driverName && (
+                                                                            <div className="absolute right-4 w-40 bg-white border shadow-xl rounded z-50 py-1 text-xs">
+                                                                                <div className="px-2 py-1 text-slate-400 font-bold border-b bg-slate-50">Move to:</div>
+                                                                                {zones.filter(z=>z.id!==zone.id).map(z => <button key={z.id} onClick={() => { setDriverZones(p=>({...p,[driverName]:z.id})); setAssigningZoneForDriver(null); }} className="w-full text-left px-2 py-1 hover:bg-slate-50 text-slate-700">{z.name}</button>)}
+                                                                                <button onClick={() => { handleRemoveFromZone(driverName); setAssigningZoneForDriver(null); }} className="w-full text-left px-2 py-1 text-red-500 hover:bg-red-50 font-bold border-t">Unassign</button>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    {/* Lista de Paradas Compacta */}
+                                                                    <ul className="bg-white max-h-[100px] overflow-y-auto" onDragOver={(e) => {e.preventDefault(); e.stopPropagation(); setDragOverDriver(driverName)}} onDrop={(e) => handleDropOnDriver(e, driverName)}>
+                                                                        {routes[driverName].paradas.map((s, i) => (
+                                                                            <li key={i} draggable="true" onDragStart={(e) => handleDragStartStop(e, driverName, i)} className={`px-2 py-1 text-[10px] border-b border-slate-50 flex gap-1 hover:bg-slate-50 cursor-grab ${selectedStops.find(st=>st.driver===driverName && st.index===i) ? 'bg-blue-100' : ''}`} onClick={(e)=>{ e.stopPropagation(); toggleStopSelection(driverName, i); }}>
+                                                                                <span className="font-bold text-slate-400">#{i+1}</span>
+                                                                                <span className="truncate">{s.nombre}</span>
+                                                                            </li>
+                                                                        ))}
+                                                                        {routes[driverName].paradas.length === 0 && <li className="p-2 text-center text-[10px] text-slate-300 italic">Drop stops here</li>}
+                                                                    </ul>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                        
+                                                        {getDriversInZone(zone.id).length === 0 && <div className="flex-1 flex items-center justify-center text-xs text-slate-400 italic min-h-[50px]">Drop drivers here</div>}
                                                     </div>
                                                 ))}
                                             </div>
                                         )}
                                     </div>
-                                    <button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2">
-                                        <Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{c.name}</td><td className="p-4 text-sm text-slate-600">{c.address}</td><td className="p-4 text-right"><div className="flex justify-end gap-2"><button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1"><Icon name="pencil" className="h-4 w-4"/></button><button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4"/></button></div></td></tr>))}</tbody></table></div></div></div>)}
-                        {view === 'vehicles' && (<div className="max-w-2xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="truck" className="h-5 w-5 text-ess-blue" /> Fleet Management</h2><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{vehicles.length} Trucks</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex gap-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }})} /><button onClick={() => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }}} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="plus" className="h-4 w-4" /> Add Truck</button></div></div><div className="max-h-[500px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{vehicles.length === 0 ? <tr><td className="p-8 text-center text-slate-400">No vehicles added yet.</td></tr> : vehicles.map(v => (<tr key={v.id} className="hover:bg-slate-50"><td className="p-4 font-bold text-slate-700 flex items-center gap-3"><div className="bg-blue-100 p-2 rounded-full"><Icon name="truck" className="h-4 w-4 text-ess-blue" /></div> {v.name}</td><td className="p-4 text-right"><button onClick={() => deleteVehicle(v.id)} className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-5 w-5" /></button></td></tr>))}</tbody></table></div></div></div>)}
-                        {view === 'global_map' && <div className="flex flex-col h-[calc(100vh-120px)]"><div className="mb-4"><button onClick={() => setView('results')} className="text-slate-600 px-4 py-2 border rounded-lg bg-white hover:bg-slate-50 font-bold flex items-center gap-2 shadow-sm"><Icon name="arrow-left" className="h-4 w-4" /> Back to Results</button></div><div className="flex-1 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative"><GlobalMapView routes={routes} baseAddress={baseAddress} /></div></div>}
-
-                        {view === 'input' && (
-                            <div className="grid lg:grid-cols-12 gap-8 animate-fade-in">
-                                <div className="lg:col-span-7 space-y-6">
-                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow relative z-20">
-                                            <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2"><div className="bg-ess-green/10 p-2 rounded-full"><Icon name="plus" className="h-5 w-5 text-ess-green" /></div> Add Stop</h2>
-                                            <div className="grid md:grid-cols-2 gap-4 mb-4">
-                                                <div className="relative">
-                                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client</label>
-                                                    <input ref={mainClientInputRef} type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Name" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); setActiveSuggestionIndex(-1); }} onKeyDown={handleClientKeyDown} />
-                                                    {showSuggestions && filteredClients.length > 0 && <div className="absolute top-full left-0 w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 overflow-hidden z-50">{filteredClients.map((c, i) => (<div key={i} onClick={() => selectClient(c)} className={`p-3 cursor-pointer border-b border-slate-50 ${i === activeSuggestionIndex ? 'bg-blue-100' : 'hover:bg-blue-50'}`}><div className="font-bold text-slate-700 text-sm">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
-                                                </div>
-                                                <div className="relative">
-                                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label>
-                                                    <GoogleAddressInput value={newStopAddress} onChange={(e) => { setNewStopAddress(e.target.value); setShowAddressSuggestions(true); }} onKeyDown={(e) => handleEnter(e, initiateAddStop)} className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Search Google Maps" disabled={!scriptLoaded} isLoaded={scriptLoaded} />
-                                                    {showAddressSuggestions && filteredClientsByAddress.length > 0 && <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{filteredClientsByAddress.map((c, i) => (<div key={i} onClick={() => { selectClient(c); setTempStopData({name: c.name, address: c.address}); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
-                                                </div>
-                                            </div>
-                                            <div className="flex justify-end"><button onClick={initiateAddStop} disabled={!newStopAddress} className="bg-ess-blue text-white px-6 py-2.5 rounded-lg font-bold shadow-md flex items-center gap-2 disabled:opacity-50"><Icon name="arrow-right" className="h-4 w-4" /> Next</button></div>
-                                    </div>
-
-                                    <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden min-h-[300px]">
-                                            <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
-                                                <div className="flex items-center gap-2">
-                                                    <h3 className="font-bold text-slate-700 flex items-center gap-2"><Icon name="list" className="h-5 w-5 text-slate-400" /> Today's Route</h3>
-                                                    {/* NEW HISTORY BUTTON */}
-                                                    <button onClick={() => setShowHistoryModal(true)} className="text-xs bg-slate-100 text-slate-600 hover:text-ess-blue px-2 py-1 rounded-lg border border-slate-200 flex items-center gap-1 ml-2 transition-colors shadow-sm" title="View History"><Icon name="clock" className="h-3 w-3" /> History</button>
-                                                </div>
-                                                <div className="flex items-center gap-2">{currentStops.length > 0 && <button onClick={clearDraftRoute} className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 flex items-center gap-1"><Icon name="eraser" className="h-3 w-3" /> Clear</button>}<span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{currentStops.length} Stops</span></div>
-                                            </div>
-                                            <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
-                                                {currentStops.map((stop, idx) => (
-                                                    <div key={stop.id} className="p-4 flex items-center gap-4 hover:bg-slate-50 group">
-                                                        <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 font-bold text-sm border border-slate-200">{idx + 1}</div>
-                                                        <div className="flex-1">
-                                                            <h4 className="font-bold text-slate-800">{stop.name}</h4>
-                                                            <p className="text-sm text-slate-500 flex items-center gap-1"><Icon name="map-pin" className="h-3 w-3" /> {stop.address}</p>
-                                                            {(stop.invoices || stop.pieces) && <div className="flex gap-3 mt-1 text-xs font-mono text-slate-500 bg-slate-100 inline-block px-2 py-1 rounded"><span>Inv: {stop.invoices || '-'}</span><span>Pcs: {stop.pieces || '-'}</span></div>}
-                                                        </div>
-                                                        <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            <button onClick={() => startEditDraft(stop)} className="p-2 text-slate-300 hover:text-ess-blue hover:bg-blue-50 rounded-lg transition-colors"><Icon name="pencil" className="h-4 w-4" /></button>
-                                                            <button onClick={() => removeStop(stop.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-4 w-4" /></button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                    </div>
-                                </div>
-
-                                <div className="lg:col-span-5 space-y-6">
-                                    <div className="bg-ess-light px-4 py-2 rounded-lg border border-blue-100 flex items-center gap-2"><Icon name="map-pin" className="h-5 w-5 text-ess-blue shrink-0" /><div className="text-xs w-full"><span className="block text-slate-400 font-semibold uppercase">Base (Start/End)</span><GoogleAddressInput value={baseAddress} onChange={handleBaseAddressChange} className="bg-transparent font-bold text-slate-700 outline-none w-full" placeholder="Warehouse" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div></div>
-                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 pb-3 border-b border-slate-100"><Icon name="users" className="h-5 w-5 text-ess-blue" /> Drivers</h3><div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }})} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div><div className="grid grid-cols-1 xl:grid-cols-2 gap-2 overflow-y-auto overflow-x-hidden">{drivers.map(driver => (<div key={driver.id} className="group relative"><label className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer h-full ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}><div className="flex items-center gap-2 min-w-0"><div className={`w-2 h-2 shrink-0 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div><span className={`font-medium text-sm truncate ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span></div><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-4 h-4 accent-ess-green shrink-0 ml-2" /></label><button onClick={(e) => { e.preventDefault(); deleteDriver(driver.id); }} className="absolute -right-1 -top-1 bg-white text-slate-400 hover:text-red-500 border border-slate-200 rounded-full p-0.5 opacity-0 group-hover:opacity-100 shadow-sm z-10"><Icon name="x" className="h-3 w-3" /></button></div>))}</div></div>
-                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">{error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}{!loading && routes && (<><p className="text-xs text-center text-slate-500 mb-1">If you haven't made any changes to the route, return to your routes here</p><button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-4 rounded-xl font-bold text-lg shadow-lg mb-3 transition-all flex justify-center items-center gap-2"><Icon name="map" className="h-6 w-6" /> VIEW ACTIVE ROUTES</button></>)}<button onClick={handleOptimize} disabled={loading} className="w-full bg-ess-green hover:bg-green-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-green-600/20 transition-all flex justify-center items-center gap-2 disabled:opacity-75">{loading ? <div className="loader mr-2"></div> : <Icon name="zap" className="h-6 w-6" />} GENERATE</button></div>
                                 </div>
                             </div>
                         )}
 
-                        {view === 'results' && routes && (
-                            <div className="animate-fade-in space-y-8 relative">
-                                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                    <div className="flex gap-2">
-                                         <button onClick={() => setView('input')} className="text-slate-600 hover:text-ess-blue px-6 py-3 rounded-lg font-bold border border-slate-200 flex items-center gap-2"><Icon name="arrow-left" className="h-5 w-5" /> Back</button>
-                                         <button onClick={handleAddRoute} className="text-xs font-bold text-white bg-ess-blue hover:bg-sky-700 px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="plus" className="h-4 w-4" /> Add New Route</button>
+                        {/* ... [MODALES EXISTENTES: ADD STOP, PIN, ETC] ... */}
+                        {showAddDetailsModal && (
+                            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                                    <h3 className="font-bold text-lg mb-4">Stop Details</h3>
+                                    <div className="space-y-4">
+                                        <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Client</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg bg-slate-50" value={tempStopData?.name || ''} disabled /></div>
+                                        <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} autoFocus /></div>
+                                        <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pieces</label><input type="number" className="w-full p-3 border border-slate-300 rounded-lg" value={tempPieces} onChange={e => setTempPieces(e.target.value)} onKeyDown={e => e.key === 'Enter' && confirmAddStop()} /></div>
                                     </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={handleRestore} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="rotate-ccw" className="h-3 w-3" /> Reset</button>
-                                        <button onClick={() => setView('global_map')} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="map" className="h-3 w-3" /> Map</button>
-                                        <button onClick={handleGlobalPrint} className="text-xs font-bold text-white bg-slate-800 hover:bg-black px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="printer" className="h-3 w-3" /> Print All Routes</button>
-                                        <button onClick={handleRecalculateAll} disabled={isRecalculatingAll} className="text-xs font-bold text-white bg-ess-blue hover:bg-sky-700 px-4 py-2 rounded-lg flex items-center gap-2">{isRecalculatingAll ? <div className="loader w-3 h-3"></div> : <><Icon name="refresh-cw" className="h-3 w-3" /> Update</>}</button>
+                                    <div className="mt-6 flex gap-3">
+                                        <button onClick={() => setShowAddDetailsModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
+                                        <button onClick={confirmAddStop} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg">Save</button>
                                     </div>
                                 </div>
-
-                                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-                                    {Object.entries(routes).map(([driverName, data]) => (
-                                        <div key={driverName} className={`bg-white rounded-xl border border-slate-200 card-shadow flex flex-col h-full overflow-hidden transition-colors duration-300 ${dragOverDriver === driverName ? 'drop-target' : 'hover:border-ess-blue'}`} onDragOver={(e) => handleDragOverContainer(e, driverName)} onDrop={(e) => handleDrop(e, driverName)}>
-                                            <div className="bg-slate-50 p-5 border-b border-slate-100">
-                                                <div className="flex justify-between items-center mb-4 relative">
-                                                    <h3 className="font-bold text-xl text-slate-800 flex items-center gap-3">
-                                                        <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm"><Icon name="user" className="h-5 w-5 text-ess-blue" /></div> {driverName}
-                                                        <button onClick={() => initiateManualStop(driverName)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded-full transition-colors shadow-sm ml-2" title="Add Stop Manually"><Icon name="plus" className="h-4 w-4" /></button>
-                                                        <button onClick={() => setSwappingDriver(swappingDriver === driverName ? null : driverName)} className="text-slate-400 hover:text-ess-blue p-1 rounded hover:bg-blue-50 ml-auto"><Icon name="arrow-left-right" className="h-4 w-4" /></button>
-                                                    </h3>
-                                                    {swappingDriver === driverName && (<div className="absolute top-10 left-0 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-2 w-48 animate-fade-in"><p className="text-xs font-bold text-slate-500 mb-2 px-2">Swap with:</p>{Object.keys(routes).filter(d => d !== driverName).map(otherDriver => (<button key={otherDriver} onClick={() => handleSwapDriver(driverName, otherDriver)} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded text-sm text-slate-700 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-ess-green"></div>{otherDriver}</button>))}</div>)}
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
-                                                    <div className="bg-white p-2 rounded border border-slate-100 flex items-center gap-2">{recalculating[driverName] ? <div className="loader w-3 h-3"></div> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(data.duracion_estimada / 60)}h {Math.round(data.duracion_estimada % 60)}m</>}</div>
-                                                    <div className="flex gap-1">
-                                                        <button onClick={() => reverseRoute(driverName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
-                                                        <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize"><Icon name="wand-2" className="h-4 w-4" /></button>
-                                                        <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded border border-slate-900 hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="p-0 flex-1 overflow-y-auto max-h-[500px]">
-                                                <ul className="divide-y divide-slate-100">
-                                                    {data.paradas.map((stop, index) => (
-                                                        <li key={index} className={`relative pr-8 p-4 hover:bg-slate-50 transition-colors flex gap-3 group items-start cursor-grab active:cursor-grabbing ${selectedStops.find(s => s.driver === driverName && s.index === index) ? 'bg-blue-50' : ''}`} draggable="true" onDragStart={(e) => handleDragStart(e, driverName, index)} onDragEnd={handleDragEnd} onDrop={(e) => handleDrop(e, driverName, index)} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                                                            <div className="pt-1" onMouseDown={(e) => e.stopPropagation()}><input type="checkbox" className="custom-checkbox" checked={!!selectedStops.find(s => s.driver === driverName && s.index === index)} onChange={() => toggleStopSelection(driverName, index)} /></div>
-                                                            <div className="flex flex-col items-center gap-1 pt-1"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center border border-slate-200">{index + 1}</span></div>
-                                                            <div className="flex-1"><div className="font-bold text-sm text-slate-800">{getClientNameFromAddress(stop.direccion)}</div><div className="text-xs text-slate-500 mt-0.5">{stop.direccion}</div>{(stop.invoices || stop.pieces) && <div className="mt-1 flex gap-2"><span className="bg-yellow-50 text-yellow-700 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-mono">INV: {stop.invoices}</span><span className="bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded border border-blue-200 font-mono">PCS: {stop.pieces}</span></div>}</div>
-                                                            
-                                                            <div className="absolute right-2 top-2 bottom-2 flex flex-col justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onMouseDown={(e) => e.stopPropagation()}>
-                                                                <div className="flex gap-1 justify-end">
-                                                                    <button onClick={() => openEditStopModal(driverName, index, stop)} className="p-0.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded"><Icon name="pencil" className="h-3.5 w-3.5" /></button>
-                                                                    <button onClick={() => deleteStopFromRoute(driverName, index)} className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Icon name="trash-2" className="h-3.5 w-3.5" /></button>
-                                                                </div>
-                                                                <div className="flex gap-1 justify-end">
-                                                                    <button onClick={() => moveStop(driverName, index, -1)} disabled={index === 0} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-up" className="h-3.5 w-3.5" /></button>
-                                                                    <button onClick={() => moveStop(driverName, index, 1)} disabled={index === data.paradas.length - 1} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-down" className="h-3.5 w-3.5" /></button>
-                                                                </div>
-                                                            </div>
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </div>
-                                            <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex gap-2">
-                                                <button 
-                                                    onClick={(e) => { e.stopPropagation(); openDriverMap(driverName, data); }}
-                                                    className="flex-1 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"
-                                                >
-                                                    <Icon name="map" className="h-4 w-4" /> View Map
-                                                </button>
-                                                
-                                                <a 
-                                                    href={data.link} 
-                                                    target="_blank" 
-                                                    rel="noreferrer" 
-                                                    className="px-4 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue hover:text-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"
-                                                    title="Open in Google Maps"
-                                                >
-                                                    <Icon name="send" className="h-4 w-4" />
-                                                </a>
-
-                                                <a 
-                                                    href={getWhatsappLink(data.link)} 
-                                                    target="_blank" 
-                                                    rel="noreferrer" 
-                                                    className="px-4 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"
-                                                    title="Send via WhatsApp"
-                                                >
-                                                    <Icon name="message-circle" className="h-4 w-4" />
-                                                </a>
-                                            </div>
-                                        </div>
+                            </div>
+                        )}
+                        {showPinModal && (
+                            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+                                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm text-center">
+                                    <h3 className="font-bold text-lg mb-4">Enter PIN</h3>
+                                    <input type="password" className="w-full p-3 border rounded text-center text-2xl tracking-widest" maxLength="4" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => handleEnter(e, submitPin)} autoFocus />
+                                    <div className="mt-6 flex gap-3"><button onClick={() => setShowPinModal(false)} className="flex-1 py-2 text-slate-500">Cancel</button><button onClick={submitPin} className="flex-1 py-2 bg-slate-800 text-white rounded">Unlock</button></div>
+                                </div>
+                            </div>
+                        )}
+                        {showPrintModal && printData && (
+                            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+                                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+                                    <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold">Print Manifest</h3><button onClick={() => setShowPrintModal(false)}><Icon name="x" className="h-5 w-5" /></button></div>
+                                    <div className="p-6 text-center"><p>Ready to print route for <strong>{printData.driverName}</strong></p></div>
+                                    <div className="p-4 border-t border-slate-100 flex gap-3"><button onClick={() => setShowPrintModal(false)} className="flex-1 py-2 border rounded">Cancel</button><button onClick={() => window.print()} className="flex-1 py-2 bg-slate-800 text-white rounded">Print</button></div>
+                                </div>
+                            </div>
+                        )}
+                        {viewingDriver && (
+                            <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4">
+                                <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col relative">
+                                    <div className="bg-slate-50 p-4 border-b flex justify-between items-center"><h3 className="font-bold flex items-center gap-2"><Icon name="map" className="h-5 w-5" /> {viewingDriver.name}</h3><button onClick={() => setViewingDriver(null)}><Icon name="x" className="h-6 w-6" /></button></div>
+                                    <div className="flex-1 relative"><GlobalMapView routes={{ [viewingDriver.name]: viewingDriver.data }} baseAddress={baseAddress} /></div>
+                                </div>
+                            </div>
+                        )}
+                        {printData && <PrintableSheet routeData={printData.stops} driverName={printData.driverName} vehicle={selectedVehicleForPrint} config={companyConfig} />}
+                        {showGlobalPrint && routes && <GlobalManifest routes={routes} config={companyConfig} />}
+                        
+                        {/* DRAG AND DROP NOTIFICATION (Opcional, para feedback visual) */}
+                        {selectedStops.length > 0 && (
+                            <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 animate-fade-in border border-slate-700">
+                                <div className="flex items-center gap-2"><span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{selectedStops.length}</span><span className="font-bold text-sm">Stops Selected</span></div>
+                                <div className="h-6 w-px bg-slate-600"></div>
+                                <div className="flex gap-2">
+                                    <span className="text-xs text-slate-400 self-center uppercase font-bold mr-1">Move to:</span>
+                                    {Object.keys(routes).map(driver => (
+                                        <button key={driver} onClick={() => transferSelectedStops(driver)} className="px-3 py-1.5 bg-slate-700 hover:bg-ess-blue rounded-lg text-xs font-bold transition-colors border border-slate-600 hover:border-ess-blue">{driver}</button>
                                     ))}
                                 </div>
-                                {selectedStops.length > 0 && (<div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 animate-fade-in border border-slate-700"><div className="flex items-center gap-2"><span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{selectedStops.length}</span><span className="font-bold text-sm">Selected</span></div><div className="h-6 w-px bg-slate-600"></div><div className="flex gap-2"><span className="text-xs text-slate-400 self-center uppercase font-bold mr-1">Move to:</span>{Object.keys(routes).map(driver => (<button key={driver} onClick={() => transferSelectedStops(driver)} className="px-3 py-1.5 bg-slate-700 hover:bg-ess-blue rounded-lg text-xs font-bold transition-colors border border-slate-600 hover:border-ess-blue">{driver}</button>))}</div><button onClick={() => setSelectedStops([])} className="ml-2 text-slate-400 hover:text-white p-1 hover:bg-slate-700 rounded-full transition-colors"><Icon name="x" className="h-5 w-5" /></button></div>)}
+                                <button onClick={() => setSelectedStops([])} className="ml-2 text-slate-400 hover:text-white p-1 hover:bg-slate-700 rounded-full transition-colors"><Icon name="x" className="h-5 w-5" /></button>
                             </div>
                         )}
                     </main>
