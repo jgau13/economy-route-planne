@@ -1186,9 +1186,9 @@
                                     </div>
                                 </div>
 
-                                {/* ZONES CONTAINER (SCROLL HORIZONTAL) */}
-                                <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
-                                    <div className="flex gap-6 h-full min-w-max px-2">
+                                {/* ZONES CONTAINER (VERTICAL STACK) */}
+                                <div className="flex-1 overflow-y-auto pb-20"> 
+                                    <div className="flex flex-col gap-8 px-2"> 
                                         
                                         {/* 1. Generar lista combinada: Unassigned + Zones creadas */}
                                         {[null, ...zones].map((zone, zIdx) => {
@@ -1202,28 +1202,30 @@
                                                 return assigned === zone.id;
                                             });
 
+                                            // Determine Label Color
+                                            const headerColorClass = zone ? ZONE_COLORS[(zIdx - 1) % ZONE_COLORS.length] : 'bg-slate-600 text-white';
+
                                             return (
                                                 <div 
                                                     key={zoneId}
                                                     onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
                                                     onDrop={(e) => {
                                                         e.preventDefault();
-                                                        // Solo aceptar drops de DRIVERS (no de paradas individuales)
                                                         if (draggedDriver) {
                                                             assignDriverToZone(draggedDriver, zone ? zone.id : null);
                                                             setDraggedDriver(null);
                                                         }
                                                     }}
-                                                    className={`flex flex-col w-[350px] shrink-0 rounded-xl transition-colors ${draggedDriver ? 'bg-slate-100 border-2 border-dashed border-slate-300' : 'bg-transparent'}`}
+                                                    className={`w-full rounded-xl transition-all ${draggedDriver ? 'bg-slate-50 border-2 border-dashed border-slate-300' : 'bg-transparent'}`}
                                                 >
                                                     {/* ZONE HEADER */}
-                                                    <div className={`p-3 rounded-t-xl font-bold text-sm flex justify-between items-center mb-2 ${zone ? 'bg-slate-200 text-slate-700' : 'bg-slate-100 text-slate-500'}`}>
-                                                        <span>{zoneName}</span>
-                                                        <span className="bg-white px-2 py-0.5 rounded-full text-xs">{driversInZone.length}</span>
+                                                    <div className={`p-3 rounded-lg font-bold text-sm flex justify-between items-center mb-4 shadow-sm ${headerColorClass}`}>
+                                                        <span className="tracking-wide">{zoneName}</span>
+                                                        <span className="bg-white/20 px-3 py-0.5 rounded-full text-xs font-bold text-white">{driversInZone.length}</span>
                                                     </div>
 
-                                                    {/* DRIVER CARDS STACK */}
-                                                    <div className="flex-1 overflow-y-auto space-y-4 px-1 pb-20">
+                                                    {/* DRIVER CARDS GRID (RESPONSIVE) */}
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-1">
                                                         {driversInZone.map(([driverName, data]) => (
                                                             <div 
                                                                 key={driverName}
@@ -1239,7 +1241,7 @@
                                                                     e.target.style.opacity = '1';
                                                                     setDraggedDriver(null);
                                                                 }}
-                                                                className={`bg-white rounded-xl border border-slate-200 card-shadow flex flex-col overflow-hidden relative group transition-all ${draggedDriver === driverName ? 'rotate-3 scale-95 opacity-50' : 'hover:border-ess-blue'}`}
+                                                                className={`bg-white rounded-xl border border-slate-200 card-shadow flex flex-col overflow-hidden relative group transition-all ${draggedDriver === driverName ? 'rotate-3 scale-95 opacity-50' : 'hover:border-ess-blue hover:shadow-md'}`}
                                                                 onDragOver={(e) => handleDragOverContainer(e, driverName)} 
                                                                 onDrop={(e) => {
                                                                     e.stopPropagation(); // Evitar que burbujee a la zona
@@ -1250,7 +1252,7 @@
                                                                 <div className="absolute top-2 right-2 z-20">
                                                                     <input 
                                                                         type="checkbox" 
-                                                                        className="w-5 h-5 accent-ess-blue cursor-pointer shadow-sm border-2 border-white"
+                                                                        className="w-5 h-5 accent-ess-blue cursor-pointer shadow-sm border-2 border-white rounded"
                                                                         checked={selectedDriversForZone.includes(driverName)}
                                                                         onChange={(e) => {
                                                                             if(e.target.checked) setSelectedDriversForZone(prev => [...prev, driverName]);
