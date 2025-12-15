@@ -542,6 +542,8 @@
             const clientInputRef = useRef(null);
             const piecesInputRef = useRef(null);
             const mainClientInputRef = useRef(null); 
+            
+            const resultsContainerRef = useRef(null); // Ref para el contenedor de resultados
 
             // Paleta de colores para las zonas (Verdes y Azules corporativos)
             const ZONE_COLORS = [
@@ -857,7 +859,14 @@
 
             const recalculateRoute = async (dName, stops) => { setRecalculating(p => ({...p, [dName]: true})); try { const res = await fetch('/recalcular', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); setRoutes(p => ({...p, [dName]: {...p[dName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas || stops}})); } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [dName]: false})); } };
             const handleRecalculateAll = async () => { if (!routes) return; setIsRecalculatingAll(true); await Promise.all(Object.keys(routes).map(d => recalculateRoute(d, routes[d].paradas))); setIsRecalculatingAll(false); };
-            const handleRestore = () => { if (confirm("Restore original routes?")) setRoutes(JSON.parse(JSON.stringify(originalRoutes))); };
+            const handleRestore = async () => { 
+                if (confirm("Restore original routes? This will also reset zone assignments.")) { 
+                    setRoutes(JSON.parse(JSON.stringify(originalRoutes))); 
+                    setZoneAssignments({});
+                    setSelectedDriversForZone([]);
+                    if (window.fbDb) await window.fbSetDoc(getUserDocRef("settings", "zone_assignments"), {});
+                } 
+            };
             const handleOptimizeRemaining = async (driverName) => {
                 const currentRoute = routes[driverName].paradas; setRecalculating(p => ({...p, [driverName]: true})); 
                 try { const res = await fetch('/optimizar_restantes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: currentRoute, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); if(!res.ok) throw new Error(d.error); setRoutes(p => ({...p, [driverName]: {...p[driverName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas}})); } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [driverName]: false})); }
@@ -885,6 +894,25 @@
             const toggleStopSelection = (driverName, index) => { setSelectedStops(prev => { const exists = prev.find(p => p.driver === driverName && p.index === index); if (exists) return prev.filter(p => !(p.driver === driverName && p.index === index)); return [...prev, { driver: driverName, index }]; }); };
             const moveStop = (driverName, index, direction) => { const newRoutes = JSON.parse(JSON.stringify(routes)); const stops = newRoutes[driverName].paradas; const newIndex = index + direction; if (newIndex < 0 || newIndex >= stops.length) return; [stops[index], stops[newIndex]] = [stops[newIndex], stops[index]]; setRoutes(newRoutes); recalculateRoute(driverName, stops); };
             const transferSelectedStops = (targetDriver) => { if (selectedStops.length === 0) return; const newRoutes = JSON.parse(JSON.stringify(routes)); const sortedSelection = [...selectedStops].sort((a, b) => b.index - a.index); sortedSelection.forEach(sel => { const [removed] = newRoutes[sel.driver].paradas.splice(sel.index, 1); newRoutes[targetDriver].paradas.push(removed); }); setRoutes(newRoutes); setSelectedStops([]); const affectedDrivers = new Set(sortedSelection.map(s => s.driver)); affectedDrivers.add(targetDriver); affectedDrivers.forEach(d => recalculateRoute(d, newRoutes[d].paradas)); };
+
+            // AUTO SCROLL HANDLER
+            const handleResultsDragOver = (e) => {
+                e.preventDefault(); // Required for dropping
+                const container = resultsContainerRef.current;
+                if (!container || (!draggedDriver && !draggedItem)) return;
+                
+                const { top, bottom, height } = container.getBoundingClientRect();
+                const y = e.clientY;
+                const edgeThreshold = 80; 
+                const scrollStep = 15;
+
+                // Scroll if near top or bottom
+                if (y < top + edgeThreshold) {
+                    container.scrollTop -= scrollStep;
+                } else if (y > bottom - edgeThreshold) {
+                    container.scrollTop += scrollStep;
+                }
+            };
 
             if (systemError) return <ConfigErrorScreen errorDetails={systemError} />;
             if (authLoading) return <div className="min-h-screen flex items-center justify-center text-ess-blue font-bold text-lg">Loading...</div>;
@@ -1187,7 +1215,7 @@
                                 </div>
 
                                 {/* ZONES CONTAINER (VERTICAL STACK) */}
-                                <div className="flex-1 overflow-y-auto pb-20"> 
+                                <div ref={resultsContainerRef} onDragOver={handleResultsDragOver} className="flex-1 overflow-y-auto pb-20"> 
                                     <div className="flex flex-col gap-8 px-2"> 
                                         
                                         {/* 1. Generar lista combinada: Unassigned + Zones creadas */}
