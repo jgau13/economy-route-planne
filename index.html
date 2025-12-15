@@ -543,6 +543,18 @@
             const piecesInputRef = useRef(null);
             const mainClientInputRef = useRef(null); 
 
+            // Paleta de colores para las zonas
+            const ZONE_COLORS = [
+                "bg-orange-500 text-white", 
+                "bg-blue-600 text-white", 
+                "bg-green-600 text-white", 
+                "bg-purple-600 text-white", 
+                "bg-red-600 text-white", 
+                "bg-teal-600 text-white", 
+                "bg-indigo-600 text-white",
+                "bg-pink-600 text-white"
+            ];
+
             const handleEnter = (e, callback) => {
                 if (e.key === 'Enter') {
                     callback();
