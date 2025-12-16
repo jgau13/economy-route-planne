@@ -13,46 +13,61 @@ from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 from dotenv import load_dotenv
 
-# Carga variables de entorno si existen
+# Carga variables de entorno locales si existen (.env)
+# ESTO ES CRUCIAL: Crea un archivo .env en tu carpeta local con tus claves reales
+# pero NUNCA subas ese archivo .env a GitHub.
 load_dotenv()
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__, static_folder=basedir, static_url_path='')
 CORS(app)
 
-# --- CREDENCIALES ---
-GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "AIzaSyDByOKScFAJaWzvmDOeAnmlUZsUuIL1Oqo")
+# =============================================================================
+# CONFIGURACIÓN Y CREDENCIALES (MODO SEGURO)
+# =============================================================================
+# Las claves se leen EXCLUSIVAMENTE de las variables de entorno.
+# Si no están configuradas en Render/Heroku o en tu .env, la app avisará del error.
+
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
 FIREBASE_CONFIG = {
-    "apiKey": os.environ.get("FIREBASE_API_KEY", "AIzaSyDByOKScFAJaWzvmDOeAnmlUZsUuIL1Oqo"),
-    "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN", "ess-routeplanner-sanbox.firebaseapp.com"),
-    "projectId": os.environ.get("FIREBASE_PROJECT_ID", "ess-routeplanner-sanbox"),
-    "storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET", "ess-routeplanner-sanbox.firebasestorage.app"),
-    "messagingSenderId": os.environ.get("FIREBASE_MESSAGING_SENDER_ID", "330245876076"),
-    "appId": os.environ.get("FIREBASE_APP_ID", "1:330245876076:web:d450c48d7be981fa8d2b49")
+    "apiKey": os.environ.get("FIREBASE_API_KEY"),
+    "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN"),
+    "projectId": os.environ.get("FIREBASE_PROJECT_ID"),
+    "storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET"),
+    "messagingSenderId": os.environ.get("FIREBASE_MESSAGING_SENDER_ID"),
+    "appId": os.environ.get("FIREBASE_APP_ID")
 }
 
-# --- CONFIGURACIÓN OSRM ---
+# Servidor OSRM Público (Gratuito)
 OSRM_BASE_URL = "http://router.project-osrm.org"
 
-# --- VALIDACIÓN DE INICIO ---
+# Coordenada del Almacén por defecto (Lat, Lng) - Orlando, FL
+# Cambiar si tu base está en otro lugar
+ALMACEN_COORD = "28.450324,-81.405368" 
+
+# =============================================================================
+# VALIDACIÓN DE INICIO
+# =============================================================================
 API_KEY = GOOGLE_MAPS_API_KEY
-if not API_KEY or API_KEY.startswith("TU_"):
-    print("ADVERTENCIA CRÍTICA: No hay API Key válida configurada.", file=sys.stderr, flush=True)
+if not API_KEY:
+    print("⚠️ ADVERTENCIA DE SEGURIDAD: No se encontró GOOGLE_MAPS_API_KEY en las variables de entorno.", file=sys.stderr)
+    print("   -> Asegúrate de configurarla en Render (Environment Variables) o en tu archivo .env local.", file=sys.stderr)
 else:
-    print(f"✅ API Key cargada: {API_KEY[:5]}... (Oculta)", file=sys.stdout, flush=True)
+    # Mostramos solo los primeros 4 caracteres para verificar que se cargó, sin revelar la clave completa
+    print(f"✅ API Key cargada correctamente: {API_KEY[:4]}...****", file=sys.stdout)
 
 gmaps = None
 try:
     if API_KEY:
         gmaps = googlemaps.Client(key=API_KEY)
 except ValueError as e:
-    print(f"Error iniciando cliente Google Maps: {e}", file=sys.stderr, flush=True)
+    print(f"❌ Error iniciando cliente Google Maps: {e}", file=sys.stderr)
 
-# Coordenada del Almacén por defecto (Lat, Lng) - Orlando
-ALMACEN_COORD = "28.450324,-81.405368" 
 
-# --- BASE DE DATOS (CACHE LOCAL) ---
+# =============================================================================
+# BASE DE DATOS (CACHE LOCAL DE DIRECCIONES)
+# =============================================================================
 def init_db():
     db_path = os.path.join(basedir, 'economy_routes.db')
     try:
@@ -62,14 +77,18 @@ def init_db():
                      (direccion TEXT PRIMARY KEY, latlng TEXT, place_id TEXT, formatted_address TEXT)''')
         conn.commit()
         conn.close()
-        print("✅ Base de datos verificada (V3).", flush=True)
+        print("✅ Base de datos SQLite verificada.", flush=True)
     except Exception as e:
-        print(f"❌ Error DB: {e}", file=sys.stderr, flush=True)
+        print(f"❌ Error iniciando DB: {e}", file=sys.stderr)
 
 init_db()
 
-# --- GEOCODING (USA GOOGLE PARA DIRECCIONES) ---
+# =============================================================================
+# FUNCIONES AUXILIARES (GEOCODING, MATRIZ, RUTEO)
+# =============================================================================
+
 def obtener_datos_geo(direccion):
+    """Obtiene Lat/Lng de una dirección usando Cache local o Google Maps API"""
     if not direccion: return None, None, None
     db_path = os.path.join(basedir, 'economy_routes.db')
     direccion_clean = direccion.strip().lower()
@@ -85,18 +104,17 @@ def obtener_datos_geo(direccion):
         
         if not gmaps: return None, None, None
         
+        # Llamada a Google Geocoding API
         try:
-            # Esta llamada SÍ usa Google Maps API (Geocoding), costo bajo
             geocode_result = gmaps.geocode(direccion)
-        except Exception as api_e:
-            print(f"❌ Error API al geocodificar {direccion}: {api_e}", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"Error API Geocoding: {e}")
             conn.close()
             return None, None, None
 
         if geocode_result and len(geocode_result) > 0:
             res = geocode_result[0]
             loc = res['geometry']['location']
-            # Aseguramos formato limpio sin espacios extra
             latlng_str = f"{loc['lat']},{loc['lng']}"
             place_id = res.get('place_id', '')
             formatted_addr = res.get('formatted_address', direccion) 
@@ -110,9 +128,9 @@ def obtener_datos_geo(direccion):
     except Exception as e:
         try: conn.close()
         except: pass
+        print(f"Error Geocoding General: {e}", file=sys.stderr)
     return None, None, None
 
-# --- PARSEO DE COORDENADAS ---
 def parse_latlng(latlng_str):
     try:
         parts = latlng_str.split(',')
@@ -120,8 +138,8 @@ def parse_latlng(latlng_str):
     except:
         return 0.0, 0.0
 
-# --- CLUSTERING (K-MEANS) ---
 def simple_kmeans(points, k, max_iterations=100):
+    """Algoritmo simple para agrupar paradas en clusters (zonas)"""
     if not points: return []
     if k <= 0: return [points]
     if k > len(points): k = len(points) 
@@ -159,10 +177,9 @@ def simple_kmeans(points, k, max_iterations=100):
         
     return clusters
 
-# --- MATRIZ DE DISTANCIA (SOLO OSRM - CORREGIDO) ---
 def obtener_matriz_osrm(puntos):
     """
-    Consulta al servicio OSRM para obtener la matriz de tiempos de viaje.
+    Consulta al servicio OSRM (Gratuito) para obtener la matriz de tiempos de viaje.
     """
     if not puntos: return []
     if len(puntos) < 2: return [[0]]
@@ -184,7 +201,7 @@ def obtener_matriz_osrm(puntos):
 
     print(f"🌍 Consultando OSRM ({len(puntos)} puntos)...", file=sys.stdout, flush=True)
 
-    # FIX: Headers para evitar bloqueo de User-Agent genérico
+    # FIX: Headers para evitar bloqueo de User-Agent genérico en OSRM público
     headers = {
         'User-Agent': 'EssRoutePlanner/1.0 (Internal Tool)',
         'Accept': 'application/json'
@@ -218,7 +235,6 @@ def obtener_matriz_osrm(puntos):
         print(f"⚠️ Excepción conectando a OSRM: {str(e)}", file=sys.stderr)
         raise e
 
-# --- LINK GENERATOR ---
 def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     base_url = "https://www.google.com/maps/dir/?api=1"
     def clean_param(text):
@@ -241,7 +257,6 @@ def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     link += "&travelmode=driving"
     return link
 
-# --- MODELO DE DATOS VRP ---
 def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     datos = {}
     coord_almacen = ALMACEN_COORD
@@ -285,7 +300,7 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     try:
         matriz_tiempos = obtener_matriz_osrm(puntos)
     except Exception as e:
-        return {"error_critico": f"Error OSRM: {str(e)}"}
+        return {"error_critico": f"Error calculando matriz OSRM: {str(e)}"}
 
     datos['time_matrix'] = matriz_tiempos
     datos['num_vehicles'] = int(num_vans)
@@ -367,7 +382,11 @@ def get_config(): return jsonify({"googleApiKey": GOOGLE_MAPS_API_KEY, "firebase
 
 @app.route('/optimizar', methods=['POST'])
 def optimizar():
-    if not API_KEY: return jsonify({"error": "Falta GOOGLE MAPS API KEY para geocodificar."}), 500
+    # Nota: Aunque API_KEY sea None, permitimos optimizar si no hay nuevas direcciones que geocodificar
+    # (si todo está en cache SQLite). Pero avisamos si falta.
+    if not API_KEY: 
+        print("⚠️ Advertencia: Optimizando sin API Key. Solo funcionarán direcciones en caché.", file=sys.stderr)
+
     try:
         data = request.json
         num_vans = int(data.get('num_vans', 1))
@@ -413,19 +432,21 @@ def optimizar():
                     else:
                         rutas_globales[nombre_driver] = {"paradas": [], "duracion_estimada": 0, "link": ""}
                 else:
+                    err_msg = modelo_zona.get("error_critico", "Error desconocido") if modelo_zona else "Error modelo"
+                    print(f"Error zona {i}: {err_msg}", file=sys.stderr)
                     rutas_globales[nombre_driver] = {"paradas": [], "duracion_estimada": 0, "link": ""}
 
             return jsonify(rutas_globales)
 
         else:
             modelo = crear_modelo_datos(lista_stops, num_vans, base_address)
-            if modelo is None: return jsonify({"error": "Error al procesar datos."}), 500
+            if modelo is None: return jsonify({"error": "Error al procesar datos (modelo vacío)."}), 500
             if isinstance(modelo, dict) and "error_critico" in modelo: return jsonify({"error": modelo["error_critico"]}), 400
             resultado = resolver_vrp(modelo, dwell_time)
             return jsonify(resultado)
 
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr, flush=True)
+        print(f"Error General Optimizar: {e}", file=sys.stderr, flush=True)
         return jsonify({"error": str(e)}), 500
 
 # --- RECALCULAR / OPTIMIZAR RESTANTES ---
@@ -448,7 +469,7 @@ def optimizar_restantes():
     loose = p_objs[1:]
     new_order = resolver_tsp_parcial(fixed, loose, base, dwell)
     
-    if not new_order: return jsonify({"error": "Error optimizando"}), 500
+    if not new_order: return jsonify({"error": "Error optimizando ruta parcial"}), 500
     
     return recalcular_ruta_internal(new_order, base, dwell)
 
@@ -459,7 +480,7 @@ def recalcular_ruta():
 
 def recalcular_ruta_internal(paradas_objs, base, dwell_time):
     c_base, fmt_base, pid_base = obtener_datos_geo(base)
-    if not c_base: return jsonify({"error": "Base inválida"}), 400
+    if not c_base: return jsonify({"error": "Base inválida o no geocodificada"}), 400
     
     coords_limpias = []
     paradas_clean = []
@@ -473,6 +494,7 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
             new_p.update({'direccion': addr, 'clean_address': fmt, 'place_id': pid})
             paradas_clean.append(new_p)
             
+    # Secuencia: Base -> P1 -> P2 ... -> Pn -> Base
     seq = [c_base] + coords_limpias + [c_base]
     tiempo_total = 0
     
@@ -481,14 +503,24 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
         # --- SOLO OSRM ---
         matrix = obtener_matriz_osrm(unique)
         idx_map = {coord: i for i, coord in enumerate(unique)}
+        
         for i in range(len(seq)-1):
             u, v = seq[i], seq[i+1]
-            val = matrix[idx_map[u]][idx_map[v]]
-            tiempo_total += val
+            if u == v: continue
+            
+            idx_u = idx_map[u]
+            idx_v = idx_map[v]
+            val = matrix[idx_u][idx_v]
+            
+            # 999999 es nuestro código de "ruta no encontrada" en OSRM
+            if val >= 999000:
+                print(f"⚠️ Ruta no encontrada entre {u} y {v}", file=sys.stderr)
+            else:
+                tiempo_total += val
+
     except Exception as e:
         print(f"Error recalculando con OSRM: {e}", file=sys.stderr)
-        # Si falla el recálculo, no devolvemos 0, sino error, para que el usuario sepa.
-        return jsonify({"error": "Fallo al conectar con OSRM para recalcular."}), 500
+        return jsonify({"error": "Fallo al calcular tiempos de viaje con OSRM."}), 500
         
     tiempo_total += len(coords_limpias) * dwell_time * 60
     base_obj = {'clean_address': fmt_base}
