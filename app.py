@@ -6,62 +6,53 @@ import datetime
 import googlemaps
 import random
 import math
-import requests
+import requests  # NECESARIO PARA OSRM
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 from dotenv import load_dotenv
 
-# Carga variables de entorno locales si existen (.env)
+# Carga variables de entorno si existen
 load_dotenv()
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__, static_folder=basedir, static_url_path='')
 CORS(app)
 
-# =============================================================================
-# CONFIGURACIÓN Y CREDENCIALES
-# =============================================================================
-# Estas variables se toman del entorno (Render/Heroku) para seguridad.
-GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
+# --- CREDENCIALES ---
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "AIzaSyDByOKScFAJaWzvmDOeAnmlUZsUuIL1Oqo")
 
 FIREBASE_CONFIG = {
-    "apiKey": os.environ.get("FIREBASE_API_KEY"),
-    "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN"),
-    "projectId": os.environ.get("FIREBASE_PROJECT_ID"),
-    "storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET"),
-    "messagingSenderId": os.environ.get("FIREBASE_MESSAGING_SENDER_ID"),
-    "appId": os.environ.get("FIREBASE_APP_ID")
+    "apiKey": os.environ.get("FIREBASE_API_KEY", "AIzaSyDByOKScFAJaWzvmDOeAnmlUZsUuIL1Oqo"),
+    "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN", "ess-routeplanner-sanbox.firebaseapp.com"),
+    "projectId": os.environ.get("FIREBASE_PROJECT_ID", "ess-routeplanner-sanbox"),
+    "storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET", "ess-routeplanner-sanbox.firebasestorage.app"),
+    "messagingSenderId": os.environ.get("FIREBASE_MESSAGING_SENDER_ID", "330245876076"),
+    "appId": os.environ.get("FIREBASE_APP_ID", "1:330245876076:web:d450c48d7be981fa8d2b49")
 }
 
-# Servidor OSRM Público (Gratuito)
+# --- CONFIGURACIÓN OSRM ---
 OSRM_BASE_URL = "http://router.project-osrm.org"
 
-# Coordenada del Almacén por defecto (Lat, Lng) - Orlando, FL
-# Cambiar si tu base está en otro lugar
-ALMACEN_COORD = "28.450324,-81.405368" 
-
-# =============================================================================
-# VALIDACIÓN DE INICIO
-# =============================================================================
+# --- VALIDACIÓN DE INICIO ---
 API_KEY = GOOGLE_MAPS_API_KEY
-if not API_KEY:
-    print("⚠️ ADVERTENCIA: No se encontró GOOGLE_MAPS_API_KEY en las variables de entorno.", file=sys.stderr)
+if not API_KEY or API_KEY.startswith("TU_"):
+    print("ADVERTENCIA CRÍTICA: No hay API Key válida configurada.", file=sys.stderr, flush=True)
 else:
-    print(f"✅ API Key cargada correctamente: {API_KEY[:5]}...", file=sys.stdout)
+    print(f"✅ API Key cargada: {API_KEY[:5]}... (Oculta)", file=sys.stdout, flush=True)
 
 gmaps = None
 try:
     if API_KEY:
         gmaps = googlemaps.Client(key=API_KEY)
 except ValueError as e:
-    print(f"❌ Error iniciando cliente Google Maps: {e}", file=sys.stderr)
+    print(f"Error iniciando cliente Google Maps: {e}", file=sys.stderr, flush=True)
 
+# Coordenada del Almacén por defecto (Lat, Lng) - Orlando
+ALMACEN_COORD = "28.450324,-81.405368" 
 
-# =============================================================================
-# BASE DE DATOS (CACHE LOCAL DE DIRECCIONES)
-# =============================================================================
+# --- BASE DE DATOS (CACHE LOCAL) ---
 def init_db():
     db_path = os.path.join(basedir, 'economy_routes.db')
     try:
@@ -71,18 +62,14 @@ def init_db():
                      (direccion TEXT PRIMARY KEY, latlng TEXT, place_id TEXT, formatted_address TEXT)''')
         conn.commit()
         conn.close()
-        print("✅ Base de datos SQLite verificada.", flush=True)
+        print("✅ Base de datos verificada (V3).", flush=True)
     except Exception as e:
-        print(f"❌ Error iniciando DB: {e}", file=sys.stderr)
+        print(f"❌ Error DB: {e}", file=sys.stderr, flush=True)
 
 init_db()
 
-# =============================================================================
-# FUNCIONES AUXILIARES (GEOCODING, MATRIZ, RUTEO)
-# =============================================================================
-
+# --- GEOCODING (USA GOOGLE PARA DIRECCIONES) ---
 def obtener_datos_geo(direccion):
-    """Obtiene Lat/Lng de una dirección usando Cache local o Google Maps API"""
     if not direccion: return None, None, None
     db_path = os.path.join(basedir, 'economy_routes.db')
     direccion_clean = direccion.strip().lower()
@@ -98,12 +85,18 @@ def obtener_datos_geo(direccion):
         
         if not gmaps: return None, None, None
         
-        # Llamada a Google Geocoding API
-        geocode_result = gmaps.geocode(direccion)
+        try:
+            # Esta llamada SÍ usa Google Maps API (Geocoding), costo bajo
+            geocode_result = gmaps.geocode(direccion)
+        except Exception as api_e:
+            print(f"❌ Error API al geocodificar {direccion}: {api_e}", file=sys.stderr, flush=True)
+            conn.close()
+            return None, None, None
 
         if geocode_result and len(geocode_result) > 0:
             res = geocode_result[0]
             loc = res['geometry']['location']
+            # Aseguramos formato limpio sin espacios extra
             latlng_str = f"{loc['lat']},{loc['lng']}"
             place_id = res.get('place_id', '')
             formatted_addr = res.get('formatted_address', direccion) 
@@ -117,9 +110,9 @@ def obtener_datos_geo(direccion):
     except Exception as e:
         try: conn.close()
         except: pass
-        print(f"Error Geocoding: {e}", file=sys.stderr)
     return None, None, None
 
+# --- PARSEO DE COORDENADAS ---
 def parse_latlng(latlng_str):
     try:
         parts = latlng_str.split(',')
@@ -127,8 +120,8 @@ def parse_latlng(latlng_str):
     except:
         return 0.0, 0.0
 
+# --- CLUSTERING (K-MEANS) ---
 def simple_kmeans(points, k, max_iterations=100):
-    """Algoritmo simple para agrupar paradas en clusters (zonas)"""
     if not points: return []
     if k <= 0: return [points]
     if k > len(points): k = len(points) 
@@ -166,75 +159,73 @@ def simple_kmeans(points, k, max_iterations=100):
         
     return clusters
 
-def obtener_matriz_google(puntos):
-    """Fallback: Google Distance Matrix API (Costo $$$)"""
-    if not gmaps:
-        raise Exception("Google Maps Client no inicializado.")
-    
-    num_puntos = len(puntos)
-    print(f"⚠️ Usando Google Distance Matrix (Fallback) para {num_puntos} puntos...", file=sys.stdout)
-    
-    try:
-        res = gmaps.distance_matrix(origins=puntos, destinations=puntos, mode="driving")
-        if res['status'] == 'OK':
-            rows = res['rows']
-            matrix = []
-            for row in rows:
-                matrix_row = []
-                for element in row['elements']:
-                    if element['status'] == 'OK':
-                        matrix_row.append(element['duration']['value']) 
-                    else:
-                        matrix_row.append(999999) 
-                matrix.append(matrix_row)
-            return matrix
-        else:
-            raise Exception(f"Google Matrix Error: {res['status']}")
-    except Exception as e:
-        print(f"❌ Error Google Matrix: {e}", file=sys.stderr)
-        raise e
-
+# --- MATRIZ DE DISTANCIA (SOLO OSRM - CORREGIDO) ---
 def obtener_matriz_osrm(puntos):
-    """Principal: OSRM (Gratis)"""
+    """
+    Consulta al servicio OSRM para obtener la matriz de tiempos de viaje.
+    """
     if not puntos: return []
     if len(puntos) < 2: return [[0]]
 
-    # OSRM usa formato lng,lat
+    # 1. Preparar coordenadas para OSRM (lng,lat) LIMPIAS
     osrm_coords = []
     for p in puntos:
         try:
-            lat, lng = p.split(',')
+            # FIX: strip() es vital porque OSRM falla si hay espacios "lat, lng"
+            lat, lng = [x.strip() for x in p.split(',')]
             osrm_coords.append(f"{lng},{lat}")
         except:
-            return obtener_matriz_google(puntos)
+            msg = f"❌ Error parseando coord para OSRM: {p}"
+            print(msg, file=sys.stderr)
+            raise Exception(msg)
 
     coords_string = ";".join(osrm_coords)
     url = f"{OSRM_BASE_URL}/table/v1/driving/{coords_string}?annotations=duration"
 
-    print(f"🌍 Consultando OSRM...", file=sys.stdout)
+    print(f"🌍 Consultando OSRM ({len(puntos)} puntos)...", file=sys.stdout, flush=True)
+
+    # FIX: Headers para evitar bloqueo de User-Agent genérico
+    headers = {
+        'User-Agent': 'EssRoutePlanner/1.0 (Internal Tool)',
+        'Accept': 'application/json'
+    }
 
     try:
-        response = requests.get(url, timeout=3) 
+        # Timeout aumentado a 10s para ser seguros con el servidor público
+        response = requests.get(url, headers=headers, timeout=10) 
+        
         if response.status_code == 200:
             data = response.json()
             if data.get("code") == "Ok" and "durations" in data:
                 durations = data["durations"]
                 clean_matrix = []
                 for row in durations:
+                    # OSRM devuelve None si no hay ruta, usamos 999999 como infinito
                     clean_row = [int(val) if val is not None else 999999 for val in row]
                     clean_matrix.append(clean_row)
+                print("✅ Matriz OSRM recibida con éxito.", file=sys.stdout, flush=True)
                 return clean_matrix
+            else:
+                msg = f"Respuesta OSRM no válida: {data.get('code')}"
+                print(f"⚠️ {msg}", file=sys.stderr)
+                raise Exception(msg)
+        else:
+            msg = f"Error HTTP OSRM: {response.status_code} - {response.text}"
+            print(f"⚠️ {msg}", file=sys.stderr)
+            raise Exception(msg)
+
     except Exception as e:
-        print(f"⚠️ Fallo OSRM: {str(e)}", file=sys.stderr)
+        print(f"⚠️ Excepción conectando a OSRM: {str(e)}", file=sys.stderr)
+        raise e
 
-    # Fallback a Google si OSRM falla
-    return obtener_matriz_google(puntos)
-
+# --- LINK GENERATOR ---
 def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     base_url = "https://www.google.com/maps/dir/?api=1"
     def clean_param(text):
         if not text: return ""
-        return urllib.parse.quote_plus(text.strip()).replace('%2C', ',')
+        encoded = urllib.parse.quote_plus(text.strip())
+        encoded = encoded.replace('%2C', ',')
+        return encoded
     
     dest_addr = clean_param(destino_obj['clean_address'])
     link = base_url + f"&destination={dest_addr}"
@@ -250,6 +241,7 @@ def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     link += "&travelmode=driving"
     return link
 
+# --- MODELO DE DATOS VRP ---
 def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     datos = {}
     coord_almacen = ALMACEN_COORD
@@ -272,14 +264,16 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     for item in lista_paradas:
         dir_txt = item.get('direccion') or item.get('address')
         nombre_txt = item.get('nombre') or item.get('name') or "Cliente"
+        invoices = item.get('invoices', '')
+        pieces = item.get('pieces', '')
         if not dir_txt: continue 
 
         c, fmt, pid = obtener_datos_geo(dir_txt)
         if c:
             puntos.append(c)
             paradas_validas.append({
-                "nombre": nombre_txt, "direccion": dir_txt, "clean_address": fmt, "place_id": pid,
-                "invoices": item.get('invoices', ''), "pieces": item.get('pieces', '')
+                "nombre": nombre_txt, "direccion": dir_txt, "clean_address": fmt,
+                "place_id": pid, "invoices": invoices, "pieces": pieces
             })
         else:
             paradas_erroneas.append(dir_txt)
@@ -287,17 +281,18 @@ def crear_modelo_datos(lista_paradas, num_vans, base_address_text=None):
     if paradas_erroneas: return {"invalidas": paradas_erroneas}
     if len(puntos) <= 1: return None 
 
+    # --- SOLO OSRM ---
     try:
         matriz_tiempos = obtener_matriz_osrm(puntos)
     except Exception as e:
-        return {"error_critico": str(e)}
+        return {"error_critico": f"Error OSRM: {str(e)}"}
 
     datos['time_matrix'] = matriz_tiempos
     datos['num_vehicles'] = int(num_vans)
     datos['depot'] = 0 
     datos['coords'] = puntos
     
-    base_obj = {"nombre": "Base", "direccion": base_address_text or "Base", "clean_address": fmt_almacen, "place_id": pid_almacen}
+    base_obj = {"nombre": "Warehouse", "direccion": base_address_text or "Warehouse", "clean_address": fmt_almacen, "place_id": pid_almacen}
     datos['paradas_info'] = [base_obj] + paradas_validas
     return datos
 
@@ -344,6 +339,7 @@ def resolver_vrp(datos, dwell_time_minutos):
                 index = solution.Value(routing.NextVar(index))
             
             nombre_van = f"Van {vehicle_id + 1}"
+            
             base_info = datos['paradas_info'][0]
             full_link = ""
             if ruta: full_link = generar_link_puro(base_info, base_info, ruta)
@@ -358,22 +354,20 @@ def resolver_vrp(datos, dwell_time_minutos):
             }
     return rutas_finales
 
-# =============================================================================
-# ENDPOINTS API
-# =============================================================================
-
+# --- ENDPOINTS ---
 @app.route('/')
 def serve_frontend(): return send_from_directory(basedir, 'index.html')
 
 @app.route('/health')
-def health_check(): return jsonify({"status": "healthy"}), 200
+def health_check():
+    return jsonify({"status": "healthy"}), 200
 
 @app.route('/config')
 def get_config(): return jsonify({"googleApiKey": GOOGLE_MAPS_API_KEY, "firebaseConfig": FIREBASE_CONFIG})
 
 @app.route('/optimizar', methods=['POST'])
 def optimizar():
-    if not API_KEY: return jsonify({"error": "Falta GOOGLE MAPS API KEY en servidor."}), 500
+    if not API_KEY: return jsonify({"error": "Falta GOOGLE MAPS API KEY para geocodificar."}), 500
     try:
         data = request.json
         num_vans = int(data.get('num_vans', 1))
@@ -387,6 +381,8 @@ def optimizar():
             else: lista_stops.append(item)
 
         if num_vans > 1:
+            print(f"🌍 Iniciando Zonificación (K-Means) para {num_vans} conductores...", file=sys.stdout, flush=True)
+            
             puntos_para_cluster = []
             for stop in lista_stops:
                 dir_txt = stop.get('direccion') or stop.get('address')
@@ -397,6 +393,7 @@ def optimizar():
                     puntos_para_cluster.append({'coords': (lat, lng), 'data': stop})
             
             clusters = simple_kmeans(puntos_para_cluster, k=num_vans)
+            
             rutas_globales = {}
             for i, cluster in enumerate(clusters):
                 nombre_driver = f"Van {i + 1}"
@@ -409,27 +406,51 @@ def optimizar():
                 
                 if modelo_zona and not "error_critico" in modelo_zona:
                     resultado_zona = resolver_vrp(modelo_zona, dwell_time)
-                    if resultado_zona:
+                    
+                    if resultado_zona and len(resultado_zona) > 0:
                         data_zona = list(resultado_zona.values())[0]
                         rutas_globales[nombre_driver] = data_zona
                     else:
                         rutas_globales[nombre_driver] = {"paradas": [], "duracion_estimada": 0, "link": ""}
                 else:
                     rutas_globales[nombre_driver] = {"paradas": [], "duracion_estimada": 0, "link": ""}
+
             return jsonify(rutas_globales)
+
         else:
             modelo = crear_modelo_datos(lista_stops, num_vans, base_address)
-            if not modelo: return jsonify({"error": "Error procesando datos"}), 500
-            if "error_critico" in modelo: return jsonify({"error": modelo["error_critico"]}), 400
+            if modelo is None: return jsonify({"error": "Error al procesar datos."}), 500
+            if isinstance(modelo, dict) and "error_critico" in modelo: return jsonify({"error": modelo["error_critico"]}), 400
             resultado = resolver_vrp(modelo, dwell_time)
             return jsonify(resultado)
+
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr, flush=True)
         return jsonify({"error": str(e)}), 500
 
+# --- RECALCULAR / OPTIMIZAR RESTANTES ---
 @app.route('/optimizar_restantes', methods=['POST'])
 def optimizar_restantes():
-    return optimizar() # Simplificado para el ejemplo, usar logica de TSP parcial si se requiere
+    data = request.json
+    paradas = data.get('paradas', [])
+    base = data.get('base_address')
+    dwell = int(data.get('dwell_time', 6))
+    
+    p_objs = []
+    for p in paradas:
+        obj = p if isinstance(p, dict) else {'direccion': p}
+        if 'address' in obj: obj['direccion'] = obj['address']
+        p_objs.append(obj)
+        
+    if len(p_objs) < 3: return recalcular_ruta_internal(p_objs, base, dwell)
+
+    fixed = p_objs[0]
+    loose = p_objs[1:]
+    new_order = resolver_tsp_parcial(fixed, loose, base, dwell)
+    
+    if not new_order: return jsonify({"error": "Error optimizando"}), 500
+    
+    return recalcular_ruta_internal(new_order, base, dwell)
 
 @app.route('/recalcular', methods=['POST'])
 def recalcular_ruta():
@@ -454,8 +475,10 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
             
     seq = [c_base] + coords_limpias + [c_base]
     tiempo_total = 0
+    
     unique = list(set(seq))
     try:
+        # --- SOLO OSRM ---
         matrix = obtener_matriz_osrm(unique)
         idx_map = {coord: i for i, coord in enumerate(unique)}
         for i in range(len(seq)-1):
@@ -463,7 +486,9 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
             val = matrix[idx_map[u]][idx_map[v]]
             tiempo_total += val
     except Exception as e:
-        print(f"Error recalculando: {e}")
+        print(f"Error recalculando con OSRM: {e}", file=sys.stderr)
+        # Si falla el recálculo, no devolvemos 0, sino error, para que el usuario sepa.
+        return jsonify({"error": "Fallo al conectar con OSRM para recalcular."}), 500
         
     tiempo_total += len(coords_limpias) * dwell_time * 60
     base_obj = {'clean_address': fmt_base}
@@ -471,7 +496,55 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
     
     return jsonify({"duracion_estimada": tiempo_total/60, "link": link, "paradas": paradas_clean})
 
+def resolver_tsp_parcial(fixed, loose, base, dwell):
+    fixed_addr = fixed.get('direccion') or fixed.get('address')
+    modelo_loose = crear_modelo_datos(loose, 1, fixed_addr)
+    
+    if not modelo_loose or "error_critico" in modelo_loose:
+        return None
+        
+    manager = pywrapcp.RoutingIndexManager(len(modelo_loose['time_matrix']), 1, 0)
+    routing = pywrapcp.RoutingModel(manager)
+
+    def time_callback(from_index, to_index):
+        from_node = manager.IndexToNode(from_index)
+        to_node = manager.IndexToNode(to_index)
+        val = modelo_loose['time_matrix'][from_node][to_node]
+        if to_node != 0: val += dwell * 60
+        return val
+
+    transit_idx = routing.RegisterTransitCallback(time_callback)
+    routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
+
+    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+    search_parameters.time_limit.seconds = 1
+
+    solution = routing.SolveWithParameters(search_parameters)
+    
+    if not solution: return None
+    
+    if not list(modelo_loose['paradas_info']):
+         return None
+
+    index = routing.Start(0)
+    ruta_ordenada = []
+    
+    while not routing.IsEnd(index):
+        node_index = manager.IndexToNode(index)
+        if node_index != 0:
+             info = modelo_loose['paradas_info'][node_index]
+             ruta_ordenada.append({
+                "nombre": info['nombre'], "direccion": info['direccion'], 
+                "clean_address": info['clean_address'], "place_id": info.get('place_id'),
+                "invoices": info.get('invoices', ''), "pieces": info.get('pieces', '')
+             })
+        index = solution.Value(routing.NextVar(index))
+    
+    return [fixed] + ruta_ordenada
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    print(f"🚀 Servidor escuchando en puerto {port}")
+    print(f"🚀 Servidor corriendo en puerto {port}", flush=True)
     app.run(host='0.0.0.0', port=port)
