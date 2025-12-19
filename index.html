@@ -122,7 +122,6 @@
         const { useState, useEffect, useMemo, useRef } = React;
 
         // --- PALETA DE COLORES CORPORATIVA UNIFICADA ---
-        // Definimos los colores aquí para usarlos tanto en Tailwind como en Google Maps
         const COMPANY_PALETTE = [
             { hex: "#1b6e9b", tw: "bg-ess-blue text-white" },      // 0: Azul Principal
             { hex: "#6bbf5d", tw: "bg-ess-green text-white" },     // 1: Verde Principal
@@ -203,7 +202,6 @@
             return <span dangerouslySetInnerHTML={{ __html: svgHtml }} style={{ display: 'contents' }} />;
         };
 
-        // --- UPDATED ADDRESS INPUT WITH ENTER KEY FIX ---
         const GoogleAddressInput = ({ value, onChange, placeholder, className, disabled, isLoaded, onKeyDown, inputRef: propInputRef }) => {
             const innerRef = useRef(null);
             const inputRef = propInputRef || innerRef;
@@ -245,7 +243,6 @@
             return <input ref={inputRef} type="text" value={value} onChange={onChange} onKeyDown={handleInputKeyDown} className={className} placeholder={placeholder} disabled={disabled} autoComplete="off" />;
         };
 
-        // --- GLOBAL MAP VIEW (FIXED: NATIVE MARKERS & ROBUST ERROR HANDLING) ---
         const GlobalMapView = ({ routes, baseAddress }) => {
             const mapRef = useRef(null);
             const googleMapRef = useRef(null);
@@ -253,8 +250,6 @@
             const renderersRef = useRef([]); 
             const infoWindowRef = useRef(null); 
             const geocoderRef = useRef(null);
-            
-            // Usar los colores HEX de la paleta unificada
             const ROUTE_HEX_COLORS = COMPANY_PALETTE.map(c => c.hex);
             
             useEffect(() => {
@@ -381,7 +376,6 @@
             );
         };
 
-        // ... [PRINTABLE SHEET AND GLOBAL MANIFEST] ...
         const PrintableSheet = ({ routeData, driverName, vehicle, config }) => {
             const today = new Date();
             const dateStr = today.toLocaleDateString('en-US');
@@ -492,9 +486,7 @@
             );
         };
 
-        // --- APP PRINCIPAL ---
         function App() {
-            // ... [STATES AND HOOKS] ...
             const [user, setUser] = useState(null);
             const [authLoading, setAuthLoading] = useState(true);
             const [dbReady, setDbReady] = useState(false);
@@ -570,23 +562,19 @@
             const [showHistoryModal, setShowHistoryModal] = useState(false);
             const [historyData, setHistoryData] = useState([]);
 
-            // === UNIFIED ZONES (PREVIOUSLY "DELIVERY ZONES" + "GROUPS") ===
             const [zones, setZones] = useState([]);
             const [zoneAssignments, setZoneAssignments] = useState({}); 
             const [newZoneName, setNewZoneName] = useState('');
             const [draggedDriver, setDraggedDriver] = useState(null); 
             const [selectedDriversForZone, setSelectedDriversForZone] = useState([]); 
 
-            // === SAVED ROUTES ===
             const [savedRoutes, setSavedRoutes] = useState([]);
             const [showSaveRouteModal, setShowSaveRouteModal] = useState(false);
             const [showLoadRouteModal, setShowLoadRouteModal] = useState(false);
             const [routeSaveName, setRouteSaveName] = useState('');
 
-            // === STATES FOR ZONE PLANNING VIEW ===
-            const [stopGroups, setStopGroups] = useState([]); // Now called "Zones" in UI
-            const [rangeStart, setRangeStart] = useState('');
-            const [rangeEnd, setRangeEnd] = useState('');
+            const [stopGroups, setStopGroups] = useState([]); 
+            const [stopSelectionInput, setStopSelectionInput] = useState('');
             const [groupNameInput, setGroupNameInput] = useState('');
 
             const clientInputRef = useRef(null);
@@ -594,6 +582,17 @@
             const mainClientInputRef = useRef(null); 
             const invisibleAddressInputRef = useRef(null);
             const resultsContainerRef = useRef(null); 
+
+            const ZONE_COLORS = [
+                "bg-ess-blue text-white",       
+                "bg-ess-green text-white",      
+                "bg-sky-600 text-white",        
+                "bg-teal-600 text-white",       
+                "bg-blue-800 text-white",       
+                "bg-emerald-600 text-white",    
+                "bg-cyan-700 text-white",       
+                "bg-ess-dark text-white"        
+            ];
 
             const handleEnter = (e, callback) => {
                 if (e.key === 'Enter') {
@@ -620,7 +619,6 @@
                 return trimmed.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
             };
 
-            // ... [USE EFFECTS] ...
             useEffect(() => {
                 const fetchConfig = async () => {
                     try {
@@ -680,7 +678,6 @@
                 document.head.appendChild(script);
             }, [googleApiKey]);
 
-            // ... [ACTION FUNCTIONS] ...
             const addDriverToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("drivers"), { name, active: true }); };
             const deleteDriver = async (id) => { if(window.fbDb && confirm('Delete?')) await window.fbDeleteDoc(getUserDocRef("drivers", id)); };
             const toggleDriver = async (id, status) => { if(window.fbDb) await window.fbUpdateDoc(getUserDocRef("drivers", id), { active: !status }); };
@@ -744,7 +741,6 @@
             const handleNavClick = (targetView) => { if (targetView === 'input' || targetView === 'results') { setView('input'); return; } setPendingView(targetView); setPinInput(''); setShowPinModal(true); };
             const submitPin = () => { if (pinInput === savedPin) { setShowPinModal(false); setView(pendingView); } else { alert("Incorrect PIN"); setPinInput(''); } };
 
-            // === ZONE SETTINGS FUNCTIONS ===
             const addZone = async () => {
                 if (!newZoneName.trim() || !window.fbDb) return;
                 await window.fbAddDoc(getUserCollection("zones"), { name: newZoneName.toUpperCase().trim() });
@@ -757,7 +753,7 @@
                 const newAssignments = { ...zoneAssignments, [driverName]: zoneId };
                 setZoneAssignments(newAssignments);
                 if (window.fbDb) await window.fbSetDoc(getUserDocRef("settings", "zone_assignments"), newAssignments);
-                setSelectedDriversForZone(prev => prev.filter(d => d !== driverName)); // Limpiar selección si estaba seleccionado
+                setSelectedDriversForZone(prev => prev.filter(d => d !== driverName)); 
             };
             const moveSelectedDriversToZone = async (zoneId) => {
                 const newAssignments = { ...zoneAssignments };
@@ -766,10 +762,9 @@
                 });
                 setZoneAssignments(newAssignments);
                 if (window.fbDb) await window.fbSetDoc(getUserDocRef("settings", "zone_assignments"), newAssignments);
-                setSelectedDriversForZone([]); // Reset selections
+                setSelectedDriversForZone([]); 
             };
 
-            // === SAVED ROUTES FUNCTIONS ===
             const handleSaveRoute = () => {
                 if (!routes || Object.keys(routes).length === 0) return alert("No active routes to save.");
                 setRouteSaveName('');
@@ -881,7 +876,6 @@
             const handleGlobalPrint = () => { setShowGlobalPrint(true); setTimeout(() => { window.print(); setShowGlobalPrint(false); }, 500); };
             const handlePrint = () => window.print();
             
-            // === NEW: PRE-OPTIMIZATION & GROUPED OPTIMIZATION ===
             const handlePlanZones = async () => {
                 if (currentStops.length === 0) return setError('No stops.');
                 setLoading(true);
@@ -1011,31 +1005,53 @@
                 }
             };
 
-            // === ZONE PLANNING UTILS ===
             const createGroup = () => {
-                if (!rangeStart || !rangeEnd || !groupNameInput) return alert("Please fill all fields");
+                if (!groupNameInput || !stopSelectionInput) return alert("Please fill all fields");
                 
                 const listLength = (optimizedStops || currentStops).length;
-                const start = parseInt(rangeStart) - 1;
-                const end = parseInt(rangeEnd) - 1;
+                const indices = new Set();
                 
-                if (isNaN(start) || isNaN(end) || start < 0 || end >= listLength || start > end) {
-                    return alert("Invalid range");
+                const parts = stopSelectionInput.split(/[,;]/); 
+                
+                for(let part of parts) {
+                    part = part.trim();
+                    if(!part) continue;
+                    
+                    if(part.includes('-')) {
+                        const rangeParts = part.split('-').map(s => s.trim());
+                        if(rangeParts.length === 2) {
+                            const start = parseInt(rangeParts[0]) - 1;
+                            const end = parseInt(rangeParts[1]) - 1;
+                            
+                            if(!isNaN(start) && !isNaN(end)) {
+                                const min = Math.min(start, end);
+                                const max = Math.max(start, end);
+                                for(let i = min; i <= max; i++) {
+                                    if(i >= 0 && i < listLength) indices.add(i);
+                                }
+                            }
+                        }
+                    } else {
+                        const idx = parseInt(part) - 1;
+                        if(!isNaN(idx) && idx >= 0 && idx < listLength) {
+                            indices.add(idx);
+                        }
+                    }
                 }
-
-                const newIndices = [];
-                for (let i = start; i <= end; i++) newIndices.push(i);
+                
+                if (indices.size === 0) {
+                    return alert("Invalid selection. Please check the stop numbers.");
+                }
 
                 const newGroup = {
                     id: Date.now(),
                     name: groupNameInput,
-                    stops: newIndices,
+                    stops: Array.from(indices).sort((a,b) => a-b),
                     assignedDrivers: []
                 };
 
                 setStopGroups([...stopGroups, newGroup]);
-                setRangeStart('');
-                setRangeEnd('');
+                setStopSelectionInput('');
                 setGroupNameInput('');
             };
 
@@ -1084,7 +1100,6 @@
             }, [currentStops, optimizedStops, stopGroups]);
 
 
-            // ... [EXISTING FUNCTIONS: restoreHistory, openDriverMap, selectClient, etc...] ...
             const restoreHistory = async (stops) => {
                 if(!confirm("Restore this route? Current stops will be overwritten.")) return;
                 setLoading(true);
@@ -1315,10 +1330,15 @@
                                     
                                     <div className="p-4 border-b border-slate-100 bg-slate-50">
                                         <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Create New Zone</h4>
-                                        <div className="flex gap-2 mb-2">
-                                            <input type="number" placeholder="Start #" className="w-20 p-2 border rounded text-sm" value={rangeStart} onChange={e => setRangeStart(e.target.value)} />
-                                            <span className="self-center text-slate-400">-</span>
-                                            <input type="number" placeholder="End #" className="w-20 p-2 border rounded text-sm" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} />
+                                        <div className="mb-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="Stops (e.g. 1-5, 8, 11-13)" 
+                                                className="w-full p-2 border rounded text-sm" 
+                                                value={stopSelectionInput} 
+                                                onChange={e => setStopSelectionInput(e.target.value)} 
+                                            />
+                                            <p className="text-[10px] text-slate-400 mt-1">Use commas for individual stops and dashes for ranges.</p>
                                         </div>
                                         <div className="flex gap-2">
                                             {/* DATALIST FOR ZONES */}
