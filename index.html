@@ -1140,8 +1140,48 @@
                 return clientDB.filter(c => (c.address || "").toLowerCase().includes(t)).slice(0, 5);
             }, [clientFormAddress, clientDB]);
 
-            const recalculateRoute = async (dName, stops) => { setRecalculating(p => ({...p, [dName]: true})); try { const res = await fetch('/recalcular', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); setRoutes(p => ({...p, [dName]: {...p[dName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas || stops}})); } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [dName]: false})); } };
+            // MODIFICADO: Recalcular ahora hace OPTIMIZACIÓN TOTAL (reordena todo)
+            const recalculateRoute = async (dName, stops) => { 
+                setRecalculating(p => ({...p, [dName]: true})); 
+                try { 
+                    // Usamos /optimizar con 1 van para forzar un TSP completo (reordena incluso la #1)
+                    const res = await fetch('/optimizar', { 
+                        method: 'POST', 
+                        headers: {'Content-Type':'application/json'}, 
+                        body: JSON.stringify({ 
+                            direcciones: stops, 
+                            num_vans: 1, 
+                            base_address: baseAddress, 
+                            dwell_time: parseInt(dwellTime) 
+                        }) 
+                    }); 
+                    const d = await res.json(); 
+                    if(!res.ok) throw new Error(d.error);
+
+                    // La API /optimizar devuelve { "Van 1": { ... } }
+                    // Tomamos la primera ruta generada y se la asignamos al chofer actual
+                    const routeKey = Object.keys(d)[0];
+                    const optimizedData = d[routeKey];
+
+                    setRoutes(p => ({
+                        ...p, 
+                        [dName]: {
+                            ...p[dName], 
+                            duracion_estimada: optimizedData.duracion_estimada, 
+                            link: optimizedData.link, 
+                            paradas: optimizedData.paradas
+                        }
+                    })); 
+                } catch (e) { 
+                    console.error(e);
+                    alert("Error optimizing route: " + e.message);
+                } finally { 
+                    setRecalculating(p => ({...p, [dName]: false})); 
+                } 
+            };
+
             const handleRecalculateAll = async () => { if (!routes) return; setIsRecalculatingAll(true); await Promise.all(Object.keys(routes).map(d => recalculateRoute(d, routes[d].paradas))); setIsRecalculatingAll(false); };
+            
             const handleRestore = async () => { 
                 if (confirm("Restore original routes? This will also reset zone assignments.")) { 
                     setRoutes(JSON.parse(JSON.stringify(originalRoutes))); 
@@ -1150,10 +1190,13 @@
                     if (window.fbDb) await window.fbSetDoc(getUserDocRef("settings", "zone_assignments"), {});
                 } 
             };
+
+            // MANTENIDO: La varita mágica usa /optimizar_restantes (Respeta Stop #1)
             const handleOptimizeRemaining = async (driverName) => {
                 const currentRoute = routes[driverName].paradas; setRecalculating(p => ({...p, [driverName]: true})); 
                 try { const res = await fetch('/optimizar_restantes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ paradas: currentRoute, base_address: baseAddress, dwell_time: parseInt(dwellTime) }) }); const d = await res.json(); if(!res.ok) throw new Error(d.error); setRoutes(p => ({...p, [driverName]: {...p[driverName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas}})); } catch (e) { console.error(e); } finally { setRecalculating(p => ({...p, [driverName]: false})); }
             };
+            
             const reverseRoute = (driverName) => { 
                 const newRoutes = JSON.parse(JSON.stringify(routes)); 
                 newRoutes[driverName].paradas.reverse(); 
