@@ -243,13 +243,17 @@
             return <input ref={inputRef} type="text" value={value} onChange={onChange} onKeyDown={handleInputKeyDown} className={className} placeholder={placeholder} disabled={disabled} autoComplete="off" />;
         };
 
-        const GlobalMapView = ({ routes, baseAddress }) => {
+        // --- GLOBAL MAP VIEW (FIXED: NATIVE MARKERS & ROBUST ERROR HANDLING) ---
+        const GlobalMapView = ({ routes, baseAddress, onlyMarkers = false }) => {
             const mapRef = useRef(null);
             const googleMapRef = useRef(null);
             const markersRef = useRef([]); 
             const renderersRef = useRef([]); 
             const infoWindowRef = useRef(null); 
             const geocoderRef = useRef(null);
+            const [mapLoading, setMapLoading] = useState(false); // Estado de carga local
+            
+            // Usar los colores HEX de la paleta unificada
             const ROUTE_HEX_COLORS = COMPANY_PALETTE.map(c => c.hex);
             
             useEffect(() => {
@@ -268,18 +272,18 @@
                 const directionsService = new window.google.maps.DirectionsService();
                 const bounds = new window.google.maps.LatLngBounds();
 
+                // Limpiar mapa previo
                 markersRef.current.forEach(m => m.setMap(null));
                 markersRef.current = [];
                 renderersRef.current.forEach(r => r.setMap(null));
                 renderersRef.current = [];
 
-                const getPinIcon = (color) => {
-                    return {
-                        path: "M 0,0 C -2,-20 -10,-22 -10,-30 A 10,10 0 1,1 10,-30 C 10,-22 2,-20 0,0 z",
-                        fillColor: color, fillOpacity: 1, strokeWeight: 2, strokeColor: "#ffffff", scale: 1,
-                        labelOrigin: new window.google.maps.Point(0, -30)
-                    };
-                };
+                // Helpers
+                const getPinIcon = (color) => ({
+                    path: "M 0,0 C -2,-20 -10,-22 -10,-30 A 10,10 0 1,1 10,-30 C 10,-22 2,-20 0,0 z",
+                    fillColor: color, fillOpacity: 1, strokeWeight: 2, strokeColor: "#ffffff", scale: 1,
+                    labelOrigin: new window.google.maps.Point(0, -30)
+                });
 
                 const addMarker = (location, title, label, color, content) => {
                     const marker = new window.google.maps.Marker({
@@ -294,20 +298,47 @@
                     map.fitBounds(bounds);
                 };
 
+                // Helper para parsear coordenadas que vienen del backend (string o array)
+                const parseCoord = (coordData) => {
+                    if (!coordData) return null;
+                    if (typeof coordData === 'string') {
+                        const [lat, lng] = coordData.split(',').map(Number);
+                        if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+                    } else if (Array.isArray(coordData)) {
+                        return { lat: coordData[0], lng: coordData[1] };
+                    } else if (typeof coordData === 'object' && coordData.lat) {
+                        return coordData;
+                    }
+                    return null;
+                };
+
                 const renderFallbackMarkers = (stops, color, groupName) => {
                     stops.forEach((stop, i) => {
-                        setTimeout(() => {
-                            geocoderRef.current.geocode({ address: stop.direccion }, (results, status) => {
-                                if (status === 'OK' && results[0]) {
-                                    const loc = results[0].geometry.location;
-                                    const contentString = `<div style="padding: 4px; font-family: sans-serif;"><strong style="color:${color}">${groupName}</strong><br/><b>${stop.nombre}</b><br/><span style="font-size:11px">${stop.direccion}</span></div>`;
-                                    addMarker(loc, stop.nombre, (stop.originalIndex || i + 1).toString(), color, contentString);
-                                }
-                            });
-                        }, i * 300);
+                        // INTENTO 1: Usar coordenada directa si existe (INSTANTÁNEO)
+                        const pos = parseCoord(stop.coord || stop.latlng);
+                        const contentString = `<div style="padding: 4px; font-family: sans-serif;"><strong style="color:${color}">${groupName}</strong><br/><b>${stop.nombre}</b><br/><span style="font-size:11px">${stop.direccion}</span></div>`;
+
+                        if (pos) {
+                            addMarker(pos, stop.nombre, (stop.originalIndex || i + 1).toString(), color, contentString);
+                        } else {
+                            // INTENTO 2: Geocoding (LENTO, con delay para evitar bloqueos)
+                            setTimeout(() => {
+                                geocoderRef.current.geocode({ address: stop.direccion }, (results, status) => {
+                                    if (status === 'OK' && results[0]) {
+                                        const loc = results[0].geometry.location;
+                                        addMarker(loc, stop.nombre, (stop.originalIndex || i + 1).toString(), color, contentString);
+                                    }
+                                });
+                            }, i * 300);
+                        }
                     });
                 };
 
+                // Iniciar proceso de dibujo
+                const routeEntries = Object.entries(routes);
+                if (routeEntries.length > 0 && !onlyMarkers) setMapLoading(true);
+
+                // Dibujar Base
                 if (baseAddress) {
                      geocoderRef.current.geocode({ address: baseAddress }, (results, status) => {
                         if (status === 'OK' && results[0]) {
@@ -328,12 +359,26 @@
                      });
                 }
 
-                Object.entries(routes).forEach(([groupName, routeData], index) => {
-                    if (routeData.paradas.length === 0) return;
+                // Procesar rutas
+                let processedCount = 0;
+                
+                routeEntries.forEach(([groupName, routeData], index) => {
+                    if (routeData.paradas.length === 0) {
+                        processedCount++;
+                        if(processedCount === routeEntries.length) setMapLoading(false);
+                        return;
+                    }
                     
                     let color = ROUTE_HEX_COLORS[index % ROUTE_HEX_COLORS.length];
-                    if (groupName.startsWith('Ungrouped') || groupName === 'Sin Asignar') color = '#94a3b8';
+                    if (groupName.startsWith('Ungrouped') || groupName === 'Sin Asignar') color = '#000000';
 
+                    // MODO SOLO PINES (Optimizado para Planificación)
+                    if (onlyMarkers) {
+                        renderFallbackMarkers(routeData.paradas, color, groupName);
+                        return; // Salir aquí, no dibujar líneas
+                    }
+
+                    // MODO RUTA COMPLETA (Para resultados finales)
                     const waypoints = routeData.paradas.map(stop => ({ location: stop.direccion, stopover: true }));
                     
                     if (waypoints.length <= 25) {
@@ -341,6 +386,9 @@
                             origin: baseAddress, destination: baseAddress, waypoints: waypoints, 
                             optimizeWaypoints: false, travelMode: window.google.maps.TravelMode.DRIVING 
                         }, (response, status) => {
+                            processedCount++;
+                            if(processedCount === routeEntries.length) setMapLoading(false);
+
                             if (status === 'OK') {
                                 const renderer = new window.google.maps.DirectionsRenderer({ 
                                     map: map, directions: response, 
@@ -364,13 +412,27 @@
                             }
                         });
                     } else {
+                        processedCount++;
+                        if(processedCount === routeEntries.length) setMapLoading(false);
                         renderFallbackMarkers(routeData.paradas, color, groupName);
                     }
                 });
-            }, [routes, baseAddress]);
+                
+                // Safety turn off loading
+                setTimeout(() => setMapLoading(false), 5000);
+
+            }, [routes, baseAddress, onlyMarkers]); // Añadido onlyMarkers a dependencias
             
             return (
-                <div className="w-full h-full flex flex-col">
+                <div className="w-full h-full flex flex-col relative">
+                    {mapLoading && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/50 backdrop-blur-sm">
+                            <div className="bg-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 border border-ess-blue">
+                                <div className="loader w-4 h-4 border-ess-blue"></div>
+                                <span className="text-xs font-bold text-ess-blue">Drawing Map Routes...</span>
+                            </div>
+                        </div>
+                    )}
                     <div className="flex-1 min-h-[400px]"><div ref={mapRef} className="w-full h-full rounded-xl"></div></div>
                 </div>
             );
@@ -582,17 +644,6 @@
             const mainClientInputRef = useRef(null); 
             const invisibleAddressInputRef = useRef(null);
             const resultsContainerRef = useRef(null); 
-
-            const ZONE_COLORS = [
-                "bg-ess-blue text-white",       
-                "bg-ess-green text-white",      
-                "bg-sky-600 text-white",        
-                "bg-teal-600 text-white",       
-                "bg-blue-800 text-white",       
-                "bg-emerald-600 text-white",    
-                "bg-cyan-700 text-white",       
-                "bg-ess-dark text-white"        
-            ];
 
             const handleEnter = (e, callback) => {
                 if (e.key === 'Enter') {
@@ -917,6 +968,50 @@
                 setLoading(true); setError('');
 
                 try {
+                    // --- SYNC ZONES & ASSIGNMENTS ---
+                    const newAssignments = { ...zoneAssignments };
+                    const currentZones = [...zones]; // Copia local para chequeo rápido
+                    
+                    // Procesamos cada grupo creado en la planificación
+                    for (const group of stopGroups) {
+                        let zoneId;
+                        const groupName = group.name.toUpperCase().trim();
+                        
+                        // 1. Buscar si la zona ya existe (por nombre)
+                        const existingZone = currentZones.find(z => z.name.toUpperCase() === groupName);
+                        
+                        if (existingZone) {
+                            zoneId = existingZone.id;
+                        } else {
+                            // 2. Si no existe, crearla en Firebase al vuelo
+                            if (window.fbDb) {
+                                const docRef = await window.fbAddDoc(getUserCollection("zones"), { name: groupName });
+                                zoneId = docRef.id;
+                                // Agregamos a local para que el siguiente bucle lo encuentre si se repite nombre
+                                currentZones.push({ id: zoneId, name: groupName });
+                            } else {
+                                // Fallback offline
+                                zoneId = group.id.toString();
+                            }
+                        }
+
+                        // 3. Asignar los choferes de este grupo a la Zona encontrada/creada
+                        if (group.assignedDrivers && group.assignedDrivers.length > 0) {
+                            group.assignedDrivers.forEach(dName => {
+                                newAssignments[dName] = zoneId;
+                            });
+                        }
+                    }
+
+                    // 4. Guardar las nuevas asignaciones en Firebase
+                    if (window.fbDb) {
+                        await window.fbSetDoc(getUserDocRef("settings", "zone_assignments"), newAssignments);
+                    }
+                    // Actualizar estado local inmediatamente para que la UI responda rápido
+                    setZoneAssignments(newAssignments);
+
+                    // --- CONTINUE OPTIMIZATION ---
+
                     const groupedIndices = new Set();
                     
                     const tasks = stopGroups.map(group => {
@@ -1225,6 +1320,7 @@
                 } else { handleEnter(e, initiateAddStop); }
             };
             
+            // Drag & Drop (kept for results view, irrelevant for input)
             const handleDragStart = (e, driverName, stopIndex) => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.closest('button')) { e.preventDefault(); return; } setDraggedItem({ driverName, stopIndex }); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => e.target.classList.add('draggable-source'), 0); };
             const handleDragEnd = (e) => { e.target.classList.remove('draggable-source'); setDraggedItem(null); setDragOverDriver(null); };
             const handleDragOverContainer = (e, driverName) => { e.preventDefault(); setDragOverDriver(driverName); };
@@ -1436,7 +1532,8 @@
 
                                 {/* RIGHT PANEL: MAP */}
                                 <div className="col-span-12 lg:col-span-8 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden relative">
-                                    <GlobalMapView routes={zoneMapData} baseAddress={baseAddress} />
+                                    {/* Pasamos onlyMarkers={true} para forzar solo pines en modo planificación */}
+                                    <GlobalMapView routes={zoneMapData} baseAddress={baseAddress} onlyMarkers={true} />
                                     {optimizedStops && (
                                         <div className="absolute top-4 right-4 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-bold border border-blue-200 shadow-sm flex items-center gap-2">
                                             <Icon name="check-circle" className="h-4 w-4" /> Stops Optimized for Planning
