@@ -595,6 +595,11 @@
             const [targetGroupForDriver, setTargetGroupForDriver] = useState(null);
             const [quickDriverName, setQuickDriverName] = useState('');
 
+            // NEW STATE FOR EDITING GROUP
+            const [editingGroup, setEditingGroup] = useState(null);
+            const [editGroupName, setEditGroupName] = useState('');
+            const [editGroupStopsInput, setEditGroupStopsInput] = useState('');
+
             const [showPinModal, setShowPinModal] = useState(false);
             const [pinInput, setPinInput] = useState('');
             const [pendingView, setPendingView] = useState('');
@@ -1120,24 +1125,18 @@
                 }
             };
 
-            const createGroup = () => {
-                if (!groupNameInput || !stopSelectionInput) return alert("Please fill all fields");
-                
-                const listLength = (optimizedStops || currentStops).length;
+            // NEW HELPER: Extract parsing logic
+            const parseStopsInput = (input, listLength) => {
                 const indices = new Set();
-                
-                const parts = stopSelectionInput.split(/[,;]/); 
-                
+                const parts = input.split(/[,;]/); 
                 for(let part of parts) {
                     part = part.trim();
                     if(!part) continue;
-                    
                     if(part.includes('-')) {
                         const rangeParts = part.split('-').map(s => s.trim());
                         if(rangeParts.length === 2) {
                             const start = parseInt(rangeParts[0]) - 1;
                             const end = parseInt(rangeParts[1]) - 1;
-                            
                             if(!isNaN(start) && !isNaN(end)) {
                                 const min = Math.min(start, end);
                                 const max = Math.max(start, end);
@@ -1153,6 +1152,14 @@
                         }
                     }
                 }
+                return indices;
+            };
+
+            const createGroup = () => {
+                if (!groupNameInput || !stopSelectionInput) return alert("Please fill all fields");
+                
+                const listLength = (optimizedStops || currentStops).length;
+                const indices = parseStopsInput(stopSelectionInput, listLength);
                 
                 if (indices.size === 0) {
                     return alert("Invalid selection. Please check the stop numbers.");
@@ -1168,6 +1175,36 @@
                 setStopGroups([...stopGroups, newGroup]);
                 setStopSelectionInput('');
                 setGroupNameInput('');
+            };
+
+            // --- EDIT GROUP FUNCTIONS ---
+            const openEditGroupModal = (group) => {
+                setEditingGroup(group);
+                setEditGroupName(group.name);
+                // Convert indices back to readable string (1-based)
+                setEditGroupStopsInput(group.stops.map(i => i + 1).join(', '));
+            };
+
+            const saveGroupChanges = () => {
+                if (!editGroupName || !editGroupStopsInput) return alert("Please fill all fields");
+                const listLength = (optimizedStops || currentStops).length;
+                const indices = parseStopsInput(editGroupStopsInput, listLength);
+
+                if (indices.size === 0) {
+                    return alert("Invalid selection.");
+                }
+
+                setStopGroups(stopGroups.map(g => {
+                    if(g.id === editingGroup.id) {
+                        return {
+                            ...g,
+                            name: editGroupName,
+                            stops: Array.from(indices).sort((a,b) => a-b)
+                        };
+                    }
+                    return g;
+                }));
+                setEditingGroup(null);
             };
 
             const toggleDriverInGroup = (groupId, driverName) => {
@@ -1502,6 +1539,40 @@
                         </div>
                     )}
 
+                    {/* EDIT GROUP MODAL (NEW) */}
+                    {editingGroup && (
+                        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                                <h3 className="font-bold text-lg mb-4 text-slate-800">Edit Zone</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Zone Name</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none uppercase" 
+                                            value={editGroupName} 
+                                            onChange={e => setEditGroupName(e.target.value)} 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Stops Included</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none" 
+                                            value={editGroupStopsInput} 
+                                            onChange={e => setEditGroupStopsInput(e.target.value)} 
+                                        />
+                                        <p className="text-[10px] text-slate-400 mt-1">e.g. 1-5, 8, 10-12</p>
+                                    </div>
+                                </div>
+                                <div className="mt-6 flex gap-3">
+                                    <button onClick={() => setEditingGroup(null)} className="flex-1 py-2 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
+                                    <button onClick={saveGroupChanges} className="flex-1 py-2 bg-ess-blue text-white rounded-lg font-bold shadow">Save Changes</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* ... (Other modals kept same) ... */}
                     {showSaveRouteModal && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm"><h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center gap-2"><Icon name="save" className="h-5 w-5 text-ess-blue" /> Save Current Route</h3><p className="text-sm text-slate-500 mb-4">Give a name to this plan to easily reload it later.</p><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none mb-4 focus:ring-2 focus:ring-ess-blue" placeholder="e.g., Monday Morning Route" value={routeSaveName} onChange={e => setRouteSaveName(e.target.value)} autoFocus /><div className="flex gap-3"><button onClick={() => setShowSaveRouteModal(false)} className="flex-1 py-2 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button><button onClick={confirmSaveRoute} disabled={!routeSaveName.trim()} className="flex-1 py-2 bg-ess-blue text-white rounded-lg font-bold shadow-lg disabled:opacity-50">Save Plan</button></div></div></div>)}
                     {showLoadRouteModal && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md h-[500px] flex flex-col"><div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icon name="folder-open" className="h-5 w-5 text-ess-blue" /> Saved Plans</h3><button onClick={() => setShowLoadRouteModal(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-5 w-5" /></button></div><div className="flex-1 overflow-y-auto space-y-3 pr-2">{savedRoutes.length === 0 && <p className="text-slate-400 text-sm text-center py-10">No saved plans yet.</p>}{savedRoutes.map((route) => (<div key={route.id} className="border border-slate-200 rounded-lg p-3 hover:bg-slate-50 transition-colors"><div className="flex justify-between items-start mb-2"><div><div className="font-bold text-slate-800">{route.name}</div><div className="text-xs text-slate-500">{new Date(route.timestamp).toLocaleString()}</div></div><button onClick={() => deleteSavedRoute(route.id)} className="text-slate-400 hover:text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4" /></button></div><div className="flex items-center gap-4 text-xs text-slate-600 mb-3"><span className="flex items-center gap-1"><Icon name="users" className="h-3 w-3" /> {Object.keys(route.routes || {}).length} Drivers</span><span className="flex items-center gap-1"><Icon name="map-pin" className="h-3 w-3" /> {route.currentStops ? route.currentStops.length : 0} Stops</span></div><button onClick={() => confirmLoadRoute(route)} className="w-full py-2 bg-white border border-ess-blue text-ess-blue font-bold rounded hover:bg-blue-50 transition-colors flex justify-center items-center gap-2">Load Plan <Icon name="arrow-right" className="h-3 w-3" /></button></div>))}</div></div></div>)}
@@ -1610,7 +1681,10 @@
                                                         <span className={`w-3 h-3 rounded-full ${COMPANY_PALETTE[idx % COMPANY_PALETTE.length].tw.split(' ')[0]}`}></span>
                                                         {group.name}
                                                     </div>
-                                                    <button onClick={() => deleteGroup(group.id)} className="text-red-400 hover:text-red-600"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                    <div className="flex gap-1">
+                                                        <button onClick={() => openEditGroupModal(group)} className="text-blue-400 hover:text-blue-600 p-1 hover:bg-blue-50 rounded transition-colors"><Icon name="pencil" className="h-4 w-4" /></button>
+                                                        <button onClick={() => deleteGroup(group.id)} className="text-red-400 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                    </div>
                                                 </div>
                                                 <div className="text-xs text-slate-500 mb-3">
                                                     Stops: {group.stops.map(i => i + 1).join(', ')}
@@ -1657,91 +1731,6 @@
                                             <Icon name="check-circle" className="h-4 w-4" /> Stops Optimized for Planning
                                         </div>
                                     )}
-                                </div>
-                            </div>
-                        )}
-
-                        {view === 'input' && (
-                            <div className="grid lg:grid-cols-12 gap-8 animate-fade-in">
-                                <div className="lg:col-span-7 space-y-6">
-                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow relative z-20">
-                                            <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2"><div className="bg-ess-green/10 p-2 rounded-full"><Icon name="plus" className="h-5 w-5 text-ess-green" /></div> Add Stop</h2>
-                                            <div className="grid md:grid-cols-2 gap-4 mb-4">
-                                                <div className="relative">
-                                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client</label>
-                                                    <input ref={mainClientInputRef} type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Name" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); setActiveSuggestionIndex(-1); }} onKeyDown={handleClientKeyDown} />
-                                                    {showSuggestions && filteredClients.length > 0 && <div className="absolute top-full left-0 w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 overflow-hidden z-50">{filteredClients.map((c, i) => (<div key={i} onClick={() => selectClient(c)} className={`p-3 cursor-pointer border-b border-slate-50 ${i === activeSuggestionIndex ? 'bg-blue-100' : 'hover:bg-blue-50'}`}><div className="font-bold text-slate-700 text-sm">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
-                                                </div>
-                                                <div className="relative">
-                                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label>
-                                                    {/* INPUT DE DIRECCIÓN MODIFICADO: Al dar Enter, salta al invisible, NO al Next */}
-                                                    <GoogleAddressInput 
-                                                        value={newStopAddress} 
-                                                        onChange={(e) => { setNewStopAddress(e.target.value); setShowAddressSuggestions(true); }} 
-                                                        onKeyDown={(e) => handleEnter(e, () => invisibleAddressInputRef.current?.focus())} 
-                                                        className="w-full p-3 border border-slate-300 rounded-lg outline-none" 
-                                                        placeholder="Search Google Maps" 
-                                                        disabled={!scriptLoaded} 
-                                                        isLoaded={scriptLoaded} 
-                                                    />
-                                                    
-                                                    {/* CAMPO INVISIBLE (STOP) */}
-                                                    <input 
-                                                        ref={invisibleAddressInputRef} 
-                                                        className="absolute opacity-0 w-1 h-1 -z-10 bottom-0 right-0 pointer-events-none" 
-                                                        onKeyDown={(e) => handleEnter(e, initiateAddStop)} 
-                                                        tabIndex="-1" 
-                                                        autoComplete="off"
-                                                    />
-
-                                                    {showAddressSuggestions && filteredClientsByAddress.length > 0 && <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{filteredClientsByAddress.map((c, i) => (<div key={i} onClick={() => { selectClient(c); setTempStopData({name: c.name, address: c.address}); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
-                                                </div>
-                                            </div>
-                                            <div className="flex justify-end"><button onClick={initiateAddStop} disabled={!newStopAddress} className="bg-ess-blue text-white px-6 py-2.5 rounded-lg font-bold shadow-md flex items-center gap-2 disabled:opacity-50"><Icon name="arrow-right" className="h-4 w-4" /> Next</button></div>
-                                    </div>
-
-                                    <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden min-h-[300px]">
-                                            <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
-                                                <div className="flex items-center gap-2">
-                                                    <h3 className="font-bold text-slate-700 flex items-center gap-2"><Icon name="list" className="h-5 w-5 text-slate-400" /> Today's Route</h3>
-                                                    {/* NEW HISTORY BUTTON */}
-                                                    <button onClick={() => setShowHistoryModal(true)} className="text-xs bg-slate-100 text-slate-600 hover:text-ess-blue px-2 py-1 rounded-lg border border-slate-200 flex items-center gap-1 ml-2 transition-colors shadow-sm" title="View History"><Icon name="clock" className="h-3 w-3" /> History</button>
-                                                </div>
-                                                <div className="flex items-center gap-2">{currentStops.length > 0 && <button onClick={clearDraftRoute} className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 flex items-center gap-1"><Icon name="eraser" className="h-3 w-3" /> Clear</button>}<span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{currentStops.length} Stops</span></div>
-                                            </div>
-                                            <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
-                                                {currentStops.map((stop, idx) => (
-                                                    <div key={stop.id} className="p-4 flex items-center gap-4 hover:bg-slate-50 group">
-                                                        <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 font-bold text-sm border border-slate-200">{idx + 1}</div>
-                                                        <div className="flex-1">
-                                                            <h4 className="font-bold text-slate-800">{stop.name}</h4>
-                                                            <p className="text-sm text-slate-500 flex items-center gap-1"><Icon name="map-pin" className="h-3 w-3" /> {stop.address}</p>
-                                                            {(stop.invoices || stop.pieces) && <div className="flex gap-3 mt-1 text-xs font-mono text-slate-500 bg-slate-100 inline-block px-2 py-1 rounded"><span>Inv: {stop.invoices || '-'}</span><span>Pcs: {stop.pieces || '-'}</span></div>}
-                                                        </div>
-                                                        <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            <button onClick={() => startEditDraft(stop)} className="p-2 text-slate-300 hover:text-ess-blue hover:bg-blue-50 rounded-lg transition-colors"><Icon name="pencil" className="h-4 w-4" /></button>
-                                                            <button onClick={() => removeStop(stop.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-4 w-4" /></button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                    </div>
-                                </div>
-
-                                <div className="lg:col-span-5 space-y-6">
-                                    <div className="bg-ess-light px-4 py-2 rounded-lg border border-blue-100 flex items-center gap-2"><Icon name="map-pin" className="h-5 w-5 text-ess-blue shrink-0" /><div className="text-xs w-full"><span className="block text-slate-400 font-semibold uppercase">Base (Start/End)</span><GoogleAddressInput value={baseAddress} onChange={handleBaseAddressChange} className="bg-transparent font-bold text-slate-700 outline-none w-full" placeholder="Warehouse" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div></div>
-                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 pb-3 border-b border-slate-100"><Icon name="users" className="h-5 w-5 text-ess-blue" /> Drivers</h3><div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }})} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div><div className="grid grid-cols-1 xl:grid-cols-2 gap-2 overflow-y-auto overflow-x-hidden">{drivers.map(driver => (<div key={driver.id} className="group relative"><label className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer h-full ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}><div className="flex items-center gap-2 min-w-0"><div className={`w-2 h-2 shrink-0 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div><span className={`font-medium text-sm truncate ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span></div><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-4 h-4 accent-ess-green shrink-0 ml-2" /></label><button onClick={(e) => { e.preventDefault(); deleteDriver(driver.id); }} className="absolute -right-1 -top-1 bg-white text-slate-400 hover:text-red-500 border border-slate-200 rounded-full p-0.5 opacity-0 group-hover:opacity-100 shadow-sm z-10"><Icon name="x" className="h-3 w-3" /></button></div>))}</div></div>
-                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">
-                                        {error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}
-                                        {!loading && routes && (<>
-                                            <p className="text-xs text-center text-slate-500 mb-1">Previous routes found</p>
-                                            <button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-3 rounded-xl font-bold text-sm shadow mb-3 transition-all flex justify-center items-center gap-2"><Icon name="map" className="h-5 w-5" /> GO TO RESULTS</button>
-                                        </>)}
-                                        {/* CHANGED: TO USE handlePlanZones */}
-                                        <button onClick={handlePlanZones} disabled={currentStops.length === 0} className="w-full bg-slate-800 hover:bg-black text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-slate-900/20 transition-all flex justify-center items-center gap-2 disabled:opacity-75">
-                                            {loading ? <div className="loader"></div> : <><Icon name="map" className="h-6 w-6" /> PLAN ZONES & MAP</>}
-                                        </button>
-                                    </div>
                                 </div>
                             </div>
                         )}
@@ -1795,6 +1784,9 @@
 
                                             // Determine Label Color
                                             const headerColorClass = zone ? COMPANY_PALETTE[(zIdx - 1) % COMPANY_PALETTE.length].tw : 'bg-slate-600 text-white';
+
+                                            // --- NEW: HIDE EMPTY ZONES ---
+                                            if (driversInZone.length === 0) return null;
 
                                             return (
                                                 <div 
