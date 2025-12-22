@@ -22,7 +22,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, getDocs, setDoc, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, getDocs, setDoc, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // Función global para inyectar la configuración desde fuera o usarla si se pega aquí
         window.initializeFirebaseGlobally = (config) => {
@@ -53,6 +53,7 @@
                 window.fbOrderBy = orderBy;
                 window.fbGetDocs = getDocs;
                 window.fbLimit = limit;
+                window.fbWriteBatch = writeBatch;
                 
                 window.firebaseReady = true; 
                 return true;
@@ -645,6 +646,10 @@
             const [groupNameInput, setGroupNameInput] = useState('');
             const [editingGroupId, setEditingGroupId] = useState(null);
 
+            // Bulk Import
+            const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+            const [bulkInputText, setBulkInputText] = useState('');
+
             const clientInputRef = useRef(null);
             const piecesInputRef = useRef(null);
             const mainClientInputRef = useRef(null); 
@@ -748,6 +753,45 @@
                 setClientFormName(''); setClientFormAddress(''); 
             };
             const deleteClient = async (id) => { if(window.fbDb && confirm('Delete?')) { await window.fbDeleteDoc(getUserDocRef("clients", id)); setSelectedClients(selectedClients.filter(c => c !== id)); } };
+
+            const handleBulkImport = async () => {
+                if (!bulkInputText.trim() || !window.fbDb) return;
+                setLoading(true);
+                try {
+                    const lines = bulkInputText.split('\n');
+                    const batchSize = 400; // Firestore limit is 500, being safe
+                    let batch = window.fbWriteBatch(window.fbDb);
+                    let count = 0;
+
+                    for (let line of lines) {
+                        const parts = line.split('\t'); // Split by TAB (common in Excel copy-paste)
+                        if (parts.length < 2) continue;
+                        
+                        const name = formatClientName(parts[0]);
+                        const address = parts[1].trim();
+                        if (!name || !address) continue;
+
+                        const docRef = window.fbDoc(getUserCollection("clients"));
+                        batch.set(docRef, { name, address });
+                        count++;
+
+                        if (count >= batchSize) {
+                            await batch.commit();
+                            batch = window.fbWriteBatch(window.fbDb);
+                            count = 0;
+                        }
+                    }
+                    if (count > 0) await batch.commit();
+                    
+                    alert("Import complete!");
+                    setBulkInputText('');
+                    setShowBulkImportModal(false);
+                } catch (e) {
+                    alert("Error importing: " + e.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
             
             // --- NEW FUNCTION: Add Client to Route directly ---
             const addClientToRoute = async (client) => {
@@ -1520,6 +1564,40 @@
                         </div>
                     )}
 
+                    {/* BULK IMPORT MODAL */}
+                    {showBulkImportModal && (
+                        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-2xl h-[80vh] flex flex-col">
+                                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icon name="upload" className="h-5 w-5 text-ess-blue" /> Bulk Import Clients</h3>
+                                    <button onClick={() => setShowBulkImportModal(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-5 w-5" /></button>
+                                </div>
+                                <div className="flex-1 flex flex-col space-y-4">
+                                    <p className="text-sm text-slate-500">
+                                        Copy and paste your Excel columns here. <br/>
+                                        <strong>Format:</strong> Column A (Name) [TAB] Column B (Address).
+                                    </p>
+                                    <textarea 
+                                        className="flex-1 p-3 border border-slate-300 rounded-lg font-mono text-xs outline-none focus:ring-2 focus:ring-ess-blue"
+                                        placeholder="Paste rows here..."
+                                        value={bulkInputText}
+                                        onChange={(e) => setBulkInputText(e.target.value)}
+                                    ></textarea>
+                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-xs text-blue-700">
+                                        <Icon name="info" className="h-3 w-3 inline mr-1" />
+                                        Records will be added as-is. Clean them later when creating routes.
+                                    </div>
+                                </div>
+                                <div className="mt-6 flex gap-3">
+                                    <button onClick={() => setShowBulkImportModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
+                                    <button onClick={handleBulkImport} disabled={loading || !bulkInputText.trim()} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg flex justify-center items-center gap-2">
+                                        {loading ? <div className="loader"></div> : <><Icon name="plus" className="h-4 w-4" /> Start Import</>}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* ... (Other modals kept same) ... */}
                     {showSaveRouteModal && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm"><h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center gap-2"><Icon name="save" className="h-5 w-5 text-ess-blue" /> Save Current Route</h3><p className="text-sm text-slate-500 mb-4">Give a name to this plan to easily reload it later.</p><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none mb-4 focus:ring-2 focus:ring-ess-blue" placeholder="e.g., Monday Morning Route" value={routeSaveName} onChange={e => setRouteSaveName(e.target.value)} autoFocus /><div className="flex gap-3"><button onClick={() => setShowSaveRouteModal(false)} className="flex-1 py-2 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button><button onClick={confirmSaveRoute} disabled={!routeSaveName.trim()} className="flex-1 py-2 bg-ess-blue text-white rounded-lg font-bold shadow-lg disabled:opacity-50">Save Plan</button></div></div></div>)}
                     {showLoadRouteModal && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md h-[500px] flex flex-col"><div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icon name="folder-open" className="h-5 w-5 text-ess-blue" /> Saved Plans</h3><button onClick={() => setShowLoadRouteModal(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-5 w-5" /></button></div><div className="flex-1 overflow-y-auto space-y-3 pr-2">{savedRoutes.length === 0 && <p className="text-slate-400 text-sm text-center py-10">No saved plans yet.</p>}{savedRoutes.map((route) => (<div key={route.id} className="border border-slate-200 rounded-lg p-3 hover:bg-slate-50 transition-colors"><div className="flex justify-between items-start mb-2"><div><div className="font-bold text-slate-800">{route.name}</div><div className="text-xs text-slate-500">{new Date(route.timestamp).toLocaleString()}</div></div><button onClick={() => deleteSavedRoute(route.id)} className="text-slate-400 hover:text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4" /></button></div><div className="flex items-center gap-4 text-xs text-slate-600 mb-3"><span className="flex items-center gap-1"><Icon name="users" className="h-3 w-3" /> {Object.keys(route.routes || {}).length} Drivers</span><span className="flex items-center gap-1"><Icon name="map-pin" className="h-3 w-3" /> {route.currentStops ? route.currentStops.length : 0} Stops</span></div><button onClick={() => confirmLoadRoute(route)} className="w-full py-2 bg-white border border-ess-blue text-ess-blue font-bold rounded hover:bg-blue-50 transition-colors flex justify-center items-center gap-2">Load Plan <Icon name="arrow-right" className="h-3 w-3" /></button></div>))}</div></div></div>)}
@@ -1598,7 +1676,7 @@
                             </div>
                         )}
                         {/* Clients and Vehicles views kept compacted for brevity, they are same */}
-                        {view === 'clients' && (<div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients</h2></div><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-500 border border-slate-200">{clientDB.length} Clients</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex flex-col md:flex-row gap-4"><input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} /><div className="flex-[2] relative"><GoogleAddressInput value={clientFormAddress} onChange={(e) => { setClientFormAddress(e.target.value); setShowClientDbAddressSuggestions(true); }} onKeyDown={(e) => handleEnter(e, saveClient)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} />{showClientDbAddressSuggestions && suggestionsForClientDbAddress.length > 0 && (<div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{suggestionsForClientDbAddress.map((c, i) => (<div key={i} onClick={() => { setClientFormName(c.name); setClientFormAddress(c.address); setEditingClientId(c.id); setShowClientDbAddressSuggestions(false); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>)}</div><button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button></div></div><div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => {
+                        {view === 'clients' && (<div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients</h2></div><div className="flex items-center gap-2"><button onClick={() => setShowBulkImportModal(true)} className="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-black transition-colors"><Icon name="upload" className="h-4 w-4" /> Import Excel</button><span className="bg-white px-3 py-1.5 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{clientDB.length} Clients</span></div></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex flex-col md:flex-row gap-4"><input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} /><div className="flex-[2] relative"><GoogleAddressInput value={clientFormAddress} onChange={(e) => { setClientFormAddress(e.target.value); setShowClientDbAddressSuggestions(true); }} onKeyDown={(e) => handleEnter(e, saveClient)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} />{showClientDbAddressSuggestions && suggestionsForClientDbAddress.length > 0 && (<div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{suggestionsForClientDbAddress.map((c, i) => (<div key={i} onClick={() => { setClientFormName(c.name); setClientFormAddress(c.address); setEditingClientId(c.id); setShowClientDbAddressSuggestions(false); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>)}</div><button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button></div></div><div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => {
                             const isInRoute = currentStops.some(s => s.address === c.address);
                             return (
                             <tr key={c.id} className="hover:bg-slate-50">
@@ -1615,7 +1693,7 @@
                                 </td>
                             </tr>
                         )})}</tbody></table></div></div></div>)}
-                        {view === 'vehicles' && (<div className="max-w-2xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="truck" className="h-5 w-5 text-ess-blue" /> Fleet Management</h2><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-500 border border-slate-200">{vehicles.length} Trucks</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex gap-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }})} /><button onClick={() => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }}} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="plus" className="h-4 w-4" /> Add Truck</button></div></div><div className="max-h-[500px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{vehicles.length === 0 ? <tr><td className="p-8 text-center text-slate-400">No vehicles added yet.</td></tr> : vehicles.map(v => (<tr key={v.id} className="hover:bg-slate-50"><td className="p-4 font-bold text-slate-700 flex items-center gap-3"><div className="bg-blue-100 p-2 rounded-full"><Icon name="truck" className="h-4 w-4 text-ess-blue" /></div> {v.name}</td><td className="p-4 text-right"><button onClick={() => deleteVehicle(v.id)} className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-5 w-5" /></button></td></tr>))}</tbody></table></div></div></div>)}
+                        {view === 'vehicles' && (<div className="max-w-2xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="truck" className="h-5 w-5 text-ess-blue" /> Fleet Management</h2><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-600 border border-slate-200">{vehicles.length} Trucks</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex gap-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }})} /><button onClick={() => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }}} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="plus" className="h-4 w-4" /> Add Truck</button></div></div><div className="max-h-[500px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{vehicles.length === 0 ? <tr><td className="p-8 text-center text-slate-400">No vehicles added yet.</td></tr> : vehicles.map(v => (<tr key={v.id} className="hover:bg-slate-50"><td className="p-4 font-bold text-slate-700 flex items-center gap-3"><div className="bg-blue-100 p-2 rounded-full"><Icon name="truck" className="h-4 w-4 text-ess-blue" /></div> {v.name}</td><td className="p-4 text-right"><button onClick={() => deleteVehicle(v.id)} className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-5 w-5" /></button></td></tr>))}</tbody></table></div></div></div>)}
                         
                         {view === 'global_map' && <div className="flex flex-col h-[calc(100vh-120px)]"><div className="mb-4"><button onClick={() => setView('results')} className="text-slate-600 px-4 py-2 border rounded-lg bg-white hover:bg-slate-50 font-bold flex items-center gap-2 shadow-sm"><Icon name="arrow-left" className="h-4 w-4" /> Back to Results</button></div><div className="flex-1 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative"><GlobalMapView routes={routes} baseAddress={baseAddress} /></div></div>}
 
