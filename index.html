@@ -430,6 +430,13 @@
                 let processedCount = 0;
                 
                 routeEntries.forEach(([groupName, routeData], index) => {
+                    // SAFETY CHECK: Prevenir pantalla blanca si routeData es null o undefined
+                    if (!routeData || !routeData.paradas) {
+                        processedCount++;
+                        if(processedCount === routeEntries.length) setMapLoading(false);
+                        return;
+                    }
+
                     if (routeData.paradas.length === 0) {
                         processedCount++;
                         if(processedCount === routeEntries.length) setMapLoading(false);
@@ -2009,7 +2016,10 @@
                                                     </div>
 
                                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-1">
-                                                        {driversInZone.map(([driverName, data]) => (
+                                                        {driversInZone.map(([driverName, data]) => {
+                                                            if (!data || !data.paradas) return null;
+
+                                                            return (
                                                             <div 
                                                                 key={driverName}
                                                                 draggable="true"
@@ -2105,7 +2115,8 @@
                                                                         <a href={getWhatsappLink(data.link)} target="_blank" rel="noreferrer" className="px-4 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="message-circle" className="h-4 w-4" /></a>
                                                                 </div>
                                                             </div>
-                                                        ))}
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
                                             );
