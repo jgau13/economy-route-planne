@@ -170,7 +170,6 @@
 
             return (
                 <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
-                    {/* Fixed: max-w-md instead of max-md typo */}
                     <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-200">
                         <div className="text-center mb-8">
                             <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-16 mx-auto mb-4"/>
@@ -253,13 +252,12 @@
             const geocoderRef = useRef(null);
             const drawingManagerRef = useRef(null);
             const [mapLoading, setMapLoading] = useState(false); 
-            const [mapReady, setMapReady] = useState(false); // NEW STATE
+            const [mapReady, setMapReady] = useState(false); 
             
             const ROUTE_HEX_COLORS = COMPANY_PALETTE.map(c => c.hex);
             
             // Effect to Handle Drawing Manager (DEPENDS ON mapReady)
             useEffect(() => {
-                // Ensure map is ready before trying to attach drawing manager
                 if (!window.google || !googleMapRef.current || !mapReady) return;
                 
                 if (enableDrawing) {
@@ -320,7 +318,7 @@
                 return () => {
                     if (drawingManagerRef.current) drawingManagerRef.current.setMap(null);
                 };
-            }, [enableDrawing, onStopsSelected, mapReady]); // Wait for mapReady
+            }, [enableDrawing, onStopsSelected, mapReady]);
 
             useEffect(() => {
                 if (!window.google || !mapRef.current) return;
@@ -333,7 +331,7 @@
                     });
                     infoWindowRef.current = new window.google.maps.InfoWindow();
                     geocoderRef.current = new window.google.maps.Geocoder();
-                    setMapReady(true); // Signal ready
+                    setMapReady(true);
                 }
                 const map = googleMapRef.current;
                 const directionsService = new window.google.maps.DirectionsService();
@@ -704,7 +702,6 @@
             const [groupNameInput, setGroupNameInput] = useState('');
             const [editingGroupId, setEditingGroupId] = useState(null);
 
-            // Import States (New)
             const [showBulkImportModal, setShowBulkImportModal] = useState(false);
             const [bulkInputText, setBulkInputText] = useState('');
             const [importLoading, setImportLoading] = useState(false);
@@ -714,21 +711,8 @@
             const mainClientInputRef = useRef(null); 
             const invisibleAddressInputRef = useRef(null);
             const resultsContainerRef = useRef(null); 
+            const fileInputRef = useRef(null);
 
-            const handleEnter = (e, callback) => {
-                if (e.key === 'Enter') {
-                    callback();
-                }
-            };
-
-            const handleLogout = () => {
-                if(window.fbSignOut && window.fbAuth) {
-                    window.fbSignOut(window.fbAuth);
-                } else {
-                    window.location.reload();
-                }
-            };
-            
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             const getUserCollection = (collName) => user ? window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, collName) : null;
             const getUserDocRef = (collName, docId) => user ? window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, collName, docId) : null;
@@ -843,8 +827,12 @@
             const addDriverToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("drivers"), { name, active: true }); };
             const deleteDriver = async (id) => { if(window.fbDb && confirm('Delete?')) await window.fbDeleteDoc(getUserDocRef("drivers", id)); };
             const toggleDriver = async (id, status) => { if(window.fbDb) await window.fbUpdateDoc(getUserDocRef("drivers", id), { active: !status }); };
-            const addVehicleToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("vehicles"), { name }); };
+            const addVehicleToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("vehicles"), { name, assignedDriverId: "" }); };
             const deleteVehicle = async (id) => { if(window.fbDb && confirm('Delete Vehicle?')) await window.fbDeleteDoc(getUserDocRef("vehicles", id)); };
+            const assignVehicleToDriver = async (vehicleId, driverId) => {
+                if(window.fbDb) await window.fbUpdateDoc(getUserDocRef("vehicles", vehicleId), { assignedDriverId: driverId });
+            };
+
             const saveClient = async () => { 
                 if (!clientFormName || !window.fbDb) return; 
                 const finalName = formatClientName(clientFormName);
@@ -889,7 +877,6 @@
                 const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
                 const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `ess_route_backup_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
             };
-            const fileInputRef = useRef(null);
             const handleRestoreClick = () => { fileInputRef.current.click(); };
             const handleFileChange = async (e) => {
                 const file = e.target.files[0]; if (!file) return;
@@ -900,7 +887,7 @@
                         const data = JSON.parse(event.target.result); setLoading(true);
                         if (data.clients) { for (const c of data.clients) { await window.fbSetDoc(getUserDocRef("clients", c.id || crypto.randomUUID()), { name: c.name, address: c.address }, { merge: true }); } }
                         if (data.drivers) { for (const d of data.drivers) { await window.fbSetDoc(getUserDocRef("drivers", d.id || crypto.randomUUID()), { name: d.name, active: d.active }, { merge: true }); } }
-                        if (data.vehicles) { for (const v of data.vehicles) { await window.fbSetDoc(getUserDocRef("vehicles", v.id || crypto.randomUUID()), { name: v.name }, { merge: true }); } }
+                        if (data.vehicles) { for (const v of data.vehicles) { await window.fbSetDoc(getUserDocRef("vehicles", v.id || crypto.randomUUID()), { name: v.name, assignedDriverId: v.assignedDriverId || "" }, { merge: true }); } }
                         if (data.stops) { for (const s of data.stops) { await window.fbSetDoc(getUserDocRef("draft_stops", s.id || crypto.randomUUID()), s, { merge: true }); } }
                         if (data.settings) {
                             const settingsPayload = {};
@@ -915,7 +902,7 @@
                 reader.readAsText(file);
             };
             const handleNavClick = (targetView) => { if (targetView === 'input' || targetView === 'results') { setView('input'); return; } setPendingView(targetView); setPinInput(''); setShowPinModal(true); };
-            const submitPin = () => { if (pinInput === savedPin) { setShowPinModal(false); setView(pendingView); } else { alert("Incorrect PIN"); setPinInput(''); } };
+            const submitPin = () => { if (pinInput === savedPin) { setShowPinModal(false); setView(pendingView); } else alert("Incorrect PIN"); };
 
             const addZone = async () => {
                 if (!newZoneName.trim() || !window.fbDb) return;
@@ -1048,9 +1035,23 @@
             };
             const removeStop = async (id) => { if(window.fbDb) await window.fbDeleteDoc(getUserDocRef("draft_stops", id)); };
             const clearDraftRoute = async () => { if(confirm("Clear list?")) { const q = window.fbQuery(getUserCollection("draft_stops")); const snapshot = await window.fbGetDocs(q); await Promise.all(snapshot.docs.map(doc => window.fbDeleteDoc(doc.ref))); } };
-            const openPrintModal = (driverName, stops) => { setPrintData({ driverName, stops }); setSelectedVehicleForPrint(vehicles.length > 0 ? vehicles[0].name : ''); setShowPrintModal(true); };
+            
+            const openPrintModal = (driverName, stops) => { 
+                setPrintData({ driverName, stops }); 
+                // BUSCAR VAN POR DEFAULT
+                const driverObj = drivers.find(d => d.name === driverName);
+                const assignedVehicle = vehicles.find(v => v.assignedDriverId === driverObj?.id);
+                setSelectedVehicleForPrint(assignedVehicle ? assignedVehicle.name : (vehicles.length > 0 ? vehicles[0].name : '')); 
+                setShowPrintModal(true); 
+            };
             const handleGlobalPrint = () => { setShowGlobalPrint(true); setTimeout(() => { window.print(); setShowGlobalPrint(false); }, 500); };
-            const handlePrint = () => window.print();
+            
+            const handlePrint = () => {
+                window.print();
+                // REQUISITO: Regresar a vista de resultados cerrando el modal
+                setShowPrintModal(false);
+                setPrintData(null);
+            };
             
             const handlePlanZones = async () => {
                 if (currentStops.length === 0) return setError('No stops.');
@@ -1319,10 +1320,8 @@
                 setShowDriverModal(false);
             };
 
-            // Callback to handle selection from map drawing
             const handleSelectionFromMap = (selectedIndices) => {
                 if (selectedIndices && selectedIndices.length > 0) {
-                    // Create comma-separated string
                     const selectionStr = selectedIndices.join(', ');
                     setStopSelectionInput(selectionStr);
                 }
@@ -1525,7 +1524,7 @@
                 e.preventDefault();
                 const container = resultsContainerRef.current;
                 if (!container || (!draggedDriver && !draggedItem)) return;
-                const { top, bottom } = container.getBoundingClientRect();
+                const { top, bottom, height } = container.getBoundingClientRect();
                 const y = e.clientY;
                 const edgeThreshold = 80; 
                 const scrollStep = 15;
@@ -1568,7 +1567,6 @@
                         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
                                 <h3 className="font-bold text-lg mb-4 text-slate-800">Add Driver to {targetGroupForDriver.name}</h3>
-                                
                                 <div className="mb-6">
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Activate Existing Driver</label>
                                     <div className="flex flex-wrap gap-2">
@@ -1580,24 +1578,48 @@
                                         ))}
                                     </div>
                                 </div>
-
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Create New Driver</label>
                                     <div className="flex gap-2">
-                                        <input 
-                                            type="text" 
-                                            className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none" 
-                                            placeholder="Driver Name" 
-                                            value={quickDriverName} 
-                                            onChange={e => setQuickDriverName(e.target.value)} 
-                                            onKeyDown={(e) => handleEnter(e, createAndAssign)}
-                                        />
+                                        <input type="text" className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Driver Name" value={quickDriverName} onChange={e => setQuickDriverName(e.target.value)} onKeyDown={(e) => handleEnter(e, createAndAssign)} />
                                         <button onClick={createAndAssign} disabled={!quickDriverName.trim()} className="bg-ess-blue text-white px-4 py-2 rounded-lg font-bold text-sm disabled:opacity-50">Add</button>
                                     </div>
                                 </div>
-
                                 <div className="mt-6 flex justify-end">
                                     <button onClick={() => setShowDriverModal(false)} className="text-slate-500 font-bold text-sm hover:text-slate-700">Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showBulkImportModal && (
+                        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-2xl h-[80vh] flex flex-col">
+                                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                                        <Icon name="upload" className="h-5 w-5 text-ess-blue" /> 
+                                        Importación Masiva desde Excel
+                                    </h3>
+                                    <button onClick={() => setShowBulkImportModal(false)} className="text-slate-400 hover:text-red-500">
+                                        <Icon name="x" className="h-5 w-5" />
+                                    </button>
+                                </div>
+                                <div className="flex-1 flex flex-col space-y-4">
+                                    <p className="text-sm text-slate-500">
+                                        Copia y pega las columnas de tu Excel aquí. <br/>
+                                        <strong>Formato:</strong> Columna A (Nombre) [TAB] Columna B (Dirección).
+                                    </p>
+                                    <textarea className="flex-1 p-3 border border-slate-300 rounded-lg font-mono text-xs outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Pega las filas aquí..." value={bulkInputText} onChange={(e) => setBulkInputText(e.target.value)}></textarea>
+                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-xs text-blue-700">
+                                        <Icon name="info" className="h-3 w-3 inline mr-1" />
+                                        Los registros se añadirán tal cual están en el texto. Podrás editarlos después individualmente.
+                                    </div>
+                                </div>
+                                <div className="mt-6 flex gap-3">
+                                    <button onClick={() => setShowBulkImportModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancelar</button>
+                                    <button onClick={handleBulkImport} disabled={importLoading || !bulkInputText.trim()} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg flex justify-center items-center gap-2">
+                                        {importLoading ? <div className="loader"></div> : <><Icon name="plus" className="h-4 w-4" /> Iniciar Importación</>}
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -1623,14 +1645,8 @@
                                 </div>
                             ) : null}
                             <div className="space-y-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices (Optional)</label>
-                                    <input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} onKeyDown={(e) => handleEnter(e, () => piecesInputRef.current?.focus())} autoFocus />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pieces Shipped</label>
-                                    <input ref={piecesInputRef} type="number" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="0" value={tempPieces} onChange={e => setTempPieces(e.target.value)} onKeyDown={(e) => handleEnter(e, confirmAddStop)} />
-                                </div>
+                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices (Optional)</label><input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} onKeyDown={(e) => handleEnter(e, () => piecesInputRef.current?.focus())} autoFocus /></div>
+                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pieces Shipped</label><input ref={piecesInputRef} type="number" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="0" value={tempPieces} onChange={e => setTempPieces(e.target.value)} onKeyDown={(e) => handleEnter(e, confirmAddStop)} /></div>
                             </div>
                             <div className="mt-6 flex gap-3">
                                 <button onClick={() => { setShowAddDetailsModal(false); setShowManualStopModal(false); setTargetDriverForManual(null); setEditingStop(null); setEditingDraftId(null); setTempStopData(null); }} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
@@ -1638,57 +1654,8 @@
                             </div>
                         </div>
                     </div>)}
-                    {showAddRouteModal && (<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print animate-fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 w-full max-sm"><h3 className="font-bold text-lg mb-4 text-slate-800">Add New Route</h3><p className="text-sm text-slate-500 mb-4">Select a driver who doesn't have a route yet.</p><div className="space-y-2 max-h-40 overflow-y-auto mb-4 border rounded p-2">{drivers.filter(d => !routes[d.name]).map(d => (<button key={d.id} onClick={() => confirmAddRoute(d.name)} className="w-full text-left p-2 hover:bg-blue-50 rounded font-bold text-slate-700 flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${d.active ? 'bg-green-500' : 'bg-gray-400'}`}></div> {d.name}</button>))}{drivers.filter(d => !routes[d.name]).length === 0 && <p className="text-sm text-slate-400">All drivers have routes.</p>}</div><div className="flex justify-end"><button onClick={() => setShowAddRouteModal(false)} className="text-slate-500 font-bold px-4">Cancel</button></div></div></div>)}
-                    {showPinModal && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print animate-fade-in"><div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm text-center"><h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center justify-center gap-2"><Icon name="lock" className="h-5 w-5" /> Enter Security PIN</h3><input type="password" className="w-full p-3 border border-slate-300 rounded-lg outline-none text-center text-2xl tracking-widest" maxLength="6" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={(e) => handleEnter(e, submitPin)} autoFocus /><div className="mt-6 flex gap-3"><button onClick={() => setShowPinModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button><button onClick={submitPin} className="flex-1 py-3 bg-slate-800 text-white rounded-lg font-bold">Unlock</button></div></div></div>)}
-                    {showPrintModal && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print animate-fade-in"><div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"><div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold text-slate-800">Print Manifest</h3><button onClick={() => setShowPrintModal(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-5 w-5" /></button></div><div className="p-6 space-y-6"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Truck for this Sheet</label><select className="w-full p-3 border border-slate-300 rounded-lg outline-none bg-white" value={selectedVehicleForPrint} onChange={e => setSelectedVehicleForPrint(e.target.value)}><option value="">-- Select Truck --</option>{vehicles.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}</select>{vehicles.length === 0 && <p className="text-xs text-red-500 mt-1">No trucks defined. Add them in Van/Truck ID tab.</p>}</div><div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 border border-blue-100"><p className="font-bold mb-1">Ready to print for:</p><p>Driver: {printData.driverName}</p><p>Stops: {printData.stops.length}</p></div></div><div className="p-4 border-t border-slate-100 bg-white flex gap-3"><button onClick={() => setShowPrintModal(false)} className="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-600 hover:bg-slate-50">Cancel</button><button onClick={handlePrint} className="flex-1 py-3 bg-slate-800 text-white rounded-lg font-bold hover:bg-black flex items-center justify-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print Now</button></div></div></div>)}
-                    {viewingDriver && (<div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 animate-fade-in"><div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden relative"><div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center z-10 relative"><h3 className="font-bold text-slate-800 flex items-center gap-2"><Icon name="map" className="h-5 w-5 text-ess-blue" /> Route: {viewingDriver.name}</h3><button onClick={() => setViewingDriver(null)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-6 w-6" /></button></div><div className="flex-1 relative w-full h-full"><GlobalMapView routes={{ [viewingDriver.name]: viewingDriver.data }} baseAddress={baseAddress} /></div></div></div>)}
-                    {showBulkImportModal && (
-                        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
-                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-2xl h-[80vh] flex flex-col">
-                                <div className="flex justify-between items-center mb-4 border-b pb-2">
-                                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                                        <Icon name="upload" className="h-5 w-5 text-ess-blue" /> 
-                                        Importación Masiva desde Excel
-                                    </h3>
-                                    <button onClick={() => setShowBulkImportModal(false)} className="text-slate-400 hover:text-red-500">
-                                        <Icon name="x" className="h-5 w-5" />
-                                    </button>
-                                </div>
-                                
-                                <div className="flex-1 flex flex-col space-y-4">
-                                    <p className="text-sm text-slate-500">
-                                        Copia y pega las columnas de tu Excel aquí. <br/>
-                                        <strong>Formato:</strong> Columna A (Nombre) [TAB] Columna B (Dirección).
-                                    </p>
-                                    
-                                    <textarea 
-                                        className="flex-1 p-3 border border-slate-300 rounded-lg font-mono text-xs outline-none focus:ring-2 focus:ring-ess-blue"
-                                        placeholder="Pega las filas aquí..."
-                                        value={bulkInputText}
-                                        onChange={(e) => setBulkInputText(e.target.value)}
-                                    ></textarea>
-                                    
-                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-xs text-blue-700">
-                                        <Icon name="info" className="h-3 w-3 inline mr-1" />
-                                        Los registros se añadirán tal cual están en el texto. Podrás editarlos después individualmente.
-                                    </div>
-                                </div>
-                                
-                                <div className="mt-6 flex gap-3">
-                                    <button onClick={() => setShowBulkImportModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">
-                                        Cancelar
-                                    </button>
-                                    <button 
-                                        onClick={handleBulkImport} 
-                                        disabled={importLoading || !bulkInputText.trim()} 
-                                        className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg flex justify-center items-center gap-2"
-                                    >
-                                        {importLoading ? <div className="loader"></div> : <><Icon name="plus" className="h-4 w-4" /> Iniciar Importación</>}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+
+                    {/* HEADER */}
                     <header className="bg-white border-b border-slate-200 sticky top-0 z-50 no-print">
                           <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
                             <div className="flex items-center gap-4">
@@ -1722,30 +1689,106 @@
                                 </div>
                             </div>
                         )}
-                        {view === 'clients' && (<div className="max-w-4xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients</h2></div>
-                        <div className="flex items-center gap-2">
-                        <button onClick={() => setShowBulkImportModal(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-300 flex items-center gap-2 transition-colors">
-                            <Icon name="upload" className="h-3.5 w-3.5" /> Import Excel
-                        </button>
-                        <span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-500 border border-slate-200">{clientDB.length} Clients</span>
-                        </div></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex flex-col md:flex-row gap-4"><input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} /><div className="flex-[2] relative"><GoogleAddressInput value={clientFormAddress} onChange={(e) => { setClientFormAddress(e.target.value); setShowClientDbAddressSuggestions(true); }} onKeyDown={(e) => handleEnter(e, saveClient)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} />{showClientDbAddressSuggestions && suggestionsForClientDbAddress.length > 0 && (<div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{suggestionsForClientDbAddress.map((c, i) => (<div key={i} onClick={() => { setClientFormName(c.name); setClientFormAddress(c.address); setEditingClientId(c.id); setShowClientDbAddressSuggestions(false); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>)}</div><button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button></div></div><div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{filteredClientDBList.map(c => {
-                            const isInRoute = currentStops.some(s => s.address === c.address);
-                            return (
-                            <tr key={c.id} className="hover:bg-slate-50">
-                                <td className="p-4 font-medium">{c.name}</td>
-                                <td className="p-4 text-sm text-slate-600">{c.address}</td>
-                                <td className="p-4 text-right">
-                                    <div className="flex justify-end gap-2">
-                                        <button onClick={() => addClientToRoute(c)} className={`p-1 rounded transition-colors ${isInRoute ? 'text-green-600 bg-green-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`} title="Add to Today's Route">
-                                            <Icon name={isInRoute ? "check-circle" : "plus-circle"} className="h-4 w-4" />
-                                        </button>
-                                        <button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1 hover:bg-blue-50 rounded"><Icon name="pencil" className="h-4 w-4"/></button>
-                                        <button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1 hover:bg-red-50 rounded"><Icon name="trash-2" className="h-4 w-4"/></button>
+                        {view === 'clients' && (
+                            <div className="max-w-4xl mx-auto animate-fade-in">
+                                <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden">
+                                    <div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center">
+                                        <div><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="database" className="h-5 w-5 text-ess-blue" /> Clients</h2></div>
+                                        <div className="flex items-center gap-2">
+                                            <button onClick={() => setShowBulkImportModal(true)} className="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-black transition-colors">
+                                                <Icon name="upload" className="h-4 w-4" /> Import Excel
+                                            </button>
+                                            <span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-500 border border-slate-200">{clientDB.length} Clients</span>
+                                        </div>
                                     </div>
-                                </td>
-                            </tr>
-                        )})}</tbody></table></div></div></div>)}
-                        {view === 'vehicles' && (<div className="max-w-2xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="truck" className="h-5 w-5 text-ess-blue" /> Fleet Management</h2><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-500 border border-slate-200">{vehicles.length} Trucks</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex gap-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }})} /><button onClick={() => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }}} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="plus" className="h-4 w-4" /> Add Truck</button></div></div><div className="max-h-[500px] overflow-y-auto"><table className="w-full text-left border-collapse"><tbody className="divide-y divide-slate-100">{vehicles.length === 0 ? <tr><td className="p-8 text-center text-slate-400">No vehicles added yet.</td></tr> : vehicles.map(v => (<tr key={v.id} className="hover:bg-slate-50"><td className="p-4 font-bold text-slate-700 flex items-center gap-3"><div className="bg-blue-100 p-2 rounded-full"><Icon name="truck" className="h-4 w-4 text-ess-blue" /></div> {v.name}</td><td className="p-4 text-right"><button onClick={() => deleteVehicle(v.id)} className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-5 w-5" /></button></td></tr>))}</tbody></table></div></div></div>)}
+                                    <div className="p-6 bg-blue-50/50 border-b border-slate-200">
+                                        <div className="flex flex-col md:flex-row gap-4">
+                                            <input type="text" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Search / New Name..." value={clientFormName} onChange={(e) => setClientFormName(e.target.value)} onKeyDown={(e) => handleEnter(e, saveClient)} />
+                                            <div className="flex-[2] relative">
+                                                <GoogleAddressInput value={clientFormAddress} onChange={(e) => { setClientFormAddress(e.target.value); setShowClientDbAddressSuggestions(true); }} onKeyDown={(e) => handleEnter(e, saveClient)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" placeholder="Address" disabled={!scriptLoaded} isLoaded={scriptLoaded} />
+                                                {showClientDbAddressSuggestions && suggestionsForClientDbAddress.length > 0 && (<div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{suggestionsForClientDbAddress.map((c, i) => (<div key={i} onClick={() => { setClientFormName(c.name); setClientFormAddress(c.address); setEditingClientId(c.id); setShowClientDbAddressSuggestions(false); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>)}
+                                            </div>
+                                            <button onClick={saveClient} disabled={!clientFormName || !clientFormAddress} className="bg-ess-green text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Icon name={editingClientId ? 'save' : 'plus'} className="h-4 w-4" /> {editingClientId ? 'Save' : 'Add'}</button>
+                                        </div>
+                                    </div>
+                                    <div className="max-h-[600px] overflow-y-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <tbody className="divide-y divide-slate-100">
+                                                {filteredClientDBList.map(c => {
+                                                    const isInRoute = currentStops.some(s => s.address === c.address);
+                                                    return (
+                                                        <tr key={c.id} className="hover:bg-slate-50">
+                                                            <td className="p-4 font-medium">{c.name}</td>
+                                                            <td className="p-4 text-sm text-slate-600">{c.address}</td>
+                                                            <td className="p-4 text-right">
+                                                                <div className="flex justify-end gap-2">
+                                                                    <button onClick={() => addClientToRoute(c)} className={`p-1 rounded transition-colors ${isInRoute ? 'text-green-600 bg-green-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`} title="Add to Today's Route">
+                                                                        <Icon name={isInRoute ? "check-circle" : "plus-circle"} className="h-4 w-4" />
+                                                                    </button>
+                                                                    <button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1 hover:bg-blue-50 rounded"><Icon name="pencil" className="h-4 w-4"/></button>
+                                                                    <button onClick={()=>deleteClient(c.id)} className="text-red-500 p-1 hover:bg-red-50 rounded"><Icon name="trash-2" className="h-4 w-4"/></button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {view === 'vehicles' && (
+                            <div className="max-w-2xl mx-auto animate-fade-in">
+                                <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden">
+                                    <div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center">
+                                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="truck" className="h-5 w-5 text-ess-blue" /> Fleet Management</h2>
+                                        <span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-500 border border-slate-200">{vehicles.length} Trucks</span>
+                                    </div>
+                                    <div className="p-6 bg-blue-50/50 border-b border-slate-200">
+                                        <div className="flex gap-4">
+                                            <input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }})} />
+                                            <button onClick={() => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }}} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="plus" className="h-4 w-4" /> Add Truck</button>
+                                        </div>
+                                    </div>
+                                    <div className="max-h-[500px] overflow-y-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-bold border-b border-slate-200">
+                                                <tr>
+                                                    <th className="p-4">Truck Name</th>
+                                                    <th className="p-4">Assigned To (Default)</th>
+                                                    <th className="p-4 text-right">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {vehicles.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No vehicles added yet.</td></tr> : vehicles.map(v => (
+                                                    <tr key={v.id} className="hover:bg-slate-50">
+                                                        <td className="p-4 font-bold text-slate-700 flex items-center gap-3">
+                                                            <div className="bg-blue-100 p-2 rounded-full"><Icon name="truck" className="h-4 w-4 text-ess-blue" /></div> {v.name}
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <select 
+                                                                className="p-1.5 border rounded-lg text-sm bg-white outline-none focus:ring-1 focus:ring-ess-blue w-full max-w-[150px]"
+                                                                value={v.assignedDriverId || ""}
+                                                                onChange={(e) => assignVehicleToDriver(v.id, e.target.value)}
+                                                            >
+                                                                <option value="">-- No Driver --</option>
+                                                                {drivers.map(d => (
+                                                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                                                ))}
+                                                            </select>
+                                                        </td>
+                                                        <td className="p-4 text-right">
+                                                            <button onClick={() => deleteVehicle(v.id)} className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-5 w-5" /></button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         
                         {view === 'global_map' && <div className="flex flex-col h-[calc(100vh-120px)]"><div className="mb-4"><button onClick={() => setView('results')} className="text-slate-600 px-4 py-2 border rounded-lg bg-white hover:bg-slate-50 font-bold flex items-center gap-2 shadow-sm"><Icon name="arrow-left" className="h-4 w-4" /> Back to Results</button></div><div className="flex-1 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative"><GlobalMapView routes={routes} baseAddress={baseAddress} /></div></div>}
 
@@ -1785,11 +1828,11 @@
                                             <p className="text-[10px] text-slate-400 mt-1">Use commas for individual stops and dashes for ranges.</p>
                                         </div>
                                         <div className="flex gap-2">
-                                            <input list="savedZones" type="text" placeholder="Zone Name (e.g. MIAMI)" className="flex-1 p-2 border rounded text-sm uppercase" value={groupNameInput} onChange={e => setGroupNameInput(e.target.value)} />
+                                            <input list="savedZones" type="text" placeholder="Zone Name" className="flex-1 p-2 border rounded text-sm uppercase" value={groupNameInput} onChange={e => setGroupNameInput(e.target.value)} />
                                             <datalist id="savedZones">
                                                 {zones.map(z => <option key={z.id} value={z.name} />)}
                                             </datalist>
-                                            <button onClick={saveGroup} className={`text-white px-3 py-2 rounded font-bold text-xs ${editingGroupId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-ess-blue hover:bg-ess-blue/90'}`}>
+                                            <button onClick={saveGroup} className={`text-white px-3 py-2 rounded font-bold text-xs ${editingGroupId ? 'bg-orange-500' : 'bg-ess-blue'}`}>
                                                 {editingGroupId ? 'Update' : 'Create'}
                                             </button>
                                         </div>
@@ -1804,7 +1847,7 @@
                                                         {group.name}
                                                     </div>
                                                     <div className="flex items-center gap-2">
-                                                        <button onClick={() => startEditGroup(group)} className="text-slate-400 hover:text-blue-500 p-1" title="Edit Zone Data">
+                                                        <button onClick={() => startEditGroup(group)} className="text-slate-400 hover:text-blue-500 p-1">
                                                             <Icon name="pencil" className="h-4 w-4" />
                                                         </button>
                                                         <button onClick={() => deleteGroup(group.id)} className="text-red-400 hover:text-red-600 p-1">
@@ -1818,7 +1861,7 @@
                                                 <div className="border-t border-slate-100 pt-2">
                                                     <div className="flex justify-between items-center mb-1">
                                                         <p className="text-[10px] font-bold text-slate-400 uppercase">Assign Drivers:</p>
-                                                        <button onClick={() => handleAddDriverClick(group)} className="text-ess-blue hover:bg-blue-50 p-1 rounded transition-colors" title="Add Inactive/New Driver">
+                                                        <button onClick={() => handleAddDriverClick(group)} className="text-ess-blue hover:bg-blue-50 p-1 rounded transition-colors">
                                                             <Icon name="user-plus" className="h-3.5 w-3.5" />
                                                         </button>
                                                     </div>
@@ -1836,7 +1879,7 @@
                                                 </div>
                                             </div>
                                         ))}
-                                        {stopGroups.length === 0 && <p className="text-center text-slate-400 text-sm py-4 italic">No zones created yet. Use the map to decide ranges.</p>}
+                                        {stopGroups.length === 0 && <p className="text-center text-slate-400 text-sm py-4 italic">No zones created yet.</p>}
                                     </div>
 
                                     <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-2">
@@ -1848,7 +1891,6 @@
                                         <button onClick={handleGroupedOptimize} disabled={loading || stopGroups.length === 0} className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold shadow-lg flex justify-center items-center gap-2 disabled:opacity-50">
                                             {loading ? <div className="loader"></div> : <><Icon name="zap" className="h-5 w-5" /> GENERATE FINAL ROUTES</>}
                                         </button>
-                                        {error && <p className="text-xs text-red-500 mt-2 text-center">{error}</p>}
                                     </div>
                                 </div>
 
@@ -1891,7 +1933,6 @@
                                                         disabled={!scriptLoaded} 
                                                         isLoaded={scriptLoaded} 
                                                     />
-                                                    
                                                     <input 
                                                         ref={invisibleAddressInputRef} 
                                                         className="absolute opacity-0 w-1 h-1 -z-10 bottom-0 right-0 pointer-events-none" 
@@ -1899,13 +1940,11 @@
                                                         tabIndex="-1" 
                                                         autoComplete="off"
                                                     />
-
                                                     {showAddressSuggestions && filteredClientsByAddress.length > 0 && <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{filteredClientsByAddress.map((c, i) => (<div key={i} onClick={() => { selectClient(c); setTempStopData({name: c.name, address: c.address}); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
                                                 </div>
                                             </div>
                                             <div className="flex justify-end"><button onClick={initiateAddStop} disabled={!newStopAddress} className="bg-ess-blue text-white px-6 py-2.5 rounded-lg font-bold shadow-md flex items-center gap-2 disabled:opacity-50"><Icon name="arrow-right" className="h-4 w-4" /> Next</button></div>
                                     </div>
-
                                     <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden min-h-[300px]">
                                             <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
                                                 <div className="flex items-center gap-2">
@@ -1921,7 +1960,6 @@
                                                         <div className="flex-1">
                                                             <h4 className="font-bold text-slate-800">{stop.name}</h4>
                                                             <p className="text-sm text-slate-500 flex items-center gap-1"><Icon name="map-pin" className="h-3 w-3" /> {stop.address}</p>
-                                                            {(stop.invoices || stop.pieces) && <div className="flex gap-3 mt-1 text-xs font-mono text-slate-500 bg-slate-100 inline-block px-2 py-1 rounded"><span>Inv: {stop.invoices || '-'}</span><span>Pcs: {stop.pieces || '-'}</span></div>}
                                                         </div>
                                                         <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <button onClick={() => startEditDraft(stop)} className="p-2 text-slate-300 hover:text-ess-blue hover:bg-blue-50 rounded-lg transition-colors"><Icon name="pencil" className="h-4 w-4" /></button>
@@ -1932,16 +1970,8 @@
                                             </div>
                                     </div>
                                 </div>
-
                                 <div className="lg:col-span-5 space-y-6">
-                                    <div className="bg-ess-light px-4 py-2 rounded-lg border border-blue-100 flex items-center gap-2"><Icon name="map-pin" className="h-5 w-5 text-ess-blue shrink-0" /><div className="text-xs w-full"><span className="block text-slate-400 font-semibold uppercase">Base (Start/End)</span><GoogleAddressInput value={baseAddress} onChange={handleBaseAddressChange} className="bg-transparent font-bold text-slate-700 outline-none w-full" placeholder="Warehouse" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div></div>
-                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 pb-3 border-b border-slate-100"><Icon name="users" className="h-5 w-5 text-ess-blue" /> Drivers</h3><div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }})} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div><div className="grid grid-cols-1 xl:grid-cols-2 gap-2 overflow-y-auto overflow-x-hidden">{drivers.map(driver => (<div key={driver.id} className="group relative"><label className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer h-full ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}><div className="flex items-center gap-2 min-w-0"><div className={`w-2 h-2 shrink-0 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div><span className={`font-medium text-sm truncate ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span></div><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-4 h-4 accent-ess-green shrink-0 ml-2" /></label><button onClick={(e) => { e.preventDefault(); deleteDriver(driver.id); }} className="absolute -right-1 -top-1 bg-white text-slate-400 hover:text-red-500 border border-slate-200 rounded-full p-0.5 opacity-0 group-hover:opacity-100 shadow-sm z-10"><Icon name="x" className="h-3 w-3" /></button></div>))}</div></div>
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">
-                                        {error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}
-                                        {!loading && routes && (<>
-                                            <p className="text-xs text-center text-slate-500 mb-1">Previous routes found</p>
-                                            <button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-3 rounded-xl font-bold text-sm shadow mb-3 transition-all flex justify-center items-center gap-2"><Icon name="map" className="h-5 w-5" /> GO TO RESULTS</button>
-                                        </>)}
                                         <button onClick={handlePlanZones} disabled={currentStops.length === 0} className="w-full bg-slate-800 hover:bg-black text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-slate-900/20 transition-all flex justify-center items-center gap-2 disabled:opacity-75">
                                             {loading ? <div className="loader"></div> : <><Icon name="map" className="h-6 w-6" /> PLAN ZONES & MAP</>}
                                         </button>
@@ -1954,152 +1984,45 @@
                             <div className="animate-fade-in space-y-4 relative h-full flex flex-col">
                                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0">
                                      <div className="flex gap-2">
-                                        <button onClick={() => { setView('zone_planning'); }} className="text-slate-600 hover:text-ess-blue px-4 py-2 rounded-lg font-bold border border-slate-200 flex items-center gap-2 text-sm"><Icon name="arrow-left" className="h-4 w-4" /> Back to Planning</button>
-                                        <button onClick={handleAddRoute} className="text-xs font-bold text-white bg-ess-blue hover:bg-sky-700 px-3 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="plus" className="h-3 w-3" /> Add Route</button>
+                                        <button onClick={() => setView('zone_planning')} className="text-slate-600 hover:text-ess-blue px-4 py-2 rounded-lg font-bold border border-slate-200 flex items-center gap-2 text-sm"><Icon name="arrow-left" className="h-4 w-4" /> Back to Planning</button>
                                      </div>
                                      <div className="flex gap-2">
-                                          <button onClick={handleSaveRoute} className="text-xs font-bold text-white bg-green-600 hover:bg-green-700 px-3 py-2 rounded-lg flex items-center gap-2 shadow-sm">
-                                              <Icon name="save" className="h-3 w-3" /> Save Route
-                                          </button>
+                                          <button onClick={handleSaveRoute} className="text-xs font-bold text-white bg-green-600 hover:bg-green-700 px-3 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="save" className="h-3 w-3" /> Save Route</button>
                                           <button onClick={handleRestore} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-3 py-2 rounded-lg flex items-center gap-2"><Icon name="rotate-ccw" className="h-3 w-3" /> Reset</button>
                                           <button onClick={() => setView('global_map')} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-3 py-2 rounded-lg flex items-center gap-2"><Icon name="map" className="h-3 w-3" /> Map</button>
                                           <button onClick={handleGlobalPrint} className="text-xs font-bold text-white bg-slate-800 hover:bg-black px-3 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="printer" className="h-3 w-3" /> Print All</button>
                                      </div>
                                 </div>
-
                                 <div ref={resultsContainerRef} onDragOver={handleResultsDragOver} className="flex-1 overflow-y-auto pb-20"> 
                                     <div className="flex flex-col gap-8 px-2"> 
-                                        
                                         {[null, ...zones].map((zone, zIdx) => {
-                                            const zoneId = zone ? zone.id : 'unassigned';
-                                            const zoneName = zone ? zone.name : 'UNASSIGNED';
                                             const validZoneIds = zones.map(z => z.id);
-
                                             const driversInZone = Object.entries(routes).filter(([dName, _]) => {
                                                 const assignedId = zoneAssignments[dName];
-                                                if (zone === null) {
-                                                    return !assignedId || !validZoneIds.includes(assignedId);
-                                                }
+                                                if (zone === null) return !assignedId || !validZoneIds.includes(assignedId);
                                                 return assignedId === zone.id;
                                             });
-
                                             if (driversInZone.length === 0) return null;
-
                                             const headerColorClass = zone ? COMPANY_PALETTE[(zIdx - 1) % COMPANY_PALETTE.length].tw : 'bg-slate-600 text-white';
-
                                             return (
-                                                <div 
-                                                    key={zoneId}
-                                                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                                                    onDrop={(e) => {
-                                                        e.preventDefault();
-                                                        if (draggedDriver) {
-                                                            assignDriverToZone(draggedDriver, zone ? zone.id : null);
-                                                            setDraggedDriver(null);
-                                                        }
-                                                    }}
-                                                    className={`w-full rounded-xl transition-all ${draggedDriver ? 'bg-slate-50 border-2 border-dashed border-slate-300' : 'bg-transparent'}`}
-                                                >
-                                                    <div className={`p-3 rounded-lg font-bold text-sm flex justify-between items-center mb-4 shadow-sm ${headerColorClass}`}>
-                                                        <span className="tracking-wide">{zoneName}</span>
-                                                        <span className="bg-white/20 px-3 py-0.5 rounded-full text-xs font-bold text-white">{driversInZone.length}</span>
-                                                    </div>
-
+                                                <div key={zone ? zone.id : 'unassigned'}>
+                                                    <div className={`p-3 rounded-lg font-bold text-sm mb-4 shadow-sm ${headerColorClass}`}>{zone ? zone.name : 'UNASSIGNED'}</div>
                                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-1">
                                                         {driversInZone.map(([driverName, data]) => (
-                                                            <div 
-                                                                key={driverName}
-                                                                draggable="true"
-                                                                onDragStart={(e) => {
-                                                                    if (e.target.closest('.stop-item')) return; 
-                                                                    setDraggedDriver(driverName);
-                                                                    e.dataTransfer.effectAllowed = "move";
-                                                                    e.target.style.opacity = '0.5';
-                                                                }}
-                                                                onDragEnd={(e) => {
-                                                                    e.target.style.opacity = '1';
-                                                                    setDraggedDriver(null);
-                                                                }}
-                                                                className={`bg-white rounded-xl border border-slate-200 card-shadow flex flex-col overflow-hidden relative group transition-all ${draggedDriver === driverName ? 'rotate-3 scale-95 opacity-50' : 'hover:border-ess-blue hover:shadow-md'}`}
-                                                                onDragOver={(e) => handleDragOverContainer(e, driverName)} 
-                                                                onDrop={(e) => {
-                                                                    e.stopPropagation(); 
-                                                                    handleDrop(e, driverName);
-                                                                }}
-                                                            >
-                                                                <div className="absolute top-2 right-2 z-20 flex items-center gap-2">
-                                                                    <button 
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation(); 
-                                                                            recalculateRoute(driverName, data.paradas);
-                                                                        }}
-                                                                        className="bg-white text-ess-blue p-1 rounded-full shadow-sm border border-slate-200 hover:bg-blue-50 transition-colors"
-                                                                        title="Recalculate Route"
-                                                                    >
-                                                                        {recalculating[driverName] ? <div className="loader w-3 h-3 border-2"></div> : <Icon name="refresh-cw" className="h-4 w-4" />}
-                                                                    </button>
-
-                                                                    <input 
-                                                                        type="checkbox" 
-                                                                        className="w-5 h-5 accent-ess-blue cursor-pointer shadow-sm border-2 border-white rounded"
-                                                                        checked={selectedDriversForZone.includes(driverName)}
-                                                                        onChange={(e) => {
-                                                                            if(e.target.checked) setSelectedDriversForZone(prev => [...prev, driverName]);
-                                                                            else setSelectedDriversForZone(prev => prev.filter(n => n !== driverName));
-                                                                        }}
-                                                                    />
-                                                                </div>
-
-                                                                <div className="bg-slate-50 p-5 border-b border-slate-100">
-                                                                    <div className="flex justify-between items-center mb-4 relative pr-6">
-                                                                            <h3 className="font-bold text-xl text-slate-800 flex items-center gap-3">
-                                                                                <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm"><Icon name="user" className="h-5 w-5 text-ess-blue" /></div> {driverName}
-                                                                                    <button onClick={() => initiateManualStop(driverName)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded-full transition-colors shadow-sm ml-2" title="Add Stop Manually"><Icon name="plus" className="h-4 w-4" /></button>
-                                                                                    
-                                                                                    <button onClick={() => setSwappingDriver(swappingDriver === driverName ? null : driverName)} className="text-slate-400 hover:text-ess-blue p-1.5 rounded hover:bg-blue-50 transition-colors ml-1" title="Swap Driver Route">
-                                                                                        <Icon name="arrow-left-right" className="h-4 w-4" />
-                                                                                    </button>
-                                                                            </h3>
-                                                                            {swappingDriver === driverName && (
-                                                                                <div className="absolute top-12 left-0 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-2 w-56 animate-fade-in">
-                                                                                        <p className="text-xs font-bold text-slate-500 mb-2 px-2 uppercase">Swap route with:</p>
-                                                                                        {Object.keys(routes).filter(d => d !== driverName).map(otherDriver => (
-                                                                                            <button key={otherDriver} onClick={() => handleSwapDriver(driverName, otherDriver)} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded text-sm text-slate-700 flex items-center gap-2 transition-colors">
-                                                                                                <div className="w-2 h-2 rounded-full bg-ess-green"></div>
-                                                                                                <span className="truncate">{otherDriver}</span>
-                                                                                            </button>
-                                                                                        ))}
-                                                                                </div>
-                                                                            )}
-                                                                    </div>
-                                                                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
-                                                                            <div className="bg-white p-2 rounded border border-slate-100 flex items-center gap-2">{recalculating[driverName] ? <span className="text-ess-blue font-bold">Updating...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(data.duracion_estimada / 60)}h {Math.round(data.duracion_estimada % 60)}m</>}</div>
-                                                                            <div className="flex gap-1 justify-end">
-                                                                                <button onClick={() => reverseRoute(driverName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
-                                                                                <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize"><Icon name="wand-2" className="h-4 w-4" /></button>
-                                                                                <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded border border-slate-900 hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
-                                                                            </div>
-                                                                    </div>
+                                                            <div key={driverName} className="bg-white rounded-xl border border-slate-200 card-shadow flex flex-col overflow-hidden relative group transition-all">
+                                                                <div className="bg-slate-50 p-5 border-b border-slate-100 font-bold flex justify-between items-center">
+                                                                    <span>{driverName}</span>
+                                                                    <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
                                                                 </div>
                                                                 <div className="p-0 flex-1 overflow-y-auto max-h-[400px]">
-                                                                        <ul className="divide-y divide-slate-100 min-h-[50px]">
-                                                                            {data.paradas.map((stop, index) => (
-                                                                                <li key={index} className={`stop-item relative pr-8 p-4 hover:bg-slate-50 transition-colors flex gap-3 group items-start cursor-grab active:cursor-grabbing ${selectedStops.find(s => s.driver === driverName && s.index === index) ? 'bg-blue-50' : ''}`} draggable="true" onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, driverName, index); }} onDragEnd={(e) => { e.stopPropagation(); handleDragEnd(e); }} onDrop={(e) => { e.stopPropagation(); handleDrop(e, driverName, index); }} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                                                                                        <div className="pt-1" onMouseDown={(e) => e.stopPropagation()}><input type="checkbox" className="custom-checkbox" checked={!!selectedStops.find(s => s.driver === driverName && s.index === index)} onChange={() => toggleStopSelection(driverName, index)} /></div>
-                                                                                        <div className="flex flex-col items-center gap-1 pt-1"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center border border-slate-200">{index + 1}</span></div>
-                                                                                        <div className="flex-1"><div className="font-bold text-sm text-slate-800">{getClientNameFromAddress(stop.direccion)}</div><div className="text-xs text-slate-500 mt-0.5">{stop.direccion}</div>{(stop.invoices || stop.pieces) && <div className="mt-1 flex gap-2"><span className="bg-yellow-50 text-yellow-700 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-mono">INV: {stop.invoices}</span><span className="bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded border border-blue-200 font-mono">PCS: {stop.pieces}</span></div>}</div>
-                                                                                        <div className="absolute right-2 top-2 bottom-2 flex flex-col justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onMouseDown={(e) => e.stopPropagation()}>
-                                                                                            <div className="flex gap-1 justify-end"><button onClick={() => openEditStopModal(driverName, index, stop)} className="p-0.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded"><Icon name="pencil" className="h-3.5 w-3.5" /></button><button onClick={() => deleteStopFromRoute(driverName, index)} className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Icon name="trash-2" className="h-3.5 w-3.5" /></button></div>
-                                                                                            <div className="flex gap-1 justify-end"><button onClick={() => moveStop(driverName, index, -1)} disabled={index === 0} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-up" className="h-3.5 w-3.5" /></button><button onClick={() => moveStop(driverName, index, 1)} disabled={index === data.paradas.length - 1} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-down" className="h-3.5 w-3.5" /></button></div>
-                                                                                        </div>
-                                                                                </li>
-                                                                            ))}
-                                                                        </ul>
-                                                                </div>
-                                                                <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex gap-2">
-                                                                        <button onClick={(e) => { e.stopPropagation(); openDriverMap(driverName, data); }} className="flex-1 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="map" className="h-4 w-4" /> Map</button>
-                                                                        <a href={data.link} target="_blank" rel="noreferrer" className="px-4 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue hover:text-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="send" className="h-4 w-4" /></a>
-                                                                        <a href={getWhatsappLink(data.link)} target="_blank" rel="noreferrer" className="px-4 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="message-circle" className="h-4 w-4" /></a>
+                                                                    <ul className="divide-y divide-slate-100">
+                                                                        {data.paradas.map((stop, index) => (
+                                                                            <li key={index} className="p-4 flex gap-3 group items-start">
+                                                                                <span className="w-6 h-6 shrink-0 rounded-full bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center border border-slate-200">{index + 1}</span>
+                                                                                <div className="flex-1"><div className="font-bold text-sm text-slate-800">{stop.nombre}</div><div className="text-xs text-slate-500">{stop.direccion}</div></div>
+                                                                            </li>
+                                                                        ))}
+                                                                    </ul>
                                                                 </div>
                                                             </div>
                                                         ))}
@@ -2109,38 +2032,9 @@
                                         })}
                                     </div>
                                 </div>
-
-                                {selectedDriversForZone.length > 0 && (
-                                    <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white p-4 rounded-2xl shadow-2xl z-50 flex flex-col md:flex-row items-center gap-4 animate-fade-in border border-slate-700">
-                                            <div className="flex items-center gap-2">
-                                                <span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{selectedDriversForZone.length}</span>
-                                                <span className="font-bold text-sm">Drivers Selected</span>
-                                            </div>
-                                            <div className="flex flex-wrap justify-center gap-2">
-                                                <span className="text-xs text-slate-400 self-center uppercase font-bold mr-1">Move to:</span>
-                                                <button onClick={() => moveSelectedDriversToZone(null)} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold transition-colors border border-slate-600">UNASSIGNED</button>
-                                                {zones.map(z => (
-                                                    <button key={z.id} onClick={() => moveSelectedDriversToZone(z.id)} className="px-3 py-1.5 bg-slate-700 hover:bg-ess-blue rounded-lg text-xs font-bold transition-colors border border-slate-600 hover:border-ess-blue">
-                                                        {z.name}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                            <button onClick={() => setSelectedDriversForZone([])} className="ml-2 text-slate-400 hover:text-white p-1 hover:bg-slate-700 rounded-full transition-colors">
-                                                <Icon name="x" className="h-5 w-5" />
-                                            </button>
-                                    </div>
-                                )}
-
-                                {selectedStops.length > 0 && selectedDriversForZone.length === 0 && (
-                                    <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 animate-fade-in border border-slate-700">
-                                            <div className="flex items-center gap-2"><span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{selectedStops.length}</span><span className="font-bold text-sm">Stops</span></div>
-                                            <div className="h-6 w-px bg-slate-600"></div>
-                                            <div className="flex gap-2"><span className="text-xs text-slate-400 self-center uppercase font-bold mr-1">Move to:</span>{Object.keys(routes).map(driver => (<button key={driver} onClick={() => transferSelectedStops(driver)} className="px-3 py-1.5 bg-slate-700 hover:bg-ess-blue rounded-lg text-xs font-bold transition-colors border border-slate-600 hover:border-ess-blue">{driver}</button>))}</div>
-                                            <button onClick={() => setSelectedStops([])} className="ml-2 text-slate-400 hover:text-white p-1 hover:bg-slate-700 rounded-full transition-colors"><Icon name="x" className="h-5 w-5" /></button>
-                                    </div>
-                                )}
                             </div>
                         )}
+                        {showPrintModal && (<div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print animate-fade-in"><div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"><div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold text-slate-800">Print Manifest</h3><button onClick={() => setShowPrintModal(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-5 w-5" /></button></div><div className="p-6 space-y-6"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Truck for this Sheet</label><select className="w-full p-3 border border-slate-300 rounded-lg outline-none bg-white" value={selectedVehicleForPrint} onChange={e => setSelectedVehicleForPrint(e.target.value)}><option value="">-- Select Truck --</option>{vehicles.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}</select>{vehicles.length === 0 && <p className="text-xs text-red-500 mt-1">No trucks defined. Add them in Van/Truck ID tab.</p>}</div><div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 border border-blue-100"><p className="font-bold mb-1">Ready to print for:</p><p>Driver: {printData?.driverName}</p><p>Stops: {printData?.stops.length}</p></div></div><div className="p-4 border-t border-slate-100 bg-white flex gap-3"><button onClick={() => setShowPrintModal(false)} className="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-600 hover:bg-slate-50">Cancel</button><button onClick={handlePrint} className="flex-1 py-3 bg-slate-800 text-white rounded-lg font-bold hover:bg-black flex items-center justify-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print Now</button></div></div></div>)}
                     </main>
                 </div>
             );
