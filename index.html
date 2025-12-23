@@ -380,20 +380,25 @@
 
                 const renderFallbackMarkers = (stops, color, groupName) => {
                     stops.forEach((stop, i) => {
+                        // Safety check: ensure stop exists and has address to prevent crashes
+                        if (!stop || !stop.direccion) return;
+
                         const pos = parseCoord(stop.coord || stop.latlng);
                         const stopIdx = stop.originalIndex || i + 1;
-                        const contentString = `<div style="padding: 4px; font-family: sans-serif;"><strong style="color:${color}">${groupName}</strong><br/><b>${stop.nombre}</b><br/><span style="font-size:11px">${stop.direccion}</span></div>`;
+                        const contentString = `<div style="padding: 4px; font-family: sans-serif;"><strong style="color:${color}">${groupName}</strong><br/><b>${stop.nombre || 'Client'}</b><br/><span style="font-size:11px">${stop.direccion}</span></div>`;
 
                         if (pos) {
-                            addMarker(pos, stop.nombre, stopIdx.toString(), color, contentString, stopIdx);
+                            addMarker(pos, stop.nombre || 'Client', stopIdx.toString(), color, contentString, stopIdx);
                         } else {
                             setTimeout(() => {
-                                geocoderRef.current.geocode({ address: stop.direccion }, (results, status) => {
-                                    if (status === 'OK' && results[0]) {
-                                        const loc = results[0].geometry.location;
-                                        addMarker(loc, stop.nombre, stopIdx.toString(), color, contentString, stopIdx);
-                                    }
-                                });
+                                if (geocoderRef.current) {
+                                    geocoderRef.current.geocode({ address: stop.direccion }, (results, status) => {
+                                        if (status === 'OK' && results[0]) {
+                                            const loc = results[0].geometry.location;
+                                            addMarker(loc, stop.nombre || 'Client', stopIdx.toString(), color, contentString, stopIdx);
+                                        }
+                                    });
+                                }
                             }, i * 300);
                         }
                     });
@@ -439,9 +444,12 @@
                         return;
                     }
 
-                    const waypoints = routeData.paradas.map(stop => ({ location: stop.direccion, stopover: true }));
+                    // Filter out invalid stops for routing to prevent crashes
+                    const waypoints = routeData.paradas
+                        .filter(stop => stop && stop.direccion)
+                        .map(stop => ({ location: stop.direccion, stopover: true }));
                     
-                    if (waypoints.length <= 25) {
+                    if (waypoints.length <= 25 && waypoints.length > 0) {
                         directionsService.route({ 
                             origin: baseAddress, destination: baseAddress, waypoints: waypoints, 
                             optimizeWaypoints: false, travelMode: window.google.maps.TravelMode.DRIVING 
@@ -461,10 +469,10 @@
                                 
                                 const legs = response.routes[0].legs;
                                 routeData.paradas.forEach((stop, i) => {
-                                    if (i < legs.length) {
+                                    if (i < legs.length && stop) {
                                         const stopIdx = stop.originalIndex || i + 1;
-                                        const contentString = `<div style="padding: 4px; font-family: sans-serif;"><strong style="color:${color}">${groupName}</strong><br/><b>${stop.nombre}</b><br/><span style="font-size:11px">${stop.direccion}</span></div>`;
-                                        addMarker(legs[i].end_location, stop.nombre, stopIdx.toString(), color, contentString, stopIdx);
+                                        const contentString = `<div style="padding: 4px; font-family: sans-serif;"><strong style="color:${color}">${groupName}</strong><br/><b>${stop.nombre || 'Client'}</b><br/><span style="font-size:11px">${stop.direccion}</span></div>`;
+                                        addMarker(legs[i].end_location, stop.nombre || 'Client', stopIdx.toString(), color, contentString, stopIdx);
                                     }
                                 });
                             } else {
@@ -1397,9 +1405,15 @@
                 const groupedIndices = new Set();
 
                 stopGroups.forEach(g => {
-                    const stops = g.stops.map(idx => ({ ...activeStops[idx], originalIndex: idx + 1 }));
-                    mapData[g.name] = { paradas: stops };
-                    g.stops.forEach(i => groupedIndices.add(i));
+                    // Safety check: Filter out invalid indices or missing stops to prevent crashes
+                    const stops = g.stops
+                        .filter(idx => activeStops[idx]) // Filter if index is out of bounds
+                        .map(idx => ({ ...activeStops[idx], originalIndex: idx + 1 }));
+                    
+                    if (stops.length > 0) {
+                        mapData[g.name] = { paradas: stops };
+                        g.stops.forEach(i => groupedIndices.add(i));
+                    }
                 });
 
                 const ungrouped = activeStops
