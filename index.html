@@ -1027,21 +1027,34 @@
                 }
                 // CORRECCIÓN BUG: Usar newStopName si tempStopData no tiene nombre definido
                 const finalName = formatClientName(tempStopData?.name || newStopName || 'Client');
+                const finalAddress = addrToCheck;
+
+                // --- NUEVO: Guardar cliente en BBDD automáticamente si la dirección es nueva ---
+                if (window.fbDb && finalAddress) {
+                    const normalize = s => s ? s.toLowerCase().trim() : "";
+                    const exists = clientDB.some(c => normalize(c.address) === normalize(finalAddress));
+                    
+                    if (!exists) {
+                        // Guardar en segundo plano sin bloquear la UI
+                        window.fbAddDoc(getUserCollection("clients"), { name: finalName, address: finalAddress })
+                            .catch(err => console.error("Auto-save client error:", err));
+                    }
+                }
+                // -----------------------------------------------------------------------------
                 
                 if (editingDraftId && window.fbDb) {
-                      await window.fbUpdateDoc(getUserDocRef("draft_stops", editingDraftId), { name: finalName, address: tempStopData.address, invoices: tempInvoices, pieces: tempPieces });
+                      await window.fbUpdateDoc(getUserDocRef("draft_stops", editingDraftId), { name: finalName, address: finalAddress, invoices: tempInvoices, pieces: tempPieces });
                       setEditingDraftId(null); setShowAddDetailsModal(false); setTempStopData(null); setTempInvoices(''); setTempPieces(''); setNewStopName(''); setNewStopAddress(''); setShowSuggestions(false); setShowAddressSuggestions(false); return;
                 } else if (editingStop && routes) {
-                    const newRoutes = JSON.parse(JSON.stringify(routes)); const stop = newRoutes[editingStop.driverName].paradas[editingStop.index]; stop.nombre = finalName; stop.direccion = tempStopData.address; stop.invoices = tempInvoices; stop.pieces = tempPieces; setRoutes(newRoutes); 
+                    const newRoutes = JSON.parse(JSON.stringify(routes)); const stop = newRoutes[editingStop.driverName].paradas[editingStop.index]; stop.nombre = finalName; stop.direccion = finalAddress; stop.invoices = tempInvoices; stop.pieces = tempPieces; setRoutes(newRoutes); 
                     setRoutes(newRoutes);
                     setShowAddDetailsModal(false); setEditingStop(null); setTempStopData(null);
                 } else if (targetDriverForManual && routes && routes[targetDriverForManual]) {
-                     const newStop = { nombre: finalName, direccion: tempStopData.address, invoices: tempInvoices, pieces: tempPieces }; const newRoutes = JSON.parse(JSON.stringify(routes)); newRoutes[targetDriverForManual].paradas.push(newStop); 
+                     const newStop = { nombre: finalName, direccion: finalAddress, invoices: tempInvoices, pieces: tempPieces }; const newRoutes = JSON.parse(JSON.stringify(routes)); newRoutes[targetDriverForManual].paradas.push(newStop); 
                      setRoutes(newRoutes);
                      setShowManualStopModal(false); setTargetDriverForManual(null);
-                } else if (window.fbDb && tempStopData) {
-                    await window.fbAddDoc(getUserCollection("draft_stops"), { name: finalName, address: tempStopData.address, invoices: tempInvoices, pieces: tempPieces, createdAt: Date.now() });
-                    if (!clientDB.some(c => c.address.toLowerCase() === tempStopData.address.toLowerCase())) window.fbAddDoc(getUserCollection("clients"), { name: finalName, address: tempStopData.address });
+                } else if (window.fbDb) {
+                    await window.fbAddDoc(getUserCollection("draft_stops"), { name: finalName, address: finalAddress, invoices: tempInvoices, pieces: tempPieces, createdAt: Date.now() });
                 }
                 setNewStopName(''); setNewStopAddress(''); setShowSuggestions(false); setShowAddressSuggestions(false); setShowAddDetailsModal(false); setTempStopData(null); setTempInvoices(''); setTempPieces('');
                 
