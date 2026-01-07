@@ -124,13 +124,13 @@
 
         // --- CONFIGURACIÓN MANUAL DE FIREBASE ---
         const MANUAL_CONFIG = {
-            apiKey: "AIzaSyDND4QHYs_6yHCKBKZL1190LzbzbYZ5yC0",
-            authDomain: "ess-route-planner.firebaseapp.com",
-            projectId: "ess-route-planner",
-            storageBucket: "ess-route-planner.firebasestorage.app",
-            messagingSenderId: "1001766596014",
-            appId: "1:1001766596014:web:08e2ffce2f37d2dde7ac3f",
-            measurementId: "G-RT2JRMPJ1J"
+          apiKey: "AIzaSyDND4QHYs_6yHCKBKZL1190LzbzbYZ5yC0",
+          authDomain: "ess-route-planner.firebaseapp.com",
+          projectId: "ess-route-planner",
+          storageBucket: "ess-route-planner.firebasestorage.app",
+          messagingSenderId: "1001766596014",
+          appId: "1:1001766596014:web:08e2ffce2f37d2dde7ac3f",
+          measurementId: "G-RT2JRMPJ1J"
         };
         // -------------------------------------------
 
@@ -268,7 +268,9 @@
             
             const ROUTE_HEX_COLORS = COMPANY_PALETTE.map(c => c.hex);
             
+            // Effect to Handle Drawing Manager (DEPENDS ON mapReady)
             useEffect(() => {
+                // Ensure map is ready before trying to attach drawing manager
                 if (!window.google || !googleMapRef.current || !mapReady) return;
                 
                 if (enableDrawing) {
@@ -329,7 +331,7 @@
                 return () => {
                     if (drawingManagerRef.current) drawingManagerRef.current.setMap(null);
                 };
-            }, [enableDrawing, onStopsSelected, mapReady]); 
+            }, [enableDrawing, onStopsSelected, mapReady]); // Wait for mapReady
 
             useEffect(() => {
                 if (!window.google || !mapRef.current) return;
@@ -342,7 +344,7 @@
                     });
                     infoWindowRef.current = new window.google.maps.InfoWindow();
                     geocoderRef.current = new window.google.maps.Geocoder();
-                    setMapReady(true); 
+                    setMapReady(true); // Signal ready
                 }
                 const map = googleMapRef.current;
                 const directionsService = new window.google.maps.DirectionsService();
@@ -1051,7 +1053,7 @@
                 }
 
                 // FIX: Check tempStopData AND newStopName to avoid generic "Client" name
-                const nameToUse = tempStopData ? tempStopData.name : newStopName;
+                const nameToUse = (tempStopData && tempStopData.name) ? tempStopData.name : newStopName;
                 const finalName = formatClientName(nameToUse);
 
                 if (editingDraftId && window.fbDb) {
