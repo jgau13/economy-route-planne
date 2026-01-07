@@ -122,18 +122,6 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- CONFIGURACIÓN MANUAL DE FIREBASE ---
-        const MANUAL_CONFIG = {
-          apiKey: "AIzaSyDND4QHYs_6yHCKBKZL1190LzbzbYZ5yC0",
-          authDomain: "ess-route-planner.firebaseapp.com",
-          projectId: "ess-route-planner",
-          storageBucket: "ess-route-planner.firebasestorage.app",
-          messagingSenderId: "1001766596014",
-          appId: "1:1001766596014:web:08e2ffce2f37d2dde7ac3f",
-          measurementId: "G-RT2JRMPJ1J"
-        };
-        // -------------------------------------------
-
         // --- PALETA DE COLORES CORPORATIVA UNIFICADA ---
         const COMPANY_PALETTE = [
             { hex: "#1b6e9b", tw: "bg-ess-blue text-white" },       // 0: Azul Principal
@@ -166,7 +154,7 @@
 
             const handleLogin = async (e) => {
                 e.preventDefault(); setLoading(true); setError(''); setMsg('');
-                if (!window.fbSignIn) { setError("System not ready. Check config."); setLoading(false); return; }
+                if (!window.fbSignIn) { setError("System not ready. Please refresh."); setLoading(false); return; }
                 try { await window.fbSignIn(window.fbAuth, email, password); } 
                 catch (err) { console.error(err); setError("Access Denied. Check credentials."); setLoading(false); }
             };
@@ -268,9 +256,7 @@
             
             const ROUTE_HEX_COLORS = COMPANY_PALETTE.map(c => c.hex);
             
-            // Effect to Handle Drawing Manager (DEPENDS ON mapReady)
             useEffect(() => {
-                // Ensure map is ready before trying to attach drawing manager
                 if (!window.google || !googleMapRef.current || !mapReady) return;
                 
                 if (enableDrawing) {
@@ -331,7 +317,7 @@
                 return () => {
                     if (drawingManagerRef.current) drawingManagerRef.current.setMap(null);
                 };
-            }, [enableDrawing, onStopsSelected, mapReady]); // Wait for mapReady
+            }, [enableDrawing, onStopsSelected, mapReady]); 
 
             useEffect(() => {
                 if (!window.google || !mapRef.current) return;
@@ -344,7 +330,7 @@
                     });
                     infoWindowRef.current = new window.google.maps.InfoWindow();
                     geocoderRef.current = new window.google.maps.Geocoder();
-                    setMapReady(true); // Signal ready
+                    setMapReady(true); 
                 }
                 const map = googleMapRef.current;
                 const directionsService = new window.google.maps.DirectionsService();
@@ -810,21 +796,9 @@
                         if (data.firebaseConfig && data.firebaseConfig.apiKey) {
                             const tryInitFb = () => { if (window.initializeFirebaseGlobally) { if (window.initializeFirebaseGlobally(data.firebaseConfig)) setDbReady(true); } else setTimeout(tryInitFb, 50); };
                             tryInitFb();
-                        } else {
-                            if (typeof MANUAL_CONFIG !== 'undefined' && MANUAL_CONFIG.apiKey && !MANUAL_CONFIG.apiKey.includes("PEGA_TU")) {
-                                if (window.initializeFirebaseGlobally(MANUAL_CONFIG)) setDbReady(true);
-                            } else {
-                                setSystemError("Missing Firebase Config."); setAuthLoading(false);
-                            }
-                        }
+                        } else { setSystemError("Missing Firebase Config."); setAuthLoading(false); }
                         if (data.googleApiKey) setGoogleApiKey(data.googleApiKey);
-                    } catch (err) {
-                        if (typeof MANUAL_CONFIG !== 'undefined' && MANUAL_CONFIG.apiKey && !MANUAL_CONFIG.apiKey.includes("PEGA_TU")) {
-                            if (window.initializeFirebaseGlobally(MANUAL_CONFIG)) setDbReady(true);
-                        } else {
-                           setAuthLoading(false);
-                        }
-                    }
+                    } catch (err) { setAuthLoading(false); }
                 };
                 fetchConfig();
             }, []);
@@ -1051,11 +1025,9 @@
                 if (!addrToCheck || !/\b\d{5}\b/.test(addrToCheck)) {
                       return alert("Address must contain a Zip Code.");
                 }
-
-                // FIX: Check tempStopData AND newStopName to avoid generic "Client" name
-                const nameToUse = (tempStopData && tempStopData.name) ? tempStopData.name : newStopName;
-                const finalName = formatClientName(nameToUse);
-
+                // CORRECCIÓN BUG: Usar newStopName si tempStopData no tiene nombre definido
+                const finalName = formatClientName(tempStopData?.name || newStopName || 'Client');
+                
                 if (editingDraftId && window.fbDb) {
                       await window.fbUpdateDoc(getUserDocRef("draft_stops", editingDraftId), { name: finalName, address: tempStopData.address, invoices: tempInvoices, pieces: tempPieces });
                       setEditingDraftId(null); setShowAddDetailsModal(false); setTempStopData(null); setTempInvoices(''); setTempPieces(''); setNewStopName(''); setNewStopAddress(''); setShowSuggestions(false); setShowAddressSuggestions(false); return;
@@ -1752,7 +1724,7 @@
                                 
                                 <div className="flex-1 flex flex-col space-y-4">
                                     <p className="text-sm text-slate-500">
-                                        Copia y pega las columnas de tu Excel aquí. <br/>
+                                        Copia y pega las columnas de tu Excel aquí. <br/><br/>
                                         <strong>Formato:</strong> Columna A (Nombre) [TAB] Columna B (Dirección).
                                     </p>
                                     
@@ -1990,7 +1962,7 @@
 
                                 <div ref={resultsContainerRef} onDragOver={handleResultsDragOver} className="flex-1 overflow-y-auto pb-20"> 
                                     <div className="flex flex-col gap-8 px-2"> 
-                                        
+                                        <br />
                                         {[null, ...zones].map((zone, zIdx) => {
                                             const zoneId = zone ? zone.id : 'unassigned';
                                             const zoneName = zone ? zone.name : 'UNASSIGNED';
@@ -2100,8 +2072,8 @@
                                                                             <div className="bg-white p-2 rounded border border-slate-100 flex items-center gap-2">{recalculating[driverName] ? <span className="text-ess-blue font-bold">Updating...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(data.duracion_estimada / 60)}h {Math.round(data.duracion_estimada % 60)}m</>}</div>
                                                                             <div className="flex gap-1 justify-end">
                                                                                 <button onClick={() => reverseRoute(driverName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
-                                                                                <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize Remaining (Keeps stop #1)"><Icon name="wand-2" className="h-4 w-4" /></button>
-                                                                                <button onClick={() => recalculateRoute(driverName, data.paradas)} className="bg-white hover:bg-green-50 text-slate-600 hover:text-green-600 p-1.5 rounded border border-slate-200 font-bold" title="Full Re-optimize (Shuffle All)"><Icon name="shuffle" className="h-4 w-4" /></button>
+                                                                                <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize Remaining (Keep 1st)"><Icon name="wand-2" className="h-4 w-4" /></button>
+                                                                                <button onClick={() => recalculateRoute(driverName, data.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 p-1.5 rounded border border-slate-200 font-bold" title="Full Re-optimize (Shuffle All)"><Icon name="shuffle" className="h-4 w-4" /></button>
                                                                                 <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded border border-slate-900 hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
                                                                             </div>
                                                                     </div>
@@ -2165,6 +2137,87 @@
                                             <button onClick={() => setSelectedStops([])} className="ml-2 text-slate-400 hover:text-white p-1 hover:bg-slate-700 rounded-full transition-colors"><Icon name="x" className="h-5 w-5" /></button>
                                     </div>
                                 )}
+                            </div>
+                        )}
+                        
+                        {view === 'input' && (
+                            <div className="grid lg:grid-cols-12 gap-8 animate-fade-in">
+                                <div className="lg:col-span-7 space-y-6">
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow relative z-20">
+                                            <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2"><div className="bg-ess-green/10 p-2 rounded-full"><Icon name="plus" className="h-5 w-5 text-ess-green" /></div> Add Stop</h2>
+                                            <div className="grid md:grid-cols-2 gap-4 mb-4">
+                                                <div className="relative">
+                                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client</label>
+                                                    <input ref={mainClientInputRef} type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="Name" value={newStopName} onChange={(e) => { setNewStopName(e.target.value); setShowSuggestions(true); setActiveSuggestionIndex(-1); }} onKeyDown={handleClientKeyDown} />
+                                                    {showSuggestions && filteredClients.length > 0 && <div className="absolute top-full left-0 w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 overflow-hidden z-50">{filteredClients.map((c, i) => (<div key={i} onClick={() => selectClient(c)} className={`p-3 cursor-pointer border-b border-slate-50 ${i === activeSuggestionIndex ? 'bg-blue-100' : 'hover:bg-blue-50'}`}><div className="font-bold text-slate-700 text-sm">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
+                                                </div>
+                                                <div className="relative">
+                                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label>
+                                                    <GoogleAddressInput 
+                                                        value={newStopAddress} 
+                                                        onChange={(e) => { setNewStopAddress(e.target.value); setShowAddressSuggestions(true); }} 
+                                                        onKeyDown={(e) => handleEnter(e, () => invisibleAddressInputRef.current?.focus())} 
+                                                        className="w-full p-3 border border-slate-300 rounded-lg outline-none" 
+                                                        placeholder="Search Google Maps" 
+                                                        disabled={!scriptLoaded} 
+                                                        isLoaded={scriptLoaded} 
+                                                    />
+                                                    
+                                                    <input 
+                                                        ref={invisibleAddressInputRef} 
+                                                        className="absolute opacity-0 w-1 h-1 -z-10 bottom-0 right-0 pointer-events-none" 
+                                                        onKeyDown={(e) => handleEnter(e, initiateAddStop)} 
+                                                        tabIndex="-1" 
+                                                        autoComplete="off"
+                                                    />
+
+                                                    {showAddressSuggestions && filteredClientsByAddress.length > 0 && <div className="absolute w-full bg-white border border-slate-200 shadow-xl rounded-lg mt-1 z-50 bottom-full mb-1"><div className="bg-ess-blue text-white text-xs font-bold px-2 py-1">👇 Saved Clients</div>{filteredClientsByAddress.map((c, i) => (<div key={i} onClick={() => { selectClient(c); setTempStopData({name: c.name, address: c.address}); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm"><div className="font-bold text-slate-700">{c.name}</div><div className="text-xs text-slate-500 truncate">{c.address}</div></div>))}</div>}
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-end"><button onClick={initiateAddStop} disabled={!newStopAddress} className="bg-ess-blue text-white px-6 py-2.5 rounded-lg font-bold shadow-md flex items-center gap-2 disabled:opacity-50"><Icon name="arrow-right" className="h-4 w-4" /> Next</button></div>
+                                    </div>
+
+                                    <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden min-h-[300px]">
+                                            <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="font-bold text-slate-700 flex items-center gap-2"><Icon name="list" className="h-5 w-5 text-slate-400" /> Today's Route</h3>
+                                                    <button onClick={() => setShowHistoryModal(true)} className="text-xs bg-slate-100 text-slate-600 hover:text-ess-blue px-2 py-1 rounded-lg border border-slate-200 flex items-center gap-1 ml-2 transition-colors shadow-sm" title="View History"><Icon name="clock" className="h-3 w-3" /> History</button>
+                                                </div>
+                                                <div className="flex items-center gap-2">{currentStops.length > 0 && <button onClick={clearDraftRoute} className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 flex items-center gap-1"><Icon name="eraser" className="h-3 w-3" /> Clear</button>}<span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{currentStops.length} Stops</span></div>
+                                            </div>
+                                            <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+                                                {currentStops.map((stop, idx) => (
+                                                    <div key={stop.id} className="p-4 flex items-center gap-4 hover:bg-slate-50 group">
+                                                        <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 font-bold text-sm border border-slate-200">{idx + 1}</div>
+                                                        <div className="flex-1">
+                                                            <h4 className="font-bold text-slate-800">{stop.name}</h4>
+                                                            <p className="text-sm text-slate-500 flex items-center gap-1"><Icon name="map-pin" className="h-3 w-3" /> {stop.address}</p>
+                                                            {(stop.invoices || stop.pieces) && <div className="flex gap-3 mt-1 text-xs font-mono text-slate-500 bg-slate-100 inline-block px-2 py-1 rounded"><span>Inv: {stop.invoices || '-'}</span><span>Pcs: {stop.pieces || '-'}</span></div>}
+                                                        </div>
+                                                        <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button onClick={() => startEditDraft(stop)} className="p-2 text-slate-300 hover:text-ess-blue hover:bg-blue-50 rounded-lg transition-colors"><Icon name="pencil" className="h-4 w-4" /></button>
+                                                            <button onClick={() => removeStop(stop.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                    </div>
+                                </div>
+
+                                <div className="lg:col-span-5 space-y-6">
+                                    <div className="bg-ess-light px-4 py-2 rounded-lg border border-blue-100 flex items-center gap-2"><Icon name="map-pin" className="h-5 w-5 text-ess-blue shrink-0" /><div className="text-xs w-full"><span className="block text-slate-400 font-semibold uppercase">Base (Start/End)</span><GoogleAddressInput value={baseAddress} onChange={handleBaseAddressChange} className="bg-transparent font-bold text-slate-700 outline-none w-full" placeholder="Warehouse" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div></div>
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 pb-3 border-b border-slate-100"><Icon name="users" className="h-5 w-5 text-ess-blue" /> Drivers</h3><div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }})} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div><div className="grid grid-cols-1 xl:grid-cols-2 gap-2 overflow-y-auto overflow-x-hidden">{drivers.map(driver => (<div key={driver.id} className="group relative"><label className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer h-full ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}><div className="flex items-center gap-2 min-w-0"><div className={`w-2 h-2 shrink-0 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div><span className={`font-medium text-sm truncate ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span></div><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-4 h-4 accent-ess-green shrink-0 ml-2" /></label><button onClick={(e) => { e.preventDefault(); deleteDriver(driver.id); }} className="absolute -right-1 -top-1 bg-white text-slate-400 hover:text-red-500 border border-slate-200 rounded-full p-0.5 opacity-0 group-hover:opacity-100 shadow-sm z-10"><Icon name="x" className="h-3 w-3" /></button></div>))}</div></div>
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">
+                                        {error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}
+                                        {!loading && routes && (<>
+                                            <p className="text-xs text-center text-slate-500 mb-1">Previous routes found</p>
+                                            <button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-3 rounded-xl font-bold text-sm shadow mb-3 transition-all flex justify-center items-center gap-2"><Icon name="map" className="h-5 w-5" /> GO TO RESULTS</button>
+                                        </>)}
+                                        <button onClick={handlePlanZones} disabled={currentStops.length === 0} className="w-full bg-slate-800 hover:bg-black text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-slate-900/20 transition-all flex justify-center items-center gap-2 disabled:opacity-75">
+                                            {loading ? <div className="loader"></div> : <><Icon name="map" className="h-6 w-6" /> PLAN ZONES & MAP</>}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </main>
