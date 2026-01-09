@@ -1461,6 +1461,7 @@
             const openDriverMap = (name, data) => setViewingDriver({ name, data });
             const selectClient = (c) => { setNewStopName(c.name); setNewStopAddress(c.address); setShowSuggestions(false); setShowAddressSuggestions(false); setActiveSuggestionIndex(-1); };
             const getClientNameFromAddress = (address) => { const fromDraft = currentStops.find(s => s.address === address); if (fromDraft) return fromDraft.name; const fromDB = clientDB.find(c => c.address === address); return fromDB ? fromDB.name : "Client"; };
+            
             const getWhatsappLink = (l, driverName) => {
                 let phone = '';
                 const driver = drivers.find(d => d.name === driverName);
