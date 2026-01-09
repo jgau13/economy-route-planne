@@ -2065,15 +2065,16 @@
                                                                 }}
                                                             >
                                                                 <div className="absolute top-2 right-2 z-20 flex items-center gap-2">
+                                                                    {/* CORRECCIÓN: Botón Recalculate restaurado en su lugar original */}
                                                                     <button 
                                                                         onClick={(e) => {
                                                                             e.stopPropagation(); 
                                                                             recalculateRoute(driverName, data.paradas);
                                                                         }}
                                                                         className="bg-white text-ess-blue p-1 rounded-full shadow-sm border border-slate-200 hover:bg-blue-50 transition-colors"
-                                                                        title="Full Re-optimize (Shuffle All)"
+                                                                        title="Recalculate Route"
                                                                     >
-                                                                        {recalculating[driverName] ? <div className="loader w-3 h-3 border-2"></div> : <Icon name="shuffle" className="h-4 w-4" />}
+                                                                        {recalculating[driverName] ? <div className="loader w-3 h-3 border-2"></div> : <Icon name="refresh-cw" className="h-4 w-4" />}
                                                                     </button>
 
                                                                     <input 
@@ -2114,6 +2115,8 @@
                                                                             <div className="flex gap-1 justify-end">
                                                                                 <button onClick={() => reverseRoute(driverName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
                                                                                 <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize Remaining (Keep 1st)"><Icon name="wand-2" className="h-4 w-4" /></button>
+                                                                                {/* CORRECCIÓN: Botón Shuffle movido aquí al lado de la varita */}
+                                                                                <button onClick={() => recalculateRoute(driverName, data.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 p-1.5 rounded border border-slate-200 font-bold" title="Full Re-optimize (Shuffle All)"><Icon name="shuffle" className="h-4 w-4" /></button>
                                                                                 <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded border border-slate-900 hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
                                                                             </div>
                                                                     </div>
