@@ -122,18 +122,6 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- CONFIGURACIÓN MANUAL DE FIREBASE ---
-        const MANUAL_CONFIG = {
-          apiKey: "AIzaSyDND4QHYs_6yHCKBKZL1190LzbzbYZ5yC0",
-          authDomain: "ess-route-planner.firebaseapp.com",
-          projectId: "ess-route-planner",
-          storageBucket: "ess-route-planner.firebasestorage.app",
-          messagingSenderId: "1001766596014",
-          appId: "1:1001766596014:web:08e2ffce2f37d2dde7ac3f",
-          measurementId: "G-RT2JRMPJ1J"
-        };
-        // -------------------------------------------
-
         // --- PALETA DE COLORES CORPORATIVA UNIFICADA ---
         const COMPANY_PALETTE = [
             { hex: "#1b6e9b", tw: "bg-ess-blue text-white" },       // 0: Azul Principal
@@ -166,7 +154,7 @@
 
             const handleLogin = async (e) => {
                 e.preventDefault(); setLoading(true); setError(''); setMsg('');
-                if (!window.fbSignIn) { setError("System not ready. Check config."); setLoading(false); return; }
+                if (!window.fbSignIn) { setError("System not ready. Please refresh."); setLoading(false); return; }
                 try { await window.fbSignIn(window.fbAuth, email, password); } 
                 catch (err) { console.error(err); setError("Access Denied. Check credentials."); setLoading(false); }
             };
@@ -268,9 +256,7 @@
             
             const ROUTE_HEX_COLORS = COMPANY_PALETTE.map(c => c.hex);
             
-            // Effect to Handle Drawing Manager (DEPENDS ON mapReady)
             useEffect(() => {
-                // Ensure map is ready before trying to attach drawing manager
                 if (!window.google || !googleMapRef.current || !mapReady) return;
                 
                 if (enableDrawing) {
@@ -331,7 +317,7 @@
                 return () => {
                     if (drawingManagerRef.current) drawingManagerRef.current.setMap(null);
                 };
-            }, [enableDrawing, onStopsSelected, mapReady]); // Wait for mapReady
+            }, [enableDrawing, onStopsSelected, mapReady]); 
 
             useEffect(() => {
                 if (!window.google || !mapRef.current) return;
@@ -344,7 +330,7 @@
                     });
                     infoWindowRef.current = new window.google.maps.InfoWindow();
                     geocoderRef.current = new window.google.maps.Geocoder();
-                    setMapReady(true); // Signal ready
+                    setMapReady(true); 
                 }
                 const map = googleMapRef.current;
                 const directionsService = new window.google.maps.DirectionsService();
@@ -583,18 +569,14 @@
         };
 
         const GlobalManifest = ({ routes, config }) => {
-            const date = new Date();
-            const dateStr = date.toLocaleDateString('en-US');
-            const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-
+            const today = new Date().toLocaleDateString('en-US');
             return (
                 <div id="global-manifest" className="hidden print:block bg-white text-black p-8 font-sans">
                     <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
                         <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
                         <div className="text-right">
                             <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
-                            <p className="text-lg font-bold">{dateStr}</p>
-                            <p className="text-sm font-bold">Print Time: {timeStr}</p>
+                            <p className="text-lg font-bold">{today}</p>
                         </div>
                     </div>
                     <div className="space-y-8">
@@ -661,6 +643,7 @@
             const [newStopName, setNewStopName] = useState('');
             const [newStopAddress, setNewStopAddress] = useState('');
             const [newDriverName, setNewDriverName] = useState('');
+            const [newDriverPhone, setNewDriverPhone] = useState(''); // NEW STATE
             const [newVehicleName, setNewVehicleName] = useState(''); 
             const [showSuggestions, setShowSuggestions] = useState(false);
             const [showAddressSuggestions, setShowAddressSuggestions] = useState(false); 
@@ -733,6 +716,7 @@
             const [showBulkImportModal, setShowBulkImportModal] = useState(false);
             const [bulkInputText, setBulkInputText] = useState('');
             const [importLoading, setImportLoading] = useState(false);
+            const [editingDriverId, setEditingDriverId] = useState(null);
 
             const clientInputRef = useRef(null);
             const piecesInputRef = useRef(null);
@@ -814,21 +798,9 @@
                         if (data.firebaseConfig && data.firebaseConfig.apiKey) {
                             const tryInitFb = () => { if (window.initializeFirebaseGlobally) { if (window.initializeFirebaseGlobally(data.firebaseConfig)) setDbReady(true); } else setTimeout(tryInitFb, 50); };
                             tryInitFb();
-                        } else {
-                            if (typeof MANUAL_CONFIG !== 'undefined' && MANUAL_CONFIG.apiKey && !MANUAL_CONFIG.apiKey.includes("PEGA_TU")) {
-                                if (window.initializeFirebaseGlobally(MANUAL_CONFIG)) setDbReady(true);
-                            } else {
-                                setSystemError("Missing Firebase Config."); setAuthLoading(false);
-                            }
-                        }
+                        } else { setSystemError("Missing Firebase Config."); setAuthLoading(false); }
                         if (data.googleApiKey) setGoogleApiKey(data.googleApiKey);
-                    } catch (err) {
-                        if (typeof MANUAL_CONFIG !== 'undefined' && MANUAL_CONFIG.apiKey && !MANUAL_CONFIG.apiKey.includes("PEGA_TU")) {
-                            if (window.initializeFirebaseGlobally(MANUAL_CONFIG)) setDbReady(true);
-                        } else {
-                           setAuthLoading(false);
-                        }
-                    }
+                    } catch (err) { setAuthLoading(false); }
                 };
                 fetchConfig();
             }, []);
@@ -877,9 +849,19 @@
                 document.head.appendChild(script);
             }, [googleApiKey]);
 
-            const addDriverToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("drivers"), { name, active: true }); };
+            const addDriverToFb = async () => { 
+                if (!newDriverName.trim() || !window.fbDb) return;
+                await window.fbAddDoc(getUserCollection("drivers"), { name: newDriverName, phone: newDriverPhone, active: true });
+                setNewDriverName('');
+                setNewDriverPhone('');
+            };
+            const updateDriver = async (id, data) => {
+                if (window.fbDb) await window.fbUpdateDoc(getUserDocRef("drivers", id), data);
+                if (editingDriverId === id) setEditingDriverId(null);
+            };
             const deleteDriver = async (id) => { if(window.fbDb && confirm('Delete?')) await window.fbDeleteDoc(getUserDocRef("drivers", id)); };
             const toggleDriver = async (id, status) => { if(window.fbDb) await window.fbUpdateDoc(getUserDocRef("drivers", id), { active: !status }); };
+            
             const addVehicleToFb = async (name) => { if(window.fbDb) await window.fbAddDoc(getUserCollection("vehicles"), { name }); };
             const deleteVehicle = async (id) => { if(window.fbDb && confirm('Delete Vehicle?')) await window.fbDeleteDoc(getUserDocRef("vehicles", id)); };
             const assignVehicleToDriver = async (vehicleId, driverName) => { if (window.fbDb) await window.fbUpdateDoc(getUserDocRef("vehicles", vehicleId), { assignedDriver: driverName }); }; 
@@ -1055,25 +1037,36 @@
                 if (!addrToCheck || !/\b\d{5}\b/.test(addrToCheck)) {
                       return alert("Address must contain a Zip Code.");
                 }
+                // CORRECCIÓN BUG: Usar newStopName si tempStopData no tiene nombre definido
+                const finalName = formatClientName(tempStopData?.name || newStopName || 'Client');
+                const finalAddress = addrToCheck;
 
-                // FIX: Check tempStopData AND newStopName to avoid generic "Client" name
-                const nameToUse = (tempStopData && tempStopData.name) ? tempStopData.name : newStopName;
-                const finalName = formatClientName(nameToUse);
-
+                // --- NUEVO: Guardar cliente en BBDD automáticamente si la dirección es nueva ---
+                if (window.fbDb && finalAddress) {
+                    const normalize = s => s ? s.toLowerCase().trim() : "";
+                    const exists = clientDB.some(c => normalize(c.address) === normalize(finalAddress));
+                    
+                    if (!exists) {
+                        // Guardar en segundo plano sin bloquear la UI
+                        window.fbAddDoc(getUserCollection("clients"), { name: finalName, address: finalAddress })
+                            .catch(err => console.error("Auto-save client error:", err));
+                    }
+                }
+                // -----------------------------------------------------------------------------
+                
                 if (editingDraftId && window.fbDb) {
-                      await window.fbUpdateDoc(getUserDocRef("draft_stops", editingDraftId), { name: finalName, address: tempStopData.address, invoices: tempInvoices, pieces: tempPieces });
+                      await window.fbUpdateDoc(getUserDocRef("draft_stops", editingDraftId), { name: finalName, address: finalAddress, invoices: tempInvoices, pieces: tempPieces });
                       setEditingDraftId(null); setShowAddDetailsModal(false); setTempStopData(null); setTempInvoices(''); setTempPieces(''); setNewStopName(''); setNewStopAddress(''); setShowSuggestions(false); setShowAddressSuggestions(false); return;
                 } else if (editingStop && routes) {
-                    const newRoutes = JSON.parse(JSON.stringify(routes)); const stop = newRoutes[editingStop.driverName].paradas[editingStop.index]; stop.nombre = finalName; stop.direccion = tempStopData.address; stop.invoices = tempInvoices; stop.pieces = tempPieces; setRoutes(newRoutes); 
+                    const newRoutes = JSON.parse(JSON.stringify(routes)); const stop = newRoutes[editingStop.driverName].paradas[editingStop.index]; stop.nombre = finalName; stop.direccion = finalAddress; stop.invoices = tempInvoices; stop.pieces = tempPieces; setRoutes(newRoutes); 
                     setRoutes(newRoutes);
                     setShowAddDetailsModal(false); setEditingStop(null); setTempStopData(null);
                 } else if (targetDriverForManual && routes && routes[targetDriverForManual]) {
-                     const newStop = { nombre: finalName, direccion: tempStopData.address, invoices: tempInvoices, pieces: tempPieces }; const newRoutes = JSON.parse(JSON.stringify(routes)); newRoutes[targetDriverForManual].paradas.push(newStop); 
+                     const newStop = { nombre: finalName, direccion: finalAddress, invoices: tempInvoices, pieces: tempPieces }; const newRoutes = JSON.parse(JSON.stringify(routes)); newRoutes[targetDriverForManual].paradas.push(newStop); 
                      setRoutes(newRoutes);
                      setShowManualStopModal(false); setTargetDriverForManual(null);
-                } else if (window.fbDb && tempStopData) {
-                    await window.fbAddDoc(getUserCollection("draft_stops"), { name: finalName, address: tempStopData.address, invoices: tempInvoices, pieces: tempPieces, createdAt: Date.now() });
-                    if (!clientDB.some(c => c.address.toLowerCase() === tempStopData.address.toLowerCase())) window.fbAddDoc(getUserCollection("clients"), { name: finalName, address: tempStopData.address });
+                } else if (window.fbDb) {
+                    await window.fbAddDoc(getUserCollection("draft_stops"), { name: finalName, address: finalAddress, invoices: tempInvoices, pieces: tempPieces, createdAt: Date.now() });
                 }
                 setNewStopName(''); setNewStopAddress(''); setShowSuggestions(false); setShowAddressSuggestions(false); setShowAddDetailsModal(false); setTempStopData(null); setTempInvoices(''); setTempPieces('');
                 
@@ -1468,7 +1461,22 @@
             const openDriverMap = (name, data) => setViewingDriver({ name, data });
             const selectClient = (c) => { setNewStopName(c.name); setNewStopAddress(c.address); setShowSuggestions(false); setShowAddressSuggestions(false); setActiveSuggestionIndex(-1); };
             const getClientNameFromAddress = (address) => { const fromDraft = currentStops.find(s => s.address === address); if (fromDraft) return fromDraft.name; const fromDB = clientDB.find(c => c.address === address); return fromDB ? fromDB.name : "Client"; };
-            const getWhatsappLink = (l) => `https://wa.me/?text=${encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`)}`;
+            
+            const getWhatsappLink = (l, driverName) => {
+                let phone = '';
+                const driver = drivers.find(d => d.name === driverName);
+                if (driver && driver.phone) {
+                    phone = driver.phone.replace(/\D/g, ''); // Remove non-digits
+                }
+                
+                const text = encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`);
+                
+                if (phone) {
+                    return `https://wa.me/${phone}?text=${text}`;
+                } else {
+                    return `https://wa.me/?text=${text}`;
+                }
+            };
             
             const filteredClients = useMemo(() => { 
                 const t = newStopName.toLowerCase().trim(); 
@@ -1756,7 +1764,7 @@
                                 
                                 <div className="flex-1 flex flex-col space-y-4">
                                     <p className="text-sm text-slate-500">
-                                        Copia y pega las columnas de tu Excel aquí. <br/>
+                                        Copia y pega las columnas de tu Excel aquí. <br/><br/>
                                         <strong>Formato:</strong> Columna A (Nombre) [TAB] Columna B (Dirección).
                                     </p>
                                     
@@ -1802,7 +1810,7 @@
                                 <div className="h-6 w-px bg-slate-300 mx-1"></div>
                                 <button onClick={() => handleNavClick('input')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'input' || view === 'zone_planning' || view === 'results' || view === 'global_map' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
                                 <button onClick={() => handleNavClick('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
-                                <button onClick={() => handleNavClick('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Van or Truck ID</button>
+                                <button onClick={() => handleNavClick('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Fleet & Drivers</button>
                                 <button onClick={() => handleNavClick('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Settings</button>
                                 <button onClick={handleLogout} className="text-sm font-medium text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 px-3 py-2 rounded-lg flex items-center gap-2 ml-2"><Icon name="log-out" className="h-4 w-4" /> Exit</button>
                             </div>
@@ -1844,7 +1852,8 @@
                                 </td>
                             </tr>
                         )})}</tbody></table></div></div></div>)}
-                        {view === 'vehicles' && (<div className="max-w-3xl mx-auto animate-fade-in"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="truck" className="h-5 w-5 text-ess-blue" /> Fleet Management</h2><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-500 border border-slate-200">{vehicles.length} Trucks</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex gap-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }})} /><button onClick={() => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }}} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="plus" className="h-4 w-4" /> Add Truck</button></div></div><div className="max-h-[500px] overflow-y-auto"><table className="w-full text-left border-collapse"><thead className="bg-slate-50 text-xs font-bold text-slate-500 uppercase"><tr><th className="p-4 w-1/3">Truck ID</th><th className="p-4 w-1/3">Default Driver</th><th className="p-4 w-1/3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{vehicles.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No vehicles added yet.</td></tr> : vehicles.map(v => (<tr key={v.id} className="hover:bg-slate-50"><td className="p-4 font-bold text-slate-700 flex items-center gap-3"><div className="bg-blue-100 p-2 rounded-full"><Icon name="truck" className="h-4 w-4 text-ess-blue" /></div> {v.name}</td><td className="p-4"><select className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none bg-white" value={v.assignedDriver || ""} onChange={(e) => assignVehicleToDriver(v.id, e.target.value)}><option value="">-- Unassigned --</option>{drivers.filter(d => d.active).map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></td><td className="p-4 text-right"><button onClick={() => deleteVehicle(v.id)} className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-5 w-5" /></button></td></tr>))}</tbody></table></div></div></div>)}
+                        {view === 'vehicles' && (<div className="max-w-7xl mx-auto animate-fade-in space-y-8"><div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="truck" className="h-5 w-5 text-ess-blue" /> Vehicles Management</h2><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-500 border border-slate-200">{vehicles.length} Trucks</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex gap-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Vehicle Name / Plate ID (e.g. DX09UF)" value={newVehicleName} onChange={(e) => setNewVehicleName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }})} /><button onClick={() => {if(newVehicleName.trim()){ addVehicleToFb(newVehicleName); setNewVehicleName(''); }}} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="plus" className="h-4 w-4" /> Add Truck</button></div></div><div className="max-h-[300px] overflow-y-auto"><table className="w-full text-left border-collapse"><thead className="bg-slate-50 text-xs font-bold text-slate-500 uppercase"><tr><th className="p-4 w-1/3">Truck ID</th><th className="p-4 w-1/3">Default Driver</th><th className="p-4 w-1/3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{vehicles.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-slate-400">No vehicles added yet.</td></tr> : vehicles.map(v => (<tr key={v.id} className="hover:bg-slate-50"><td className="p-4 font-bold text-slate-700 flex items-center gap-3"><div className="bg-blue-100 p-2 rounded-full"><Icon name="truck" className="h-4 w-4 text-ess-blue" /></div> {v.name}</td><td className="p-4"><select className="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none bg-white" value={v.assignedDriver || ""} onChange={(e) => assignVehicleToDriver(v.id, e.target.value)}><option value="">-- Unassigned --</option>{drivers.filter(d => d.active).map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></td><td className="p-4 text-right"><button onClick={() => deleteVehicle(v.id)} className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-5 w-5" /></button></td></tr>))}</tbody></table></div></div>
+                        <div className="bg-white rounded-xl border border-slate-200 card-shadow overflow-hidden"><div className="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="users" className="h-5 w-5 text-ess-blue" /> Drivers Management</h2><span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-slate-500 border border-slate-200">{drivers.length} Drivers</span></div><div className="p-6 bg-blue-50/50 border-b border-slate-200"><div className="flex flex-col md:flex-row gap-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="Driver Name" value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} onKeyDown={(e) => handleEnter(e, addDriverToFb)} /><div className="flex-1 relative"><input type="text" className="w-full p-3 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue" placeholder="WhatsApp (e.g. 1407...)" value={newDriverPhone} onChange={(e) => setNewDriverPhone(e.target.value)} onKeyDown={(e) => handleEnter(e, addDriverToFb)} /><span className="absolute right-3 top-3.5 text-xs text-slate-400">Include Country Code (1 for US)</span></div><button onClick={addDriverToFb} className="bg-ess-green text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-green-600 flex items-center gap-2"><Icon name="user-plus" className="h-4 w-4" /> Add Driver</button></div></div><div className="max-h-[500px] overflow-y-auto"><table className="w-full text-left border-collapse"><thead className="bg-slate-50 text-xs font-bold text-slate-500 uppercase"><tr><th className="p-4">Name</th><th className="p-4">WhatsApp #</th><th className="p-4 text-center">Status</th><th className="p-4 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{drivers.length === 0 ? <tr><td colSpan="4" className="p-8 text-center text-slate-400">No drivers added yet.</td></tr> : drivers.map(d => (<tr key={d.id} className="hover:bg-slate-50"><td className="p-4 font-bold text-slate-700">{d.name}</td><td className="p-4">{editingDriverId === d.id ? (<div className="flex gap-2"><input type="text" className="p-1 border rounded text-sm w-32" defaultValue={d.phone} onBlur={(e) => updateDriver(d.id, { phone: e.target.value })} onKeyDown={(e) => handleEnter(e, () => e.target.blur())} autoFocus /><button onMouseDown={() => setEditingDriverId(null)} className="text-green-600"><Icon name="check" className="h-4 w-4" /></button></div>) : (<div className="flex items-center gap-2 text-sm text-slate-600">{d.phone || <span className="text-slate-300 italic">No number</span>}<button onClick={() => setEditingDriverId(d.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>)}</td><td className="p-4 text-center"><label className="inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={d.active} onChange={() => toggleDriver(d.id, d.active)} /><div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div><span className="ms-2 text-xs font-medium text-gray-700">{d.active ? 'Active' : 'Inactive'}</span></label></td><td className="p-4 text-right"><button onClick={() => deleteDriver(d.id)} className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Icon name="trash-2" className="h-5 w-5" /></button></td></tr>))}</tbody></table></div></div></div>)}
                         
                         {view === 'global_map' && <div className="flex flex-col h-[calc(100vh-120px)]"><div className="mb-4"><button onClick={() => setView('results')} className="text-slate-600 px-4 py-2 border rounded-lg bg-white hover:bg-slate-50 font-bold flex items-center gap-2 shadow-sm"><Icon name="arrow-left" className="h-4 w-4" /> Back to Results</button></div><div className="flex-1 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative"><GlobalMapView routes={routes} baseAddress={baseAddress} /></div></div>}
 
@@ -1994,7 +2003,7 @@
 
                                 <div ref={resultsContainerRef} onDragOver={handleResultsDragOver} className="flex-1 overflow-y-auto pb-20"> 
                                     <div className="flex flex-col gap-8 px-2"> 
-                                        
+                                        <br />
                                         {[null, ...zones].map((zone, zIdx) => {
                                             const zoneId = zone ? zone.id : 'unassigned';
                                             const zoneName = zone ? zone.name : 'UNASSIGNED';
@@ -2056,6 +2065,7 @@
                                                                 }}
                                                             >
                                                                 <div className="absolute top-2 right-2 z-20 flex items-center gap-2">
+                                                                    {/* CORRECCIÓN: Botón Recalculate restaurado en su lugar original */}
                                                                     <button 
                                                                         onClick={(e) => {
                                                                             e.stopPropagation(); 
@@ -2104,8 +2114,9 @@
                                                                             <div className="bg-white p-2 rounded border border-slate-100 flex items-center gap-2">{recalculating[driverName] ? <span className="text-ess-blue font-bold">Updating...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(data.duracion_estimada / 60)}h {Math.round(data.duracion_estimada % 60)}m</>}</div>
                                                                             <div className="flex gap-1 justify-end">
                                                                                 <button onClick={() => reverseRoute(driverName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
-                                                                                <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize Remaining (Keeps stop #1)"><Icon name="wand-2" className="h-4 w-4" /></button>
-                                                                                <button onClick={() => recalculateRoute(driverName, data.paradas)} className="bg-white hover:bg-green-50 text-slate-600 hover:text-green-600 p-1.5 rounded border border-slate-200 font-bold" title="Full Re-optimize (Shuffle All)"><Icon name="shuffle" className="h-4 w-4" /></button>
+                                                                                <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize Remaining (Keep 1st)"><Icon name="wand-2" className="h-4 w-4" /></button>
+                                                                                {/* CORRECCIÓN: Botón Shuffle movido aquí al lado de la varita */}
+                                                                                <button onClick={() => recalculateRoute(driverName, data.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 p-1.5 rounded border border-slate-200 font-bold" title="Full Re-optimize (Shuffle All)"><Icon name="shuffle" className="h-4 w-4" /></button>
                                                                                 <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded border border-slate-900 hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
                                                                             </div>
                                                                     </div>
@@ -2128,7 +2139,7 @@
                                                                 <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex gap-2">
                                                                         <button onClick={(e) => { e.stopPropagation(); openDriverMap(driverName, data); }} className="flex-1 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="map" className="h-4 w-4" /> Map</button>
                                                                         <a href={data.link} target="_blank" rel="noreferrer" className="px-4 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue hover:text-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="send" className="h-4 w-4" /></a>
-                                                                        <a href={getWhatsappLink(data.link)} target="_blank" rel="noreferrer" className="px-4 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="message-circle" className="h-4 w-4" /></a>
+                                                                        <a href={getWhatsappLink(data.link, driverName)} target="_blank" rel="noreferrer" className="px-4 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="message-circle" className="h-4 w-4" /></a>
                                                                 </div>
                                                             </div>
                                                             );
@@ -2171,7 +2182,7 @@
                                 )}
                             </div>
                         )}
-
+                        
                         {view === 'input' && (
                             <div className="grid lg:grid-cols-12 gap-8 animate-fade-in">
                                 <div className="lg:col-span-7 space-y-6">
@@ -2238,7 +2249,34 @@
 
                                 <div className="lg:col-span-5 space-y-6">
                                     <div className="bg-ess-light px-4 py-2 rounded-lg border border-blue-100 flex items-center gap-2"><Icon name="map-pin" className="h-5 w-5 text-ess-blue shrink-0" /><div className="text-xs w-full"><span className="block text-slate-400 font-semibold uppercase">Base (Start/End)</span><GoogleAddressInput value={baseAddress} onChange={handleBaseAddressChange} className="bg-transparent font-bold text-slate-700 outline-none w-full" placeholder="Warehouse" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div></div>
-                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 pb-3 border-b border-slate-100"><Icon name="users" className="h-5 w-5 text-ess-blue" /> Drivers</h3><div className="flex gap-2 mb-4"><input type="text" className="flex-1 p-3 border border-slate-300 rounded-lg text-sm outline-none" placeholder="Name..." value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)} onKeyDown={(e) => handleEnter(e, () => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }})} /><button onClick={() => {if(newDriverName.trim()){ addDriverToFb(newDriverName); setNewDriverName(''); }}} className="bg-slate-800 text-white px-3 rounded hover:bg-slate-900"><Icon name="plus" className="h-4 w-4" /></button></div><div className="grid grid-cols-1 xl:grid-cols-2 gap-2 overflow-y-auto overflow-x-hidden">{drivers.map(driver => (<div key={driver.id} className="group relative"><label className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer h-full ${driver.active ? 'border-ess-green/50 bg-green-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}><div className="flex items-center gap-2 min-w-0"><div className={`w-2 h-2 shrink-0 rounded-full ${driver.active ? 'bg-ess-green' : 'bg-slate-300'}`}></div><span className={`font-medium text-sm truncate ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</span></div><input type="checkbox" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} className="w-4 h-4 accent-ess-green shrink-0 ml-2" /></label><button onClick={(e) => { e.preventDefault(); deleteDriver(driver.id); }} className="absolute -right-1 -top-1 bg-white text-slate-400 hover:text-red-500 border border-slate-200 rounded-full p-0.5 opacity-0 group-hover:opacity-100 shadow-sm z-10"><Icon name="x" className="h-3 w-3" /></button></div>))}</div></div>
+                                    
+                                    {/* CORRECCIÓN: Volvemos a poner la lista completa con interruptores aquí para acceso rápido */}
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow">
+                                        <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 border-b border-slate-100 pb-2">
+                                            <Icon name="users" className="h-5 w-5 text-ess-blue" /> Driver Availability
+                                        </h3>
+                                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
+                                            {drivers.length === 0 && <p className="text-sm text-slate-400 italic text-center py-4">No drivers found. Add them in Fleet & Drivers.</p>}
+                                            {drivers.map(driver => (
+                                                <label key={driver.id} className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${driver.active ? 'border-green-200 bg-green-50' : 'border-slate-100 bg-slate-50 opacity-70'}`}>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-2.5 h-2.5 shrink-0 rounded-full ${driver.active ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-slate-300'}`}></div>
+                                                        <div className="overflow-hidden">
+                                                            <div className={`font-bold text-sm truncate ${driver.active ? 'text-slate-800' : 'text-slate-500'}`}>{driver.name}</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
+                                                        <input type="checkbox" className="sr-only peer" checked={driver.active} onChange={() => toggleDriver(driver.id, driver.active)} />
+                                                        <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-ess-green"></div>
+                                                    </div>
+                                                </label>
+                                            ))}
+                                        </div>
+                                        <div className="mt-4 pt-3 border-t border-slate-100 text-center">
+                                            <button onClick={() => handleNavClick('vehicles')} className="text-xs text-ess-blue font-bold hover:underline flex items-center justify-center gap-1">Manage Fleet & Details <Icon name="arrow-right" className="h-3 w-3" /></button>
+                                        </div>
+                                    </div>
+
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">
                                         {error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}
                                         {!loading && routes && (<>
