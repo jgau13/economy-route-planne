@@ -583,14 +583,18 @@
         };
 
         const GlobalManifest = ({ routes, config }) => {
-            const today = new Date().toLocaleDateString('en-US');
+            const date = new Date();
+            const dateStr = date.toLocaleDateString('en-US');
+            const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
             return (
                 <div id="global-manifest" className="hidden print:block bg-white text-black p-8 font-sans">
                     <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
                         <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
                         <div className="text-right">
                             <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
-                            <p className="text-lg font-bold">{today}</p>
+                            <p className="text-lg font-bold">{dateStr}</p>
+                            <p className="text-sm font-bold">Print Time: {timeStr}</p>
                         </div>
                     </div>
                     <div className="space-y-8">
