@@ -505,10 +505,14 @@
             );
         };
 
-        const PrintableSheet = ({ routeData, driverName, vehicle, config }) => {
+        const PrintableSheet = ({ routeData, driverName, vehicle, config, duration }) => {
             const today = new Date();
             const dateStr = today.toLocaleDateString('en-US');
             const timeStr = today.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+            const hours = Math.floor((duration || 0) / 60);
+            const minutes = Math.round((duration || 0) % 60);
+            const durationStr = duration ? `${hours}h ${minutes}m` : "N/A";
 
             return (
                 <div id="printable-sheet" className="hidden print:block bg-white text-black p-4 font-sans text-sm">
@@ -523,7 +527,8 @@
                         <div className="text-right space-y-1">
                             <div className="text-base"><span className="font-bold">Driver:</span> {driverName}</div>
                             <div className="text-base"><span className="font-bold">Truck:</span> {vehicle || "_______"}</div>
-                            <div className="text-base"><span className="font-bold">Print Date:</span> {timeStr}</div>
+                            <div className="text-base"><span className="font-bold">Est. Time:</span> {durationStr}</div>
+                            <div className="text-base"><span className="font-bold">Print Time:</span> {timeStr}</div>
                         </div>
                     </div>
                     <table className="w-full border-collapse border border-black mb-4">
@@ -569,22 +574,34 @@
         };
 
         const GlobalManifest = ({ routes, config }) => {
-            const today = new Date().toLocaleDateString('en-US');
+            const today = new Date();
+            const dateStr = today.toLocaleDateString('en-US');
+            const timeStr = today.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
             return (
                 <div id="global-manifest" className="hidden print:block bg-white text-black p-8 font-sans">
                     <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
                         <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
                         <div className="text-right">
                             <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
-                            <p className="text-lg font-bold">{today}</p>
+                            <p className="text-lg font-bold">{dateStr} <span className="text-sm font-normal ml-2">{timeStr}</span></p>
                         </div>
                     </div>
                     <div className="space-y-8">
-                        {Object.entries(routes).map(([driver, data], idx) => (
+                        {Object.entries(routes).map(([driver, data], idx) => {
+                            const dur = data.duracion_estimada || 0;
+                            const h = Math.floor(dur / 60);
+                            const m = Math.round(dur % 60);
+
+                            return (
                             <div key={idx} className="break-inside-avoid">
-                                <div className="bg-gray-100 border border-black p-2 font-bold text-lg mb-2 flex justify-between">
+                                <div className="bg-gray-100 border border-black p-2 font-bold text-lg mb-2 flex justify-between items-center">
                                     <span>{driver}</span>
-                                    <span>{data.paradas.length} Stops</span>
+                                    <div className="flex gap-4 text-sm">
+                                        <span>Est. Time: {h}h {m}m</span>
+                                        <span>•</span>
+                                        <span>{data.paradas.length} Stops</span>
+                                    </div>
                                 </div>
                                 <table className="w-full border-collapse border border-black text-xs">
                                     <thead>
@@ -609,7 +626,7 @@
                                     </tbody>
                                 </table>
                             </div>
-                        ))}
+                        )})}
                     </div>
                 </div>
             );
@@ -1037,22 +1054,18 @@
                 if (!addrToCheck || !/\b\d{5}\b/.test(addrToCheck)) {
                       return alert("Address must contain a Zip Code.");
                 }
-                // CORRECCIÓN BUG: Usar newStopName si tempStopData no tiene nombre definido
                 const finalName = formatClientName(tempStopData?.name || newStopName || 'Client');
                 const finalAddress = addrToCheck;
 
-                // --- NUEVO: Guardar cliente en BBDD automáticamente si la dirección es nueva ---
                 if (window.fbDb && finalAddress) {
                     const normalize = s => s ? s.toLowerCase().trim() : "";
                     const exists = clientDB.some(c => normalize(c.address) === normalize(finalAddress));
                     
                     if (!exists) {
-                        // Guardar en segundo plano sin bloquear la UI
                         window.fbAddDoc(getUserCollection("clients"), { name: finalName, address: finalAddress })
                             .catch(err => console.error("Auto-save client error:", err));
                     }
                 }
-                // -----------------------------------------------------------------------------
                 
                 if (editingDraftId && window.fbDb) {
                       await window.fbUpdateDoc(getUserDocRef("draft_stops", editingDraftId), { name: finalName, address: finalAddress, invoices: tempInvoices, pieces: tempPieces });
@@ -1645,7 +1658,15 @@
 
             return (
                 <div className="min-h-screen text-slate-800 bg-white pb-24">
-                    {printData && showPrintModal && <PrintableSheet routeData={printData.stops} driverName={printData.driverName} vehicle={selectedVehicleForPrint} config={companyConfig} />}
+                    {printData && showPrintModal && (
+                        <PrintableSheet 
+                            routeData={printData.stops} 
+                            driverName={printData.driverName} 
+                            vehicle={selectedVehicleForPrint} 
+                            config={companyConfig}
+                            duration={routes && routes[printData.driverName] ? routes[printData.driverName].duracion_estimada : 0} 
+                        />
+                    )}
                     {showGlobalPrint && routes && <GlobalManifest routes={routes} config={companyConfig} />}
                     {showHistoryModal && (
                         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
@@ -2065,75 +2086,73 @@
                                                                 }}
                                                             >
                                                                 <div className="absolute top-2 right-2 z-20 flex items-center gap-2">
-                                                                    {/* CORRECCIÓN: Botón Recalculate restaurado en su lugar original */}
-                                                                    <button 
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation(); 
-                                                                            recalculateRoute(driverName, data.paradas);
-                                                                        }}
-                                                                        className="bg-white text-ess-blue p-1 rounded-full shadow-sm border border-slate-200 hover:bg-blue-50 transition-colors"
-                                                                        title="Recalculate Route"
-                                                                    >
-                                                                        {recalculating[driverName] ? <div className="loader w-3 h-3 border-2"></div> : <Icon name="refresh-cw" className="h-4 w-4" />}
-                                                                    </button>
+                                                                        <button 
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation(); 
+                                                                                recalculateRoute(driverName, data.paradas);
+                                                                            }}
+                                                                            className="bg-white text-ess-blue p-1 rounded-full shadow-sm border border-slate-200 hover:bg-blue-50 transition-colors"
+                                                                            title="Recalculate Route"
+                                                                        >
+                                                                            {recalculating[driverName] ? <div className="loader w-3 h-3 border-2"></div> : <Icon name="refresh-cw" className="h-4 w-4" />}
+                                                                        </button>
 
-                                                                    <input 
-                                                                        type="checkbox" 
-                                                                        className="w-5 h-5 accent-ess-blue cursor-pointer shadow-sm border-2 border-white rounded"
-                                                                        checked={selectedDriversForZone.includes(driverName)}
-                                                                        onChange={(e) => {
-                                                                            if(e.target.checked) setSelectedDriversForZone(prev => [...prev, driverName]);
-                                                                            else setSelectedDriversForZone(prev => prev.filter(n => n !== driverName));
-                                                                        }}
-                                                                    />
+                                                                        <input 
+                                                                                type="checkbox" 
+                                                                                className="w-5 h-5 accent-ess-blue cursor-pointer shadow-sm border-2 border-white rounded"
+                                                                                checked={selectedDriversForZone.includes(driverName)}
+                                                                                onChange={(e) => {
+                                                                                    if(e.target.checked) setSelectedDriversForZone(prev => [...prev, driverName]);
+                                                                                    else setSelectedDriversForZone(prev => prev.filter(n => n !== driverName));
+                                                                                }}
+                                                                        />
                                                                 </div>
 
                                                                 <div className="bg-slate-50 p-5 border-b border-slate-100">
-                                                                    <div className="flex justify-between items-center mb-4 relative pr-6">
-                                                                            <h3 className="font-bold text-xl text-slate-800 flex items-center gap-3">
-                                                                                <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm"><Icon name="user" className="h-5 w-5 text-ess-blue" /></div> {driverName}
-                                                                                    <button onClick={() => initiateManualStop(driverName)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded-full transition-colors shadow-sm ml-2" title="Add Stop Manually"><Icon name="plus" className="h-4 w-4" /></button>
-                                                                                    
-                                                                                    <button onClick={() => setSwappingDriver(swappingDriver === driverName ? null : driverName)} className="text-slate-400 hover:text-ess-blue p-1.5 rounded hover:bg-blue-50 transition-colors ml-1" title="Swap Driver Route">
-                                                                                        <Icon name="arrow-left-right" className="h-4 w-4" />
-                                                                                    </button>
-                                                                            </h3>
-                                                                            {swappingDriver === driverName && (
-                                                                                <div className="absolute top-12 left-0 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-2 w-56 animate-fade-in">
-                                                                                        <p className="text-xs font-bold text-slate-500 mb-2 px-2 uppercase">Swap route with:</p>
-                                                                                        {Object.keys(routes).filter(d => d !== driverName).map(otherDriver => (
-                                                                                            <button key={otherDriver} onClick={() => handleSwapDriver(driverName, otherDriver)} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded text-sm text-slate-700 flex items-center gap-2 transition-colors">
-                                                                                                <div className="w-2 h-2 rounded-full bg-ess-green"></div>
-                                                                                                <span className="truncate">{otherDriver}</span>
+                                                                        <div className="flex justify-between items-center mb-4 relative pr-6">
+                                                                                <h3 className="font-bold text-xl text-slate-800 flex items-center gap-3">
+                                                                                        <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm"><Icon name="user" className="h-5 w-5 text-ess-blue" /></div> {driverName}
+                                                                                            <button onClick={() => initiateManualStop(driverName)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded-full transition-colors shadow-sm ml-2" title="Add Stop Manually"><Icon name="plus" className="h-4 w-4" /></button>
+                                                                                            
+                                                                                            <button onClick={() => setSwappingDriver(swappingDriver === driverName ? null : driverName)} className="text-slate-400 hover:text-ess-blue p-1.5 rounded hover:bg-blue-50 transition-colors ml-1" title="Swap Driver Route">
+                                                                                                    <Icon name="arrow-left-right" className="h-4 w-4" />
                                                                                             </button>
-                                                                                        ))}
+                                                                                </h3>
+                                                                                {swappingDriver === driverName && (
+                                                                                    <div className="absolute top-12 left-0 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-2 w-56 animate-fade-in">
+                                                                                            <p className="text-xs font-bold text-slate-500 mb-2 px-2 uppercase">Swap route with:</p>
+                                                                                            {Object.keys(routes).filter(d => d !== driverName).map(otherDriver => (
+                                                                                                <button key={otherDriver} onClick={() => handleSwapDriver(driverName, otherDriver)} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded text-sm text-slate-700 flex items-center gap-2 transition-colors">
+                                                                                                        <div className="w-2 h-2 rounded-full bg-ess-green"></div>
+                                                                                                        <span className="truncate">{otherDriver}</span>
+                                                                                                </button>
+                                                                                            ))}
+                                                                                    </div>
+                                                                                )}
+                                                                        </div>
+                                                                        <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
+                                                                                <div className="bg-white p-2 rounded border border-slate-100 flex items-center gap-2">{recalculating[driverName] ? <span className="text-ess-blue font-bold">Updating...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(data.duracion_estimada / 60)}h {Math.round(data.duracion_estimada % 60)}m</>}</div>
+                                                                                <div className="flex gap-1 justify-end">
+                                                                                    <button onClick={() => reverseRoute(driverName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
+                                                                                    <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize Remaining (Keep 1st)"><Icon name="wand-2" className="h-4 w-4" /></button>
+                                                                                    <button onClick={() => recalculateRoute(driverName, data.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 p-1.5 rounded border border-slate-200 font-bold" title="Full Re-optimize (Shuffle All)"><Icon name="shuffle" className="h-4 w-4" /></button>
+                                                                                    <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded border border-slate-900 hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
                                                                                 </div>
-                                                                            )}
-                                                                    </div>
-                                                                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
-                                                                            <div className="bg-white p-2 rounded border border-slate-100 flex items-center gap-2">{recalculating[driverName] ? <span className="text-ess-blue font-bold">Updating...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(data.duracion_estimada / 60)}h {Math.round(data.duracion_estimada % 60)}m</>}</div>
-                                                                            <div className="flex gap-1 justify-end">
-                                                                                <button onClick={() => reverseRoute(driverName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
-                                                                                <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize Remaining (Keep 1st)"><Icon name="wand-2" className="h-4 w-4" /></button>
-                                                                                {/* CORRECCIÓN: Botón Shuffle movido aquí al lado de la varita */}
-                                                                                <button onClick={() => recalculateRoute(driverName, data.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 p-1.5 rounded border border-slate-200 font-bold" title="Full Re-optimize (Shuffle All)"><Icon name="shuffle" className="h-4 w-4" /></button>
-                                                                                <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded border border-slate-900 hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
-                                                                            </div>
-                                                                    </div>
+                                                                        </div>
                                                                 </div>
                                                                 <div className="p-0 flex-1 overflow-y-auto max-h-[400px]">
                                                                         <ul className="divide-y divide-slate-100 min-h-[50px]">
-                                                                            {data.paradas.map((stop, index) => (
-                                                                                <li key={index} className={`stop-item relative pr-8 p-4 hover:bg-slate-50 transition-colors flex gap-3 group items-start cursor-grab active:cursor-grabbing ${selectedStops.find(s => s.driver === driverName && s.index === index) ? 'bg-blue-50' : ''}`} draggable="true" onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, driverName, index); }} onDragEnd={(e) => { e.stopPropagation(); handleDragEnd(e); }} onDrop={(e) => { e.stopPropagation(); handleDrop(e, driverName, index); }} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                                                                                {data.paradas.map((stop, index) => (
+                                                                                    <li key={index} className={`stop-item relative pr-8 p-4 hover:bg-slate-50 transition-colors flex gap-3 group items-start cursor-grab active:cursor-grabbing ${selectedStops.find(s => s.driver === driverName && s.index === index) ? 'bg-blue-50' : ''}`} draggable="true" onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, driverName, index); }} onDragEnd={(e) => { e.stopPropagation(); handleDragEnd(e); }} onDrop={(e) => { e.stopPropagation(); handleDrop(e, driverName, index); }} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}>
                                                                                         <div className="pt-1" onMouseDown={(e) => e.stopPropagation()}><input type="checkbox" className="custom-checkbox" checked={!!selectedStops.find(s => s.driver === driverName && s.index === index)} onChange={() => toggleStopSelection(driverName, index)} /></div>
                                                                                         <div className="flex flex-col items-center gap-1 pt-1"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center border border-slate-200">{index + 1}</span></div>
                                                                                         <div className="flex-1"><div className="font-bold text-sm text-slate-800">{getClientNameFromAddress(stop.direccion)}</div><div className="text-xs text-slate-500 mt-0.5">{stop.direccion}</div>{(stop.invoices || stop.pieces) && <div className="mt-1 flex gap-2"><span className="bg-yellow-50 text-yellow-700 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-mono">INV: {stop.invoices}</span><span className="bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded border border-blue-200 font-mono">PCS: {stop.pieces}</span></div>}</div>
                                                                                         <div className="absolute right-2 top-2 bottom-2 flex flex-col justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onMouseDown={(e) => e.stopPropagation()}>
-                                                                                            <div className="flex gap-1 justify-end"><button onClick={() => openEditStopModal(driverName, index, stop)} className="p-0.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded"><Icon name="pencil" className="h-3.5 w-3.5" /></button><button onClick={() => deleteStopFromRoute(driverName, index)} className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Icon name="trash-2" className="h-3.5 w-3.5" /></button></div>
-                                                                                            <div className="flex gap-1 justify-end"><button onClick={() => moveStop(driverName, index, -1)} disabled={index === 0} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-up" className="h-3.5 w-3.5" /></button><button onClick={() => moveStop(driverName, index, 1)} disabled={index === data.paradas.length - 1} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-down" className="h-3.5 w-3.5" /></button></div>
+                                                                                                <div className="flex gap-1 justify-end"><button onClick={() => openEditStopModal(driverName, index, stop)} className="p-0.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded"><Icon name="pencil" className="h-3.5 w-3.5" /></button><button onClick={() => deleteStopFromRoute(driverName, index)} className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Icon name="trash-2" className="h-3.5 w-3.5" /></button></div>
+                                                                                                <div className="flex gap-1 justify-end"><button onClick={() => moveStop(driverName, index, -1)} disabled={index === 0} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-up" className="h-3.5 w-3.5" /></button><button onClick={() => moveStop(driverName, index, 1)} disabled={index === data.paradas.length - 1} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-down" className="h-3.5 w-3.5" /></button></div>
                                                                                         </div>
-                                                                                </li>
-                                                                            ))}
+                                                                                    </li>
+                                                                                ))}
                                                                         </ul>
                                                                 </div>
                                                                 <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex gap-2">
@@ -2250,7 +2269,6 @@
                                 <div className="lg:col-span-5 space-y-6">
                                     <div className="bg-ess-light px-4 py-2 rounded-lg border border-blue-100 flex items-center gap-2"><Icon name="map-pin" className="h-5 w-5 text-ess-blue shrink-0" /><div className="text-xs w-full"><span className="block text-slate-400 font-semibold uppercase">Base (Start/End)</span><GoogleAddressInput value={baseAddress} onChange={handleBaseAddressChange} className="bg-transparent font-bold text-slate-700 outline-none w-full" placeholder="Warehouse" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div></div>
                                     
-                                    {/* CORRECCIÓN: Volvemos a poner la lista completa con interruptores aquí para acceso rápido */}
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow">
                                         <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 border-b border-slate-100 pb-2">
                                             <Icon name="users" className="h-5 w-5 text-ess-blue" /> Driver Availability
@@ -2278,14 +2296,14 @@
                                     </div>
 
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 card-shadow sticky top-24">
-                                        {error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}
-                                        {!loading && routes && (<>
-                                            <p className="text-xs text-center text-slate-500 mb-1">Previous routes found</p>
-                                            <button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-3 rounded-xl font-bold text-sm shadow mb-3 transition-all flex justify-center items-center gap-2"><Icon name="map" className="h-5 w-5" /> GO TO RESULTS</button>
-                                        </>)}
-                                        <button onClick={handlePlanZones} disabled={currentStops.length === 0} className="w-full bg-slate-800 hover:bg-black text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-slate-900/20 transition-all flex justify-center items-center gap-2 disabled:opacity-75">
-                                            {loading ? <div className="loader"></div> : <><Icon name="map" className="h-6 w-6" /> PLAN ZONES & MAP</>}
-                                        </button>
+                                            {error && <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">{error}</div>}
+                                            {!loading && routes && (<>
+                                                <p className="text-xs text-center text-slate-500 mb-1">Previous routes found</p>
+                                                <button onClick={() => setView('results')} className="w-full bg-white border-2 border-ess-green text-ess-green hover:bg-green-50 py-3 rounded-xl font-bold text-sm shadow mb-3 transition-all flex justify-center items-center gap-2"><Icon name="map" className="h-5 w-5" /> GO TO RESULTS</button>
+                                            </>)}
+                                            <button onClick={handlePlanZones} disabled={currentStops.length === 0} className="w-full bg-slate-800 hover:bg-black text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-slate-900/20 transition-all flex justify-center items-center gap-2 disabled:opacity-75">
+                                                {loading ? <div className="loader"></div> : <><Icon name="map" className="h-6 w-6" /> PLAN ZONES & MAP</>}
+                                            </button>
                                     </div>
                                 </div>
                             </div>
