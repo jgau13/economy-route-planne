@@ -24,7 +24,6 @@
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, getDocs, setDoc, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // Global function to inject configuration
         window.initializeFirebaseGlobally = (config) => {
             try {
                 if (!config || !config.apiKey || config.apiKey.includes("Pega_aquí")) {
@@ -79,7 +78,6 @@
         .animate-fade-in { animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* GOOGLE MAPS AUTOCOMPLETE FIXES */
         .pac-container { 
             z-index: 99999 !important; 
             border-radius: 8px; 
@@ -106,7 +104,6 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .custom-checkbox { width: 20px; height: 20px; accent-color: #1b6e9b; cursor: pointer; }
 
-        /* PRINT STYLES - FIXED TO PORTRAIT */
         @media print {
             @page { size: portrait; margin: 0.5cm; }
             body * { visibility: hidden; }
@@ -122,16 +119,15 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- UNIFIED CORPORATE COLOR PALETTE ---
         const COMPANY_PALETTE = [
-            { hex: "#1b6e9b", tw: "bg-ess-blue text-white" },       // 0: Main Blue
-            { hex: "#6bbf5d", tw: "bg-ess-green text-white" },      // 1: Main Green
-            { hex: "#0f4c6e", tw: "bg-ess-dark text-white" },       // 2: Dark Blue
-            { hex: "#0284c7", tw: "bg-sky-600 text-white" },        // 3: Sky Blue
-            { hex: "#0d9488", tw: "bg-teal-600 text-white" },       // 4: Teal
-            { hex: "#1e40af", tw: "bg-blue-800 text-white" },       // 5: Navy Blue
-            { hex: "#059669", tw: "bg-emerald-600 text-white" },    // 6: Emerald
-            { hex: "#0e7490", tw: "bg-cyan-700 text-white" }         // 7: Cyan
+            { hex: "#1b6e9b", tw: "bg-ess-blue text-white" },
+            { hex: "#6bbf5d", tw: "bg-ess-green text-white" },
+            { hex: "#0f4c6e", tw: "bg-ess-dark text-white" },
+            { hex: "#0284c7", tw: "bg-sky-600 text-white" },
+            { hex: "#0d9488", tw: "bg-teal-600 text-white" },
+            { hex: "#1e40af", tw: "bg-blue-800 text-white" },
+            { hex: "#059669", tw: "bg-emerald-600 text-white" },
+            { hex: "#0e7490", tw: "bg-cyan-700 text-white" }
         ];
 
         const ConfigErrorScreen = ({ errorDetails }) => (
@@ -320,8 +316,6 @@
                                         } else if (event.type === 'polygon') {
                                             if (window.google.maps.geometry && window.google.maps.geometry.poly) {
                                                 if (window.google.maps.geometry.poly.containsLocation(marker.getPosition(), shape)) isInside = true;
-                                            } else {
-                                                console.warn("Geometry library not loaded for polygon check");
                                             }
                                         }
 
@@ -545,7 +539,6 @@
                         </div>
                     )}
 
-                    {/* MAP LEGEND */}
                     {legendData.length > 0 && mapReady && (
                         <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-lg border border-slate-200 z-[1000] max-w-[180px] animate-fade-in">
                             <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider border-b pb-1">Map Routes</h4>
@@ -841,10 +834,8 @@
                     for (let line of lines) {
                         const parts = line.split('\t'); 
                         if (parts.length < 2) continue;
-                        
                         const name = formatClientName(parts[0]); 
                         const address = parts[1].trim();
-                        
                         if (!name || !address) continue;
 
                         const docRef = window.fbDoc(getUserCollection("clients"));
@@ -857,9 +848,7 @@
                             count = 0;
                         }
                     }
-                    
                     if (count > 0) await batch.commit();
-                    
                     alert("Import completed successfully!");
                     setBulkInputText('');
                     setShowBulkImportModal(false);
@@ -957,14 +946,22 @@
             
             const addClientToRoute = async (client) => {
                 if (!window.fbDb) return;
-                try {
-                    await window.fbAddDoc(getUserCollection("draft_stops"), {
-                        name: client.name,
-                        address: client.address,
-                        createdAt: Date.now()
-                    });
-                } catch(e) {
-                    alert("Error adding to route: " + e.message);
+                const normalize = s => s ? s.toLowerCase().trim() : "";
+                const clientAddr = normalize(client.address);
+                const existingStop = currentStops.find(s => normalize(s.address) === clientAddr);
+                
+                if (existingStop) {
+                    await removeStop(existingStop.id);
+                } else {
+                    try {
+                        await window.fbAddDoc(getUserCollection("draft_stops"), {
+                            name: client.name,
+                            address: client.address,
+                            createdAt: Date.now()
+                        });
+                    } catch(e) {
+                        alert("Error adding to route: " + e.message);
+                    }
                 }
             };
 
@@ -1248,6 +1245,7 @@
                      setShowManualStopModal(false); setTargetDriverForManual(null);
                 } else if (window.fbDb) {
                     const docRef = await window.fbAddDoc(getUserCollection("draft_stops"), { name: finalName, address: finalAddress, invoices: tempInvoices, pieces: tempPieces, createdAt: Date.now() });
+                    
                     if (view === 'zone_planning' && optimizedStops) {
                         const newStopLocal = {
                             id: docRef.id,
@@ -1380,6 +1378,7 @@
                     for (const group of stopGroups) {
                         let zoneId;
                         const groupName = group.name.toUpperCase().trim();
+                        
                         const existingZone = currentZones.find(z => z.name.toUpperCase() === groupName);
                         
                         if (existingZone) {
@@ -1499,6 +1498,7 @@
                 
                 const listLength = (optimizedStops || currentStops).length;
                 const indices = new Set();
+                
                 const parts = stopSelectionInput.split(/[,;]/); 
                 
                 for(let part of parts) {
@@ -1607,8 +1607,10 @@
                 setShowDriverModal(false);
             };
 
+            // Callback to handle selection from map drawing
             const handleSelectionFromMap = (selectedIndices) => {
                 if (selectedIndices && selectedIndices.length > 0) {
+                    // Create comma-separated string
                     const selectionStr = selectedIndices.join(', ');
                     setStopSelectionInput(selectionStr);
                 }
@@ -1661,13 +1663,28 @@
             const selectClient = (c) => { setNewStopName(c.name); setNewStopAddress(c.address); setShowSuggestions(false); setShowAddressSuggestions(false); setActiveSuggestionIndex(-1); };
             const getClientNameFromAddress = (address) => { const fromDraft = currentStops.find(s => s.address === address); if (fromDraft) return fromDraft.name; const fromDB = clientDB.find(c => c.address === address); return fromDB ? fromDB.name : "Client"; };
             
-            const getWhatsappLink = (l, driverName) => {
+            // --- 3. DYNAMIC WHATSAPP LINK GENERATOR ---
+            // Generates the Google Maps link based on the current order of the 'stops' array passed to it.
+            const getDynamicMapsLink = (stops) => {
+                if (!stops || stops.length === 0) return "";
+                const origin = encodeURIComponent(baseAddress);
+                const waypoints = stops.map(s => encodeURIComponent(s.direccion)).join('/');
+                // Format: origin/waypoint1/waypoint2/.../origin (round trip)
+                return `https://www.google.com/maps/dir/${origin}/${waypoints}/${origin}`;
+            };
+
+            const getWhatsappLink = (stops, driverName) => {
                 let phone = '';
                 const driver = drivers.find(d => d.name === driverName);
                 if (driver && driver.phone) {
-                    phone = driver.phone.replace(/\D/g, ''); 
+                    phone = driver.phone.replace(/\D/g, ''); // Remove non-digits
                 }
-                const text = encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`);
+                
+                // Get fresh link based on current list order
+                const link = getDynamicMapsLink(stops);
+                
+                const text = encodeURIComponent(`Hello, here is your updated route:\n\n${link}\n\nDrive safely!`);
+                
                 if (phone) {
                     return `https://wa.me/${phone}?text=${text}`;
                 } else {
@@ -1703,6 +1720,55 @@
                 return clientDB.filter(c => (c.address || "").toLowerCase().includes(t)).slice(0, 5);
             }, [clientFormAddress, clientDB]);
 
+            // --- 1. RECALCULATE ROUTE (FIXED ORDER) ---
+            // This function calculates estimated time based on current stop order without optimizing.
+            const recalculateFixedRoute = async (dName, stops) => { 
+                if (typeof window.google === 'undefined') return;
+                
+                setRecalculating(p => ({...p, [dName]: true})); 
+                
+                try { 
+                    const directionsService = new window.google.maps.DirectionsService();
+                    
+                    // Create waypoints based on current stop order
+                    const waypoints = stops.map(s => ({ location: s.direccion, stopover: true }));
+                    
+                    directionsService.route({ 
+                        origin: baseAddress, 
+                        destination: baseAddress, 
+                        waypoints: waypoints, 
+                        optimizeWaypoints: false, // CRITICAL: false keeps the current order
+                        travelMode: window.google.maps.TravelMode.DRIVING 
+                    }, (response, status) => {
+                        if (status === 'OK') {
+                            // Calculate total duration manually from legs
+                            const totalDurationMinutes = response.routes[0].legs.reduce((acc, leg) => acc + (leg.duration.value / 60), 0) + (stops.length * dwellTime);
+                            
+                            // Update state with new duration but SAME stops order
+                            setRoutes(p => ({
+                                ...p, 
+                                [dName]: {
+                                    ...p[dName], 
+                                    duracion_estimada: totalDurationMinutes, 
+                                    link: getDynamicMapsLink(stops), // Update link based on this order
+                                    paradas: stops 
+                                }
+                            })); 
+                        } else {
+                             console.warn("Recalculate failed:", status);
+                             alert("Could not calculate time for this route. Google Maps status: " + status);
+                        }
+                        setRecalculating(p => ({...p, [dName]: false})); 
+                    });
+                } catch (e) { 
+                    console.error(e);
+                    alert("Error recalculating route: " + e.message);
+                    setRecalculating(p => ({...p, [dName]: false})); 
+                } 
+            };
+            
+            // NOTE: This existing function calls the backend API which *does* re-order (TSP).
+            // We keep it for the "Full Re-optimize" button, but the refresh button uses recalculateFixedRoute.
             const recalculateRoute = async (dName, stops) => { 
                 setRecalculating(p => ({...p, [dName]: true})); 
                 try { 
@@ -1739,7 +1805,7 @@
                 } 
             };
 
-            const handleRecalculateAll = async () => { if (!routes) return; setIsRecalculatingAll(true); await Promise.all(Object.keys(routes).map(d => recalculateRoute(d, routes[d].paradas))); setIsRecalculatingAll(false); };
+            const handleRecalculateAll = async () => { if (!routes) return; setIsRecalculatingAll(true); await Promise.all(Object.keys(routes).map(d => recalculateFixedRoute(d, routes[d].paradas))); setIsRecalculatingAll(false); };
             
             const handleRestore = async () => { 
                 if (confirm("Restore original routes? This will also reset zone assignments.")) { 
@@ -2054,7 +2120,7 @@
                                 <td className="p-4 text-sm text-slate-600">{c.address}</td>
                                 <td className="p-4 text-right">
                                     <div className="flex justify-end gap-2">
-                                        <button onClick={() => addClientToRoute(c)} className={`p-1 rounded transition-colors ${isInRoute ? 'text-green-600 bg-green-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`} title="Add to Today's Route">
+                                        <button onClick={() => addClientToRoute(c)} className={`p-1 rounded transition-colors ${isInRoute ? 'text-green-600 bg-green-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`} title="Add/Remove from Route">
                                             <Icon name={isInRoute ? "check-circle" : "plus-circle"} className="h-4 w-4" />
                                         </button>
                                         <button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1 hover:bg-blue-50 rounded"><Icon name="pencil" className="h-4 w-4"/></button>
@@ -2213,201 +2279,155 @@
                                               <Icon name="save" className="h-3 w-3" /> Save Route
                                           </button>
                                           <button onClick={handleRestore} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-3 py-2 rounded-lg flex items-center gap-2"><Icon name="rotate-ccw" className="h-3 w-3" /> Reset</button>
-                                          <button onClick={() => setView('global_map')} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:text-ess-blue px-3 py-2 rounded-lg flex items-center gap-2"><Icon name="map" className="h-3 w-3" /> Map</button>
+                                          <button onClick={() => setView('global_map')} className="text-xs font-bold text-slate-600 bg-white border px-3 py-2 rounded-lg flex items-center gap-2"><Icon name="map" className="h-3 w-3" /> Map</button>
                                           <button onClick={handleGlobalPrint} className="text-xs font-bold text-white bg-slate-800 hover:bg-black px-3 py-2 rounded-lg flex items-center gap-2 shadow-sm"><Icon name="printer" className="h-3 w-3" /> Print All</button>
                                      </div>
                                 </div>
 
-                                <div ref={resultsContainerRef} onDragOver={handleResultsDragOver} className="flex-1 overflow-y-auto pb-20"> 
-                                    <div className="flex flex-col gap-8 px-2"> 
-                                        <br />
-                                        {[null, ...zones].map((zone, zIdx) => {
-                                            const zoneId = zone ? zone.id : 'unassigned';
-                                            const zoneName = zone ? zone.name : 'UNASSIGNED';
-                                            const validZoneIds = zones.map(z => z.id);
+                                <div ref={resultsContainerRef} onDragOver={handleResultsDragOver} className="flex-1 overflow-y-auto pb-20 px-2 space-y-8"> 
+                                    {[null, ...zones].map((zone, zIdx) => {
+                                        const zoneId = zone ? zone.id : 'unassigned';
+                                        const zoneName = zone ? zone.name : 'UNASSIGNED';
+                                        const validZoneIds = zones.map(z => z.id);
 
-                                            const driversInZone = Object.entries(routes).filter(([dName, _]) => {
-                                                const assignedId = zoneAssignments[dName];
-                                                if (zone === null) {
-                                                    return !assignedId || !validZoneIds.includes(assignedId);
-                                                }
-                                                return assignedId === zone.id;
-                                            });
+                                        const driversInZone = Object.entries(routes).filter(([dName, _]) => {
+                                            const assignedId = zoneAssignments[dName];
+                                            if (zone === null) {
+                                                return !assignedId || !validZoneIds.includes(assignedId);
+                                            }
+                                            return assignedId === zone.id;
+                                        });
 
-                                            if (driversInZone.length === 0) return null;
+                                        if (driversInZone.length === 0) return null;
 
-                                            const headerColorClass = zone ? COMPANY_PALETTE[(zIdx - 1) % COMPANY_PALETTE.length].tw : 'bg-slate-600 text-white';
+                                        const headerColorClass = zone ? COMPANY_PALETTE[(zIdx - 1) % COMPANY_PALETTE.length].tw : 'bg-slate-600 text-white';
 
-                                            return (
-                                                <div 
-                                                    key={zoneId}
-                                                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                                                    onDrop={(e) => {
-                                                        e.preventDefault();
-                                                        if (draggedDriver) {
-                                                            assignDriverToZone(draggedDriver, zone ? zone.id : null);
-                                                            setDraggedDriver(null);
-                                                        }
-                                                    }}
-                                                    className={`w-full rounded-xl transition-all ${draggedDriver ? 'bg-slate-50 border-2 border-dashed border-slate-300' : 'bg-transparent'}`}
-                                                >
-                                                    <div className={`p-3 rounded-lg font-bold text-sm flex justify-between items-center mb-4 shadow-sm ${headerColorClass}`}>
-                                                        <span className="tracking-wide">{zoneName}</span>
-                                                        <span className="bg-white/20 px-3 py-0.5 rounded-full text-xs font-bold text-white">{driversInZone.length}</span>
-                                                    </div>
-
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-1">
-                                                        {driversInZone.map(([driverName, data]) => {
-                                                            if (!data || !data.paradas) return null;
-
-                                                            return (
-                                                            <div 
-                                                                key={driverName}
-                                                                draggable="true"
-                                                                onDragStart={(e) => {
-                                                                    if (e.target.closest('.stop-item')) return; 
-                                                                    setDraggedDriver(driverName);
-                                                                    e.dataTransfer.effectAllowed = "move";
-                                                                    e.target.style.opacity = '0.5';
-                                                                }}
-                                                                onDragEnd={(e) => {
-                                                                    e.target.style.opacity = '1';
-                                                                    setDraggedDriver(null);
-                                                                }}
-                                                                className={`bg-white rounded-xl border border-slate-200 card-shadow flex flex-col overflow-hidden relative group transition-all ${draggedDriver === driverName ? 'rotate-3 scale-95 opacity-50' : 'hover:border-ess-blue hover:shadow-md'}`}
-                                                                onDragOver={(e) => handleDragOverContainer(e, driverName)} 
-                                                                onDrop={(e) => {
-                                                                    e.stopPropagation(); 
-                                                                    handleDrop(e, driverName);
-                                                                }}
-                                                            >
-                                                                <div className="absolute top-2 right-2 z-20 flex items-center gap-2">
-                                                                        <button 
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation(); 
-                                                                                recalculateRoute(driverName, data.paradas);
-                                                                            }}
-                                                                            className="bg-white text-ess-blue p-1 rounded-full shadow-sm border border-slate-200 hover:bg-blue-50 transition-colors"
-                                                                            title="Recalculate Route"
-                                                                        >
-                                                                            {recalculating[driverName] ? <div className="loader w-3 h-3 border-2"></div> : <Icon name="refresh-cw" className="h-4 w-4" />}
-                                                                        </button>
-
-                                                                        <input 
-                                                                                type="checkbox" 
-                                                                                className="w-5 h-5 accent-ess-blue cursor-pointer shadow-sm border-2 border-white rounded"
-                                                                                checked={selectedDriversForZone.includes(driverName)}
-                                                                                onChange={(e) => {
-                                                                                    if(e.target.checked) setSelectedDriversForZone(prev => [...prev, driverName]);
-                                                                                    else setSelectedDriversForZone(prev => prev.filter(n => n !== driverName));
-                                                                                }}
-                                                                        />
-                                                                </div>
-
-                                                                <div className="bg-slate-50 p-5 border-b border-slate-100">
-                                                                        <div className="flex justify-between items-center mb-4 relative pr-6">
-                                                                            <h3 className="font-bold text-xl text-slate-800 flex items-center gap-3">
-                                                                                    <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm"><Icon name="user" className="h-5 w-5 text-ess-blue" /></div> {driverName}
-                                                                                    <button onClick={() => initiateManualStop(driverName)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded-full transition-colors shadow-sm ml-2" title="Add Stop Manually"><Icon name="plus" className="h-4 w-4" /></button>
-                                                                                    
-                                                                                    <button onClick={() => setSwappingDriver(swappingDriver === driverName ? null : driverName)} className="text-slate-400 hover:text-ess-blue p-1.5 rounded hover:bg-blue-50 transition-colors ml-1" title="Swap Driver Route">
-                                                                                        <Icon name="arrow-left-right" className="h-4 w-4" />
-                                                                                    </button>
-                                                                            </h3>
-                                                                            {swappingDriver === driverName && (
-                                                                                <div className="absolute top-12 left-0 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-2 w-56 animate-fade-in">
-                                                                                    <p className="text-xs font-bold text-slate-500 mb-2 px-2 uppercase">Swap route with:</p>
-                                                                                    {Object.keys(routes).filter(d => d !== driverName).map(otherDriver => (
-                                                                                        <button key={otherDriver} onClick={() => handleSwapDriver(driverName, otherDriver)} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded text-sm text-slate-700 flex items-center gap-2 transition-colors">
-                                                                                                <div className="w-2 h-2 rounded-full bg-ess-green"></div>
-                                                                                                <span className="truncate">{otherDriver}</span>
-                                                                                        </button>
-                                                                                    ))}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                        <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
-                                                                                <div className="bg-white p-2 rounded border border-slate-100 flex items-center gap-2">{recalculating[driverName] ? <span className="text-ess-blue font-bold">Updating...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(data.duracion_estimada / 60)}h {Math.round(data.duracion_estimada % 60)}m</>}</div>
-                                                                                <div className="flex gap-1 justify-end">
-                                                                                    <button onClick={() => reverseRoute(driverName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
-                                                                                    <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize Remaining (Keep 1st)"><Icon name="wand-2" className="h-4 w-4" /></button>
-                                                                                    <button onClick={() => recalculateRoute(driverName, data.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 p-1.5 rounded border border-slate-200 font-bold" title="Full Re-optimize (Shuffle All)"><Icon name="shuffle" className="h-4 w-4" /></button>
-                                                                                    <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded border border-slate-900 hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
-                                                                                </div>
-                                                                        </div>
-                                                                </div>
-                                                                <div className="p-0 flex-1 overflow-y-auto max-h-[400px]">
-                                                                        <ul className="divide-y divide-slate-100 min-h-[50px]">
-                                                                                {data.paradas.map((stop, index) => (
-                                                                                    <li key={index} className={`stop-item relative pr-8 p-4 hover:bg-slate-50 transition-colors flex gap-3 group items-start cursor-grab active:cursor-grabbing ${selectedStops.find(s => s.driver === driverName && s.index === index) ? 'bg-blue-50' : ''}`} draggable="true" onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, driverName, index); }} onDragEnd={(e) => { e.stopPropagation(); handleDragEnd(e); }} onDrop={(e) => { e.stopPropagation(); handleDrop(e, driverName, index); }} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                                                                                        <div className="pt-1" onMouseDown={(e) => e.stopPropagation()}><input type="checkbox" className="custom-checkbox" checked={!!selectedStops.find(s => s.driver === driverName && s.index === index)} onChange={() => toggleStopSelection(driverName, index)} /></div>
-                                                                                        <div className="flex flex-col items-center gap-1 pt-1"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center border border-slate-200">{index + 1}</span></div>
-                                                                                        <div className="flex-1"><div className="font-bold text-sm text-slate-800">{getClientNameFromAddress(stop.direccion)}</div><div className="text-xs text-slate-500 mt-0.5">{stop.direccion}</div>{(stop.invoices || stop.pieces) && <div className="mt-1 flex gap-2"><span className="bg-yellow-50 text-yellow-700 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-mono">INV: {stop.invoices}</span><span className="bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded border border-blue-200 font-mono">PCS: {stop.pieces}</span></div>}</div>
-                                                                                        <div className="absolute right-2 top-2 bottom-2 flex flex-col justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onMouseDown={(e) => e.stopPropagation()}>
-                                                                                                <div className="flex gap-1 justify-end"><button onClick={() => openEditStopModal(driverName, index, stop)} className="p-0.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded"><Icon name="pencil" className="h-3.5 w-3.5" /></button><button onClick={() => deleteStopFromRoute(driverName, index)} className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Icon name="trash-2" className="h-3.5 w-3.5" /></button></div>
-                                                                                                <div className="flex gap-1 justify-end"><button onClick={() => moveStop(driverName, index, -1)} disabled={index === 0} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-up" className="h-3.5 w-3.5" /></button><button onClick={() => moveStop(driverName, index, 1)} disabled={index === data.paradas.length - 1} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-down" className="h-3.5 w-3.5" /></button></div>
-                                                                                        </div>
-                                                                                    </li>
-                                                                                ))}
-                                                                        </ul>
-                                                                </div>
-                                                                <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex gap-2">
-                                                                        <button onClick={(e) => { e.stopPropagation(); openDriverMap(driverName, data); }} className="flex-1 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="map" className="h-4 w-4" /> Map</button>
-                                                                        <a href={data.link} target="_blank" rel="noreferrer" className="px-4 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue hover:text-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="send" className="h-4 w-4" /></a>
-                                                                        <a href={getWhatsappLink(data.link, driverName)} target="_blank" rel="noreferrer" className="px-4 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="message-circle" className="h-4 w-4" /></a>
-                                                                </div>
-                                                            </div>
-                                                            );
-                                                        })}
-                                                    </div>
+                                        return (
+                                            <div 
+                                                key={zoneId}
+                                                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                                                onDrop={(e) => {
+                                                    e.preventDefault();
+                                                    if (draggedDriver) {
+                                                        assignDriverToZone(draggedDriver, zone ? zone.id : null);
+                                                        setDraggedDriver(null);
+                                                    }
+                                                }}
+                                                className={`w-full rounded-xl transition-all ${draggedDriver ? 'bg-slate-50 border-2 border-dashed border-slate-300' : 'bg-transparent'}`}
+                                            >
+                                                <div className={`p-3 rounded-lg font-bold text-sm flex justify-between items-center mb-4 shadow-sm ${headerColorClass}`}>
+                                                    <span className="tracking-wide">{zoneName}</span>
+                                                    <span className="bg-white/20 px-3 py-0.5 rounded-full text-xs font-bold text-white">{driversInZone.length}</span>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-1">
+                                                    {driversInZone.map(([driverName, data]) => {
+                                                        if (!data || !data.paradas) return null;
+
+                                                        return (
+                                                        <div 
+                                                            key={driverName}
+                                                            draggable="true"
+                                                            onDragStart={(e) => {
+                                                                if (e.target.closest('.stop-item')) return; 
+                                                                setDraggedDriver(driverName);
+                                                                e.dataTransfer.effectAllowed = "move";
+                                                                e.target.style.opacity = '0.5';
+                                                            }}
+                                                            onDragEnd={(e) => {
+                                                                e.target.style.opacity = '1';
+                                                                setDraggedDriver(null);
+                                                            }}
+                                                            className={`bg-white rounded-xl border border-slate-200 card-shadow flex flex-col overflow-hidden relative group transition-all ${draggedDriver === driverName ? 'rotate-3 scale-95 opacity-50' : 'hover:border-ess-blue hover:shadow-md'}`}
+                                                            onDragOver={(e) => handleDragOverContainer(e, driverName)} 
+                                                            onDrop={(e) => {
+                                                                e.stopPropagation(); 
+                                                                handleDrop(e, driverName);
+                                                            }}
+                                                        >
+                                                            <div className="absolute top-2 right-2 z-20 flex items-center gap-2">
+                                                                    <button 
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation(); 
+                                                                            recalculateFixedRoute(driverName, data.paradas);
+                                                                        }}
+                                                                        className="bg-white text-ess-blue p-1 rounded-full shadow-sm border border-slate-200 hover:bg-blue-50 transition-colors"
+                                                                        title="Recalculate Time (Keep Order)"
+                                                                    >
+                                                                        {recalculating[driverName] ? <div className="loader w-3 h-3 border-2"></div> : <Icon name="refresh-cw" className="h-4 w-4" />}
+                                                                    </button>
+
+                                                                    <input 
+                                                                            type="checkbox" 
+                                                                            className="w-5 h-5 accent-ess-blue cursor-pointer shadow-sm border-2 border-white rounded"
+                                                                            checked={selectedDriversForZone.includes(driverName)}
+                                                                            onChange={(e) => {
+                                                                                if(e.target.checked) setSelectedDriversForZone(prev => [...prev, driverName]);
+                                                                                else setSelectedDriversForZone(prev => prev.filter(n => n !== driverName));
+                                                                            }}
+                                                                    />
+                                                            </div>
+
+                                                            <div className="bg-slate-50 p-5 border-b border-slate-100">
+                                                                    <div className="flex justify-between items-center mb-4 relative pr-6">
+                                                                        <h3 className="font-bold text-xl text-slate-800 flex items-center gap-3">
+                                                                                <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm"><Icon name="user" className="h-5 w-5 text-ess-blue" /></div> {driverName}
+                                                                                <button onClick={() => initiateManualStop(driverName)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded-full transition-colors shadow-sm ml-2" title="Add Stop Manually"><Icon name="plus" className="h-4 w-4" /></button>
+                                                                                
+                                                                                <button onClick={() => setSwappingDriver(swappingDriver === driverName ? null : driverName)} className="text-slate-400 hover:text-ess-blue p-1.5 rounded hover:bg-blue-50 transition-colors ml-1" title="Swap Driver Route">
+                                                                                    <Icon name="arrow-left-right" className="h-4 w-4" />
+                                                                                </button>
+                                                                        </h3>
+                                                                        {swappingDriver === driverName && (
+                                                                            <div className="absolute top-12 left-0 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-2 w-56 animate-fade-in">
+                                                                                <p className="text-xs font-bold text-slate-500 mb-2 px-2 uppercase">Swap route with:</p>
+                                                                                {Object.keys(routes).filter(d => d !== driverName).map(otherDriver => (
+                                                                                    <button key={otherDriver} onClick={() => handleSwapDriver(driverName, otherDriver)} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded text-sm text-slate-700 flex items-center gap-2 transition-colors">
+                                                                                            <div className="w-2 h-2 rounded-full bg-ess-green"></div>
+                                                                                            <span className="truncate">{otherDriver}</span>
+                                                                                    </button>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
+                                                                            <div className="bg-white p-2 rounded border border-slate-100 flex items-center gap-2">{recalculating[driverName] ? <span className="text-ess-blue font-bold">Updating...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(data.duracion_estimada / 60)}h {Math.round(data.duracion_estimada % 60)}m</>}</div>
+                                                                            <div className="flex gap-1 justify-end">
+                                                                                <button onClick={() => reverseRoute(driverName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
+                                                                                <button onClick={() => handleOptimizeRemaining(driverName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 font-bold" title="Optimize Remaining (Keep 1st)"><Icon name="wand-2" className="h-4 w-4" /></button>
+                                                                                <button onClick={() => recalculateRoute(driverName, data.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 p-1.5 rounded border border-slate-200 font-bold" title="Full Re-optimize (Shuffle All)"><Icon name="shuffle" className="h-4 w-4" /></button>
+                                                                                <button onClick={() => openPrintModal(driverName, data.paradas)} className="bg-slate-800 text-white p-1.5 rounded border border-slate-900 hover:bg-black" title="Print Sheet"><Icon name="printer" className="h-4 w-4" /></button>
+                                                                            </div>
+                                                                    </div>
+                                                            </div>
+                                                            <div className="p-0 flex-1 overflow-y-auto max-h-[400px]">
+                                                                    <ul className="divide-y divide-slate-100 min-h-[50px]">
+                                                                            {data.paradas.map((stop, index) => (
+                                                                                <li key={index} className={`stop-item relative pr-8 p-4 hover:bg-slate-50 transition-colors flex gap-3 group items-start cursor-grab active:cursor-grabbing ${selectedStops.find(s => s.driver === driverName && s.index === index) ? 'bg-blue-50' : ''}`} draggable="true" onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, driverName, index); }} onDragEnd={(e) => { e.stopPropagation(); handleDragEnd(e); }} onDrop={(e) => { e.stopPropagation(); handleDrop(e, driverName, index); }} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                                                                                    <div className="pt-1" onMouseDown={(e) => e.stopPropagation()}><input type="checkbox" className="custom-checkbox" checked={!!selectedStops.find(s => s.driver === driverName && s.index === index)} onChange={() => toggleStopSelection(driverName, index)} /></div>
+                                                                                    <div className="flex flex-col items-center gap-1 pt-1"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center border border-slate-200">{index + 1}</span></div>
+                                                                                    <div className="flex-1"><div className="font-bold text-sm text-slate-800">{getClientNameFromAddress(stop.direccion)}</div><div className="text-xs text-slate-500 mt-0.5">{stop.direccion}</div>{(stop.invoices || stop.pieces) && <div className="mt-1 flex gap-2"><span className="bg-yellow-50 text-yellow-700 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-mono">INV: {stop.invoices}</span><span className="bg-blue-50 text-blue-700 text-[10px] px-1.5 py-0.5 rounded border border-blue-200 font-mono">PCS: {stop.pieces}</span></div>}</div>
+                                                                                    <div className="absolute right-2 top-2 bottom-2 flex flex-col justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onMouseDown={(e) => e.stopPropagation()}>
+                                                                                            <div className="flex gap-1 justify-end"><button onClick={() => openEditStopModal(driverName, index, stop)} className="p-0.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded"><Icon name="pencil" className="h-3.5 w-3.5" /></button><button onClick={() => deleteStopFromRoute(driverName, index)} className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"><Icon name="trash-2" className="h-3.5 w-3.5" /></button></div>
+                                                                                            <div className="flex gap-1 justify-end"><button onClick={() => moveStop(driverName, index, -1)} disabled={index === 0} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-up" className="h-3.5 w-3.5" /></button><button onClick={() => moveStop(driverName, index, 1)} disabled={index === data.paradas.length - 1} className="p-0.5 text-slate-400 hover:text-ess-blue disabled:opacity-20"><Icon name="chevron-down" className="h-3.5 w-3.5" /></button></div>
+                                                                                    </div>
+                                                                                </li>
+                                                                            ))}
+                                                                    </ul>
+                                                            </div>
+                                                            <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex gap-2">
+                                                                    <button onClick={(e) => { e.stopPropagation(); openDriverMap(driverName, data); }} className="flex-1 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="map" className="h-4 w-4" /> Map</button>
+                                                                    <a href={data.link} target="_blank" rel="noreferrer" className="px-4 bg-white border border-slate-200 text-slate-700 hover:border-ess-blue hover:text-ess-blue font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="send" className="h-4 w-4" /></a>
+                                                                    <a href={getWhatsappLink(data.paradas, driverName)} target="_blank" rel="noreferrer" className="px-4 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2.5 rounded-lg flex justify-center items-center gap-2 text-sm shadow-sm transition-colors"><Icon name="message-circle" className="h-4 w-4" /></a>
+                                                            </div>
+                                                        </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-
-                                {selectedDriversForZone.length > 0 && (
-                                    <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white p-4 rounded-2xl shadow-2xl z-50 flex flex-col md:flex-row items-center gap-4 animate-fade-in border border-slate-700">
-                                            <div className="flex items-center gap-2">
-                                                <span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{selectedDriversForZone.length}</span>
-                                                <span className="font-bold text-sm">Drivers Selected</span>
-                                            </div>
-                                            <div className="flex flex-wrap justify-center gap-2">
-                                                <button onClick={handleRemoveSelectedDrivers} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-2 shadow-sm border border-red-800">
-                                                    <Icon name="trash-2" className="h-3 w-3" /> Remove
-                                                </button>
-                                                
-                                                <div className="h-6 w-px bg-slate-600 mx-2 self-center"></div>
-
-                                                <button onClick={handleTransferToNewZone} className="px-3 py-1.5 bg-ess-green hover:bg-green-600 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-2 border border-green-700 shadow-sm">
-                                                    <Icon name="plus-circle" className="h-3 w-3" /> New Zone
-                                                </button>
-
-                                                <span className="text-xs text-slate-400 self-center uppercase font-bold mr-1">Move to:</span>
-                                                <button onClick={() => moveSelectedDriversToZone(null)} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold transition-colors border border-slate-600">UNASSIGNED</button>
-                                                
-                                                {zones.filter(z => {
-                                                    return Object.keys(routes).some(d => zoneAssignments[d] === z.id);
-                                                }).map(z => (
-                                                    <button key={z.id} onClick={() => moveSelectedDriversToZone(z.id)} className="px-3 py-1.5 bg-slate-700 hover:bg-ess-blue rounded-lg text-xs font-bold transition-colors border border-slate-600 hover:border-ess-blue">
-                                                        {z.name}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                            <button onClick={() => setSelectedDriversForZone([])} className="ml-2 text-slate-400 hover:text-white p-1 hover:bg-slate-700 rounded-full transition-colors">
-                                                <Icon name="x" className="h-5 w-5" />
-                                            </button>
-                                    </div>
-                                )}
-
-                                {selectedStops.length > 0 && selectedDriversForZone.length === 0 && (
-                                    <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 animate-fade-in border border-slate-700">
-                                            <div className="flex items-center gap-2"><span className="bg-ess-blue text-white text-xs font-bold px-2 py-1 rounded-full">{selectedStops.length}</span><span className="font-bold text-sm">Stops</span></div>
-                                            <div className="h-6 w-px bg-slate-600"></div>
-                                            <div className="flex gap-2"><span className="text-xs text-slate-400 self-center uppercase font-bold mr-1">Move to:</span>{Object.keys(routes).map(driver => (<button key={driver} onClick={() => transferSelectedStops(driver)} className="px-3 py-1.5 bg-slate-700 hover:bg-ess-blue rounded-lg text-xs font-bold transition-colors border border-slate-600 hover:border-ess-blue">{driver}</button>))}</div>
-                                            <button onClick={() => setSelectedStops([])} className="ml-2 text-slate-400 hover:text-white p-1 hover:bg-slate-700 rounded-full transition-colors"><Icon name="x" className="h-5 w-5" /></button>
-                                    </div>
-                                )}
                             </div>
                         )}
                         
