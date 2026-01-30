@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Economy Sign Supply Route Planner</title>
     
-    <!-- React y ReactDOM -->
+    <!-- React and ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel para JSX -->
+    <!-- Babel for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <!-- Tailwind CSS -->
@@ -24,11 +24,11 @@
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, getDocs, setDoc, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // Función global para inyectar la configuración desde fuera o usarla si se pega aquí
+        // Global function to inject configuration
         window.initializeFirebaseGlobally = (config) => {
             try {
                 if (!config || !config.apiKey || config.apiKey.includes("Pega_aquí")) {
-                    console.warn("⚠️ Esperando configuración de Firebase válida...");
+                    console.warn("⚠️ Waiting for valid Firebase configuration...");
                     return false; 
                 }
                 const app = initializeApp(config);
@@ -53,7 +53,7 @@
                 window.fbOrderBy = orderBy;
                 window.fbGetDocs = getDocs;
                 window.fbLimit = limit;
-                window.fbWriteBatch = writeBatch; // IMPORTANTE: Agregado para importación masiva
+                window.fbWriteBatch = writeBatch;
                 
                 window.firebaseReady = true; 
                 return true;
@@ -122,16 +122,16 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- PALETA DE COLORES CORPORATIVA UNIFICADA ---
+        // --- UNIFIED CORPORATE COLOR PALETTE ---
         const COMPANY_PALETTE = [
-            { hex: "#1b6e9b", tw: "bg-ess-blue text-white" },       // 0: Azul Principal
-            { hex: "#6bbf5d", tw: "bg-ess-green text-white" },      // 1: Verde Principal
-            { hex: "#0f4c6e", tw: "bg-ess-dark text-white" },       // 2: Azul Oscuro
-            { hex: "#0284c7", tw: "bg-sky-600 text-white" },        // 3: Azul Cielo
-            { hex: "#0d9488", tw: "bg-teal-600 text-white" },       // 4: Verde Azulado
-            { hex: "#1e40af", tw: "bg-blue-800 text-white" },       // 5: Azul Marino
-            { hex: "#059669", tw: "bg-emerald-600 text-white" },    // 6: Esmeralda
-            { hex: "#0e7490", tw: "bg-cyan-700 text-white" }         // 7: Cian
+            { hex: "#1b6e9b", tw: "bg-ess-blue text-white" },       // 0: Main Blue
+            { hex: "#6bbf5d", tw: "bg-ess-green text-white" },      // 1: Main Green
+            { hex: "#0f4c6e", tw: "bg-ess-dark text-white" },       // 2: Dark Blue
+            { hex: "#0284c7", tw: "bg-sky-600 text-white" },        // 3: Sky Blue
+            { hex: "#0d9488", tw: "bg-teal-600 text-white" },       // 4: Teal
+            { hex: "#1e40af", tw: "bg-blue-800 text-white" },       // 5: Navy Blue
+            { hex: "#059669", tw: "bg-emerald-600 text-white" },    // 6: Emerald
+            { hex: "#0e7490", tw: "bg-cyan-700 text-white" }         // 7: Cyan
         ];
 
         const ConfigErrorScreen = ({ errorDetails }) => (
@@ -254,7 +254,6 @@
             const [mapLoading, setMapLoading] = useState(false); 
             const [mapReady, setMapReady] = useState(false); 
             
-            // Refs to keep track of latest callbacks without triggering effect re-run
             const onMarkerClickRef = useRef(onMarkerClick);
             const onStopsSelectedRef = useRef(onStopsSelected);
 
@@ -264,6 +263,14 @@
             }, [onMarkerClick, onStopsSelected]);
             
             const ROUTE_HEX_COLORS = COMPANY_PALETTE.map(c => c.hex);
+
+            const legendData = useMemo(() => {
+                return Object.entries(routes).map(([name, data], index) => {
+                    let color = ROUTE_HEX_COLORS[index % ROUTE_HEX_COLORS.length];
+                    if (name.startsWith('Ungrouped') || name === 'Sin Asignar') color = '#000000';
+                    return { name, color, stopCount: data.paradas ? data.paradas.length : 0 };
+                }).filter(item => item.stopCount > 0);
+            }, [routes]);
             
             useEffect(() => {
                 if (!window.google || !googleMapRef.current || !mapReady) return;
@@ -278,7 +285,7 @@
                                     position: window.google.maps.ControlPosition.TOP_CENTER,
                                     drawingModes: [
                                         window.google.maps.drawing.OverlayType.RECTANGLE,
-                                        window.google.maps.drawing.OverlayType.POLYGON // Added Polygon support
+                                        window.google.maps.drawing.OverlayType.POLYGON 
                                     ],
                                 },
                                 rectangleOptions: {
@@ -311,7 +318,6 @@
                                         if (event.type === 'rectangle') {
                                             if (shape.getBounds().contains(marker.getPosition())) isInside = true;
                                         } else if (event.type === 'polygon') {
-                                            // Requires geometry library
                                             if (window.google.maps.geometry && window.google.maps.geometry.poly) {
                                                 if (window.google.maps.geometry.poly.containsLocation(marker.getPosition(), shape)) isInside = true;
                                             } else {
@@ -348,7 +354,7 @@
                 return () => {
                     if (drawingManagerRef.current) drawingManagerRef.current.setMap(null);
                 };
-            }, [enableDrawing, mapReady]); // Removed onStopsSelected from dependency to avoid recreation
+            }, [enableDrawing, mapReady]);
 
             useEffect(() => {
                 if (!window.google || !mapRef.current) return;
@@ -388,8 +394,6 @@
                     marker.customInfo = { originalIndex: originalIndex };
                     
                     marker.addListener("click", (e) => { 
-                        // Shift+Click Logic
-                        // Use Ref to get latest callback function
                         if (e.domEvent && e.domEvent.shiftKey && onMarkerClickRef.current) {
                             onMarkerClickRef.current(originalIndex, true);
                         } else {
@@ -540,6 +544,23 @@
                             </div>
                         </div>
                     )}
+
+                    {/* MAP LEGEND */}
+                    {legendData.length > 0 && mapReady && (
+                        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-lg border border-slate-200 z-[1000] max-w-[180px] animate-fade-in">
+                            <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider border-b pb-1">Map Routes</h4>
+                            <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
+                                {legendData.map((item, idx) => (
+                                    <div key={idx} className="flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: item.color }}></div>
+                                        <span className="text-[11px] font-bold text-slate-700 truncate">{item.name}</span>
+                                        <span className="text-[9px] text-slate-500 ml-auto font-mono bg-slate-100 px-1 rounded">x{item.stopCount}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex-1 min-h-[400px]"><div ref={mapRef} className="w-full h-full rounded-xl"></div></div>
                 </div>
             );
@@ -688,7 +709,7 @@
             const [scriptLoaded, setScriptLoaded] = useState(false);
             const [view, setView] = useState('input'); 
             
-            const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, EE. UU.');
+            const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, USA');
             const [dwellTime, setDwellTime] = useState(6);
             const [companyConfig, setCompanyConfig] = useState({
                 companyName: "ECONOMY SIGN SUPPLY ORLANDO",
@@ -703,7 +724,7 @@
             const [newStopName, setNewStopName] = useState('');
             const [newStopAddress, setNewStopAddress] = useState('');
             const [newDriverName, setNewDriverName] = useState('');
-            const [newDriverPhone, setNewDriverPhone] = useState(''); // NEW STATE
+            const [newDriverPhone, setNewDriverPhone] = useState(''); 
             const [newVehicleName, setNewVehicleName] = useState(''); 
             const [showSuggestions, setShowSuggestions] = useState(false);
             const [showAddressSuggestions, setShowAddressSuggestions] = useState(false); 
@@ -772,17 +793,16 @@
             const [groupNameInput, setGroupNameInput] = useState('');
             const [editingGroupId, setEditingGroupId] = useState(null);
 
-            // Import States (New)
             const [showBulkImportModal, setShowBulkImportModal] = useState(false);
             const [bulkInputText, setBulkInputText] = useState('');
             const [importLoading, setImportLoading] = useState(false);
             const [editingDriverId, setEditingDriverId] = useState(null);
 
-            const clientInputRef = useRef(null);
-            const piecesInputRef = useRef(null);
             const mainClientInputRef = useRef(null); 
             const invisibleAddressInputRef = useRef(null);
             const resultsContainerRef = useRef(null); 
+            const fileInputRef = useRef(null);
+            const piecesInputRef = useRef(null);
 
             const handleEnter = (e, callback) => {
                 if (e.key === 'Enter') {
@@ -840,11 +860,11 @@
                     
                     if (count > 0) await batch.commit();
                     
-                    alert("¡Importación completada con éxito!");
+                    alert("Import completed successfully!");
                     setBulkInputText('');
                     setShowBulkImportModal(false);
                 } catch (e) {
-                    alert("Error al importar: " + e.message);
+                    alert("Import error: " + e.message);
                 } finally {
                     setImportLoading(false);
                 }
@@ -903,7 +923,6 @@
             useEffect(() => {
                 if (!googleApiKey) return;
                 const script = document.createElement("script");
-                // Added geometry library for polygon containsLocation
                 script.src = `https://maps.googleapis.com/maps/api/js?key=${googleApiKey}&libraries=places,drawing,geometry&loading=async`;
                 script.async = true; script.defer = true;
                 script.onload = () => setTimeout(() => setScriptLoaded(true), 100);
@@ -949,7 +968,6 @@
                 }
             };
 
-            // NUEVA FUNCIÓN: Borrar todos los clientes de la base de datos
             const deleteAllClients = async () => {
                 if (!window.fbDb) return;
                 if (!confirm("⚠️ WARNING: This will permanently delete ALL clients from your database. This action cannot be undone.")) return;
@@ -1017,7 +1035,6 @@
                 const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
                 const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `ess_route_backup_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
             };
-            const fileInputRef = useRef(null);
             const handleRestoreClick = () => { fileInputRef.current.click(); };
             const handleFileChange = async (e) => {
                 const file = e.target.files[0]; if (!file) return;
@@ -1069,13 +1086,11 @@
                 setSelectedDriversForZone([]); 
             };
 
-            // NUEVA FUNCIÓN: Transferir a nueva zona creada al vuelo
             const handleTransferToNewZone = async () => {
                 const name = prompt("Enter name for the new Zone:");
                 if (!name || !name.trim()) return;
                 const cleanName = name.toUpperCase().trim();
                 
-                // Check if already exists locally
                 const existing = zones.find(z => z.name === cleanName);
                 if (existing) {
                     moveSelectedDriversToZone(existing.id);
@@ -1084,10 +1099,7 @@
 
                 if (window.fbDb) {
                     try {
-                        // Create zone
                         const docRef = await window.fbAddDoc(getUserCollection("zones"), { name: cleanName });
-                        
-                        // Assign drivers immediately
                         const newAssignments = { ...zoneAssignments };
                         selectedDriversForZone.forEach(d => newAssignments[d] = docRef.id);
                         setZoneAssignments(newAssignments);
@@ -1099,20 +1111,16 @@
                 }
             };
 
-            // NUEVA FUNCIÓN: Eliminar drivers seleccionados de la lista visual
             const handleRemoveSelectedDrivers = () => {
-                if(!confirm("¿Estás seguro de querer eliminar estos conductores de la vista actual? Desaparecerán de la lista de rutas.")) return;
+                if(!confirm("Are you sure you want to remove these drivers from the current view? They will disappear from the routes list.")) return;
                 const newRoutes = { ...routes };
                 selectedDriversForZone.forEach(d => delete newRoutes[d]);
                 setRoutes(newRoutes);
                 setSelectedDriversForZone([]);
             };
 
-            // NUEVA LÓGICA: Manejar click en marcador del mapa (Shift+Click)
             const handleMarkerClick = (index, isShift) => {
                 if (!isShift) return;
-                
-                // Parsear entrada actual
                 const currentParts = stopSelectionInput.split(',').map(s => s.trim()).filter(s => s);
                 const currentIndices = new Set();
                 
@@ -1128,7 +1136,7 @@
                     }
                 });
 
-                const stopNum = index; // index ya es 1-based desde GlobalMapView customInfo
+                const stopNum = index; 
                 
                 if (currentIndices.has(stopNum)) {
                     currentIndices.delete(stopNum);
@@ -1136,7 +1144,6 @@
                     currentIndices.add(stopNum);
                 }
                 
-                // Reconstruir string
                 const sorted = Array.from(currentIndices).sort((a, b) => a - b);
                 setStopSelectionInput(sorted.join(', '));
             };
@@ -1234,7 +1241,6 @@
                       setEditingDraftId(null); setShowAddDetailsModal(false); setTempStopData(null); setTempInvoices(''); setTempPieces(''); setNewStopName(''); setNewStopAddress(''); setShowSuggestions(false); setShowAddressSuggestions(false); return;
                 } else if (editingStop && routes) {
                     const newRoutes = JSON.parse(JSON.stringify(routes)); const stop = newRoutes[editingStop.driverName].paradas[editingStop.index]; stop.nombre = finalName; stop.direccion = finalAddress; stop.invoices = tempInvoices; stop.pieces = tempPieces; setRoutes(newRoutes); 
-                    setRoutes(newRoutes);
                     setShowAddDetailsModal(false); setEditingStop(null); setTempStopData(null);
                 } else if (targetDriverForManual && routes && routes[targetDriverForManual]) {
                      const newStop = { nombre: finalName, direccion: finalAddress, invoices: tempInvoices, pieces: tempPieces }; const newRoutes = JSON.parse(JSON.stringify(routes)); newRoutes[targetDriverForManual].paradas.push(newStop); 
@@ -1242,8 +1248,6 @@
                      setShowManualStopModal(false); setTargetDriverForManual(null);
                 } else if (window.fbDb) {
                     const docRef = await window.fbAddDoc(getUserCollection("draft_stops"), { name: finalName, address: finalAddress, invoices: tempInvoices, pieces: tempPieces, createdAt: Date.now() });
-                    
-                    // LÓGICA AGREGADA: Si estamos en Step 1 y ya hay una lista optimizada, agregamos manual para ver en mapa
                     if (view === 'zone_planning' && optimizedStops) {
                         const newStopLocal = {
                             id: docRef.id,
@@ -1251,8 +1255,8 @@
                             address: finalAddress,
                             invoices: tempInvoices,
                             pieces: tempPieces,
-                            nombre: finalName,     // Compatibilidad formato API
-                            direccion: finalAddress // Compatibilidad formato API
+                            nombre: finalName,     
+                            direccion: finalAddress 
                         };
                         setOptimizedStops(prev => [...prev, newStopLocal]);
                     }
@@ -1376,7 +1380,6 @@
                     for (const group of stopGroups) {
                         let zoneId;
                         const groupName = group.name.toUpperCase().trim();
-                        
                         const existingZone = currentZones.find(z => z.name.toUpperCase() === groupName);
                         
                         if (existingZone) {
@@ -1496,7 +1499,6 @@
                 
                 const listLength = (optimizedStops || currentStops).length;
                 const indices = new Set();
-                
                 const parts = stopSelectionInput.split(/[,;]/); 
                 
                 for(let part of parts) {
@@ -1605,10 +1607,8 @@
                 setShowDriverModal(false);
             };
 
-            // Callback to handle selection from map drawing
             const handleSelectionFromMap = (selectedIndices) => {
                 if (selectedIndices && selectedIndices.length > 0) {
-                    // Create comma-separated string
                     const selectionStr = selectedIndices.join(', ');
                     setStopSelectionInput(selectionStr);
                 }
@@ -1665,11 +1665,9 @@
                 let phone = '';
                 const driver = drivers.find(d => d.name === driverName);
                 if (driver && driver.phone) {
-                    phone = driver.phone.replace(/\D/g, ''); // Remove non-digits
+                    phone = driver.phone.replace(/\D/g, ''); 
                 }
-                
                 const text = encodeURIComponent(`Hello, route:\n\n${l}\n\nDrive safely!`);
-                
                 if (phone) {
                     return `https://wa.me/${phone}?text=${text}`;
                 } else {
@@ -1963,7 +1961,7 @@
                                 <div className="flex justify-between items-center mb-4 border-b pb-2">
                                     <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
                                         <Icon name="upload" className="h-5 w-5 text-ess-blue" /> 
-                                        Importación Masiva desde Excel
+                                        Bulk Import from Excel
                                     </h3>
                                     <button onClick={() => setShowBulkImportModal(false)} className="text-slate-400 hover:text-red-500">
                                         <Icon name="x" className="h-5 w-5" />
@@ -1972,33 +1970,33 @@
                                 
                                 <div className="flex-1 flex flex-col space-y-4">
                                     <p className="text-sm text-slate-500">
-                                        Copia y pega las columnas de tu Excel aquí. <br/><br/>
-                                        <strong>Formato:</strong> Columna A (Nombre) [TAB] Columna B (Dirección).
+                                        Copy and paste the columns from your Excel here. <br/><br/>
+                                        <strong>Format:</strong> Column A (Name) [TAB] Column B (Address).
                                     </p>
                                     
                                     <textarea 
                                         className="flex-1 p-3 border border-slate-300 rounded-lg font-mono text-xs outline-none focus:ring-2 focus:ring-ess-blue"
-                                        placeholder="Pega las filas aquí..."
+                                        placeholder="Paste rows here..."
                                         value={bulkInputText}
                                         onChange={(e) => setBulkInputText(e.target.value)}
                                     ></textarea>
                                     
                                     <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-xs text-blue-700">
                                         <Icon name="info" className="h-3 w-3 inline mr-1" />
-                                        Los registros se añadirán tal cual están en el texto. Podrás editarlos después individualmente.
+                                        Records will be added exactly as they appear in the text. You can edit them later.
                                     </div>
                                 </div>
                                 
                                 <div className="mt-6 flex gap-3">
                                     <button onClick={() => setShowBulkImportModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">
-                                        Cancelar
+                                        Cancel
                                     </button>
                                     <button 
                                         onClick={handleBulkImport} 
                                         disabled={importLoading || !bulkInputText.trim()} 
                                         className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg flex justify-center items-center gap-2"
                                     >
-                                        {importLoading ? <div className="loader"></div> : <><Icon name="plus" className="h-4 w-4" /> Iniciar Importación</>}
+                                        {importLoading ? <div className="loader"></div> : <><Icon name="plus" className="h-4 w-4" /> Start Import</>}
                                     </button>
                                 </div>
                             </div>
@@ -2308,25 +2306,25 @@
 
                                                                 <div className="bg-slate-50 p-5 border-b border-slate-100">
                                                                         <div className="flex justify-between items-center mb-4 relative pr-6">
-                                                                                <h3 className="font-bold text-xl text-slate-800 flex items-center gap-3">
-                                                                                        <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm"><Icon name="user" className="h-5 w-5 text-ess-blue" /></div> {driverName}
-                                                                                            <button onClick={() => initiateManualStop(driverName)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded-full transition-colors shadow-sm ml-2" title="Add Stop Manually"><Icon name="plus" className="h-4 w-4" /></button>
-                                                                                            
-                                                                                            <button onClick={() => setSwappingDriver(swappingDriver === driverName ? null : driverName)} className="text-slate-400 hover:text-ess-blue p-1.5 rounded hover:bg-blue-50 transition-colors ml-1" title="Swap Driver Route">
-                                                                                                    <Icon name="arrow-left-right" className="h-4 w-4" />
-                                                                                            </button>
-                                                                                </h3>
-                                                                                {swappingDriver === driverName && (
-                                                                                    <div className="absolute top-12 left-0 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-2 w-56 animate-fade-in">
-                                                                                        <p className="text-xs font-bold text-slate-500 mb-2 px-2 uppercase">Swap route with:</p>
-                                                                                        {Object.keys(routes).filter(d => d !== driverName).map(otherDriver => (
-                                                                                            <button key={otherDriver} onClick={() => handleSwapDriver(driverName, otherDriver)} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded text-sm text-slate-700 flex items-center gap-2 transition-colors">
-                                                                                                        <div className="w-2 h-2 rounded-full bg-ess-green"></div>
-                                                                                                        <span className="truncate">{otherDriver}</span>
-                                                                                            </button>
-                                                                                        ))}
-                                                                                    </div>
-                                                                                )}
+                                                                            <h3 className="font-bold text-xl text-slate-800 flex items-center gap-3">
+                                                                                    <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm"><Icon name="user" className="h-5 w-5 text-ess-blue" /></div> {driverName}
+                                                                                    <button onClick={() => initiateManualStop(driverName)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded-full transition-colors shadow-sm ml-2" title="Add Stop Manually"><Icon name="plus" className="h-4 w-4" /></button>
+                                                                                    
+                                                                                    <button onClick={() => setSwappingDriver(swappingDriver === driverName ? null : driverName)} className="text-slate-400 hover:text-ess-blue p-1.5 rounded hover:bg-blue-50 transition-colors ml-1" title="Swap Driver Route">
+                                                                                        <Icon name="arrow-left-right" className="h-4 w-4" />
+                                                                                    </button>
+                                                                            </h3>
+                                                                            {swappingDriver === driverName && (
+                                                                                <div className="absolute top-12 left-0 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-2 w-56 animate-fade-in">
+                                                                                    <p className="text-xs font-bold text-slate-500 mb-2 px-2 uppercase">Swap route with:</p>
+                                                                                    {Object.keys(routes).filter(d => d !== driverName).map(otherDriver => (
+                                                                                        <button key={otherDriver} onClick={() => handleSwapDriver(driverName, otherDriver)} className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded text-sm text-slate-700 flex items-center gap-2 transition-colors">
+                                                                                                <div className="w-2 h-2 rounded-full bg-ess-green"></div>
+                                                                                                <span className="truncate">{otherDriver}</span>
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                            )}
                                                                         </div>
                                                                         <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
                                                                                 <div className="bg-white p-2 rounded border border-slate-100 flex items-center gap-2">{recalculating[driverName] ? <span className="text-ess-blue font-bold">Updating...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(data.duracion_estimada / 60)}h {Math.round(data.duracion_estimada % 60)}m</>}</div>
@@ -2389,7 +2387,6 @@
                                                 <button onClick={() => moveSelectedDriversToZone(null)} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold transition-colors border border-slate-600">UNASSIGNED</button>
                                                 
                                                 {zones.filter(z => {
-                                                    // Solo mostrar zonas que están siendo usadas por algún conductor en la vista actual
                                                     return Object.keys(routes).some(d => zoneAssignments[d] === z.id);
                                                 }).map(z => (
                                                     <button key={z.id} onClick={() => moveSelectedDriversToZone(z.id)} className="px-3 py-1.5 bg-slate-700 hover:bg-ess-blue rounded-lg text-xs font-bold transition-colors border border-slate-600 hover:border-ess-blue">
