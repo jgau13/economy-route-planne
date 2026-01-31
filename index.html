@@ -580,9 +580,11 @@
 
             // VEHICLE INPUTS
             const [newVehicleName, setNewVehicleName] = useState('');
+            const [editingVehicleId, setEditingVehicleId] = useState(null);
             // DRIVER INPUTS
             const [newDriverName, setNewDriverName] = useState('');
             const [newDriverPhone, setNewDriverPhone] = useState('');
+            const [editingDriverId, setEditingDriverId] = useState(null);
 
             // CLIENT INPUTS (For Clients Tab)
             const [clientFormName, setClientFormName] = useState('');
@@ -809,8 +811,8 @@
                 });
                 if (selectedIndices.size === 0) return alert("Invalid stop selection.");
                 
-                // Map indices to IDs for robust tracking
-                const selectedIds = Array.from(selectedIndices).map(i => currentStops[i - 1]?.id).filter(id => id);
+                // Map indices to IDs for robust tracking - FIX: No need for (i-1) as user sees 1-based but indices are 0-based in selectedIndices due to the loop above doing (num-1)
+                const selectedIds = Array.from(selectedIndices).map(i => currentStops[i]?.id).filter(id => id);
 
                 const cleanName = groupNameInput.toUpperCase().trim();
                 const numRoutes = parseInt(numRoutesInput) || 1;
@@ -1068,10 +1070,12 @@
             // CRUD HELPERS
             const addVehicle = async () => { if(newVehicleName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles'), { name: newVehicleName }); setNewVehicleName(''); } };
             const deleteVehicle = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles', id)); };
+            const updateVehicle = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles', id), data); setEditingVehicleId(null); };
             const assignVehicleDriver = async (vehicleId, driverName) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles', vehicleId), { assignedDriver: driverName }); };
             
             const addDriver = async () => { if(newDriverName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers'), { name: newDriverName, phone: newDriverPhone, active: true }); setNewDriverName(''); setNewDriverPhone(''); } };
             const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers', id)); };
+            const updateDriver = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers', id), data); setEditingDriverId(null); };
             
             const saveClient = async () => { 
                 if(clientFormName && clientFormAddress) { 
@@ -1212,6 +1216,7 @@
                                 <h1 className="font-bold text-slate-700 hidden sm:block">Route Planner</h1>
                             </div>
                             <div className="flex items-center gap-3">
+                                <span className="text-xs text-slate-400 font-bold mr-2 hidden md:inline-block">User: {user.email}</span>
                                 {view === 'results' && (
                                     <>
                                         <button onClick={() => setViewingGlobalMap(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-slate-600 bg-white border border-slate-200 hover:text-ess-blue hover:bg-slate-50 transition-colors shadow-sm">
@@ -1367,17 +1372,22 @@
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div className="flex items-center gap-2">
                                                             <div className="w-3 h-3 rounded-full" style={{backgroundColor: group.color}}></div>
-                                                            <h4 className="font-bold text-slate-700">{group.name}</h4>
+                                                            <div>
+                                                                <h4 className="font-bold text-slate-700">{group.name}</h4>
+                                                                <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 border border-slate-200">{group.numRoutes || 1} Route(s)</span>
+                                                            </div>
                                                         </div>
                                                         <div className="flex gap-2">
                                                             <button onClick={() => startEditGroup(group)} className="text-slate-400 hover:text-ess-blue"><Icon name="pencil" className="h-4 w-4" /></button>
                                                             <button onClick={() => deleteGroup(group.id)} className="text-slate-400 hover:text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
                                                         </div>
                                                     </div>
-                                                    <div className="text-xs text-slate-500">Stops: {group.stops.map(id => {
-                                                        const idx = currentStops.findIndex(s => s.id === id) + 1;
-                                                        return idx > 0 ? idx : '?';
-                                                    }).join(', ')}</div>
+                                                    <div className="text-xs text-slate-500">
+                                                        Stops: {group.stops.map(id => {
+                                                            const idx = currentStops.findIndex(s => s.id === id);
+                                                            return idx !== -1 ? (idx + 1) : '?';
+                                                        }).join(', ')}
+                                                    </div>
                                                 </div>
                                             ))}
                                             {stopGroups.length === 0 && (
@@ -1612,6 +1622,7 @@
 
                         {view === 'vehicles' && (
                             <div className="grid md:grid-cols-2 gap-6 animate-fade-in">
+                                {/* VEHICLES SECTION */}
                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="truck" className="h-6 w-6 text-ess-blue" /> Vehicles</h2>
                                     <div className="flex gap-2 mb-4">
@@ -1622,7 +1633,18 @@
                                         {vehicles.map(v => (
                                             <div key={v.id} className="p-3 border rounded hover:bg-slate-50">
                                                 <div className="flex justify-between items-center mb-2">
-                                                    <div className="font-bold">{v.name}</div>
+                                                    {editingVehicleId === v.id ? (
+                                                        <input 
+                                                            type="text" 
+                                                            defaultValue={v.name} 
+                                                            className="border p-1 rounded text-sm w-full mr-2"
+                                                            onBlur={(e) => updateVehicle(v.id, { name: e.target.value })}
+                                                            onKeyDown={(e) => handleEnter(e, () => e.target.blur())}
+                                                            autoFocus
+                                                        />
+                                                    ) : (
+                                                        <div className="font-bold flex items-center gap-2">{v.name} <button onClick={() => setEditingVehicleId(v.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
+                                                    )}
                                                     <button onClick={()=>deleteVehicle(v.id)} className="text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
                                                 </div>
                                                 <div className="flex items-center gap-2 text-xs">
@@ -1640,6 +1662,7 @@
                                         ))}
                                     </div>
                                 </div>
+                                {/* DRIVERS SECTION */}
                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="users" className="h-6 w-6 text-ess-blue" /> Drivers</h2>
                                     <div className="flex gap-2 mb-4">
@@ -1650,7 +1673,18 @@
                                     <div className="space-y-2">
                                         {drivers.map(d => (
                                             <div key={d.id} className="flex justify-between items-center p-3 border rounded hover:bg-slate-50">
-                                                <div><div className="font-bold">{d.name}</div><div className="text-xs text-slate-500">{d.phone}</div></div>
+                                                {editingDriverId === d.id ? (
+                                                    <div className="flex-1 mr-2 space-y-1">
+                                                        <input type="text" defaultValue={d.name} className="border p-1 rounded text-sm w-full" placeholder="Name" onBlur={(e) => updateDriver(d.id, { name: e.target.value })} />
+                                                        <input type="text" defaultValue={d.phone} className="border p-1 rounded text-sm w-full" placeholder="Phone" onBlur={(e) => updateDriver(d.id, { phone: e.target.value })} />
+                                                        <button onClick={() => setEditingDriverId(null)} className="text-xs text-blue-500">Done</button>
+                                                    </div>
+                                                ) : (
+                                                    <div>
+                                                        <div className="font-bold flex items-center gap-2">{d.name} <button onClick={() => setEditingDriverId(d.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
+                                                        <div className="text-xs text-slate-500">{d.phone}</div>
+                                                    </div>
+                                                )}
                                                 <button onClick={()=>deleteDriver(d.id)} className="text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
                                             </div>
                                         ))}
