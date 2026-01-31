@@ -511,8 +511,7 @@
             return (
                 <div id="global-manifest" className="hidden print:block bg-white text-black p-8 font-sans">
                     <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
-                        <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-10 w-auto object-contain" />
-                        <div className="text-right">
+                        <div className="text-right flex-1">
                             <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
                             <p className="text-lg font-bold">{dateStr} <span className="text-sm font-normal ml-2">{timeStr}</span></p>
                         </div>
@@ -844,6 +843,10 @@
 
                 const cleanName = groupNameInput.toUpperCase().trim();
                 const numRoutes = parseInt(numRoutesInput) || 1;
+
+                if (!zones.find(z => z.name === cleanName) && window.fbDb) {
+                     await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones'), { name: cleanName });
+                }
 
                 if (editingGroupId) {
                     setStopGroups(stopGroups.map(g => g.id === editingGroupId ? { ...g, name: cleanName, numRoutes, stops: selectedIds } : g));
@@ -1395,7 +1398,7 @@
                             <div className="animate-fade-in space-y-4">
                                 
                                 {/* 1. ADD STOP CARD - FULL WIDTH */}
-                                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                                <div className="col-span-12 bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
                                     <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
                                         <div className="bg-green-100 p-1.5 rounded-full text-green-700"><Icon name="plus" className="h-5 w-5" /></div>
                                         Add Stop
@@ -1601,6 +1604,7 @@
                             </div>
                         )}
 
+                        {/* VISTA DE RESULTADOS (Asignación de Drivers) */}
                         {view === 'results' && optimizedRoutes && (
                             <div className="animate-fade-in space-y-6">
                                 <div className="flex justify-start mb-4">
