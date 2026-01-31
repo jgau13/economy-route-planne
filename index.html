@@ -691,7 +691,7 @@
                     address: tempStopData.address,
                     invoices: tempInvoices,
                     pieces: tempPieces,
-                    createdAt: Date.now()
+                    // REMOVED createdAt here to avoid reordering on edit
                 };
 
                 const col = window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops');
@@ -713,6 +713,7 @@
                     await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops', editingDraftId), data);
                     setEditingDraftId(null);
                 } else {
+                    data.createdAt = Date.now(); // Only for new stops
                     await window.fbAddDoc(col, data);
                 }
                 
@@ -808,6 +809,9 @@
                 });
                 if (selectedIndices.size === 0) return alert("Invalid stop selection.");
                 
+                // Map indices to IDs for robust tracking
+                const selectedIds = Array.from(selectedIndices).map(i => currentStops[i - 1]?.id).filter(id => id);
+
                 const cleanName = groupNameInput.toUpperCase().trim();
                 const numRoutes = parseInt(numRoutesInput) || 1;
 
@@ -816,11 +820,11 @@
                 }
 
                 if (editingGroupId) {
-                    setStopGroups(stopGroups.map(g => g.id === editingGroupId ? { ...g, name: cleanName, numRoutes, stops: Array.from(selectedIndices).sort((a,b) => a-b) } : g));
+                    setStopGroups(stopGroups.map(g => g.id === editingGroupId ? { ...g, name: cleanName, numRoutes, stops: selectedIds } : g));
                     setEditingGroupId(null);
                 } else {
                     const color = ZONE_COLORS[stopGroups.length % ZONE_COLORS.length].hex;
-                    const newGroup = { id: Date.now(), name: cleanName, numRoutes, stops: Array.from(selectedIndices).sort((a,b) => a-b), color: color, assignedDrivers: [] };
+                    const newGroup = { id: Date.now(), name: cleanName, numRoutes, stops: selectedIds, color: color };
                     setStopGroups([...stopGroups, newGroup]);
                 }
                 setStopSelectionInput('');
@@ -832,8 +836,9 @@
                 setEditingGroupId(group.id);
                 setGroupNameInput(group.name);
                 setNumRoutesInput(group.numRoutes || 1);
-                const stopsStr = group.stops.map(i => i + 1).join(', ');
-                setStopSelectionInput(stopsStr);
+                // Map IDs back to indices
+                const indices = group.stops.map(id => currentStops.findIndex(s => s.id === id)).filter(i => i !== -1).map(i => i + 1).sort((a,b)=>a-b);
+                setStopSelectionInput(indices.join(', '));
             };
 
             const deleteGroup = (id) => setStopGroups(stopGroups.filter(g => g.id !== id));
@@ -851,12 +856,28 @@
 
             const planningMapRoutes = useMemo(() => {
                 const mapData = {};
-                const groupedIndices = new Set();
+                const groupedIds = new Set();
+                
                 stopGroups.forEach(g => {
-                    const stops = g.stops.map(i => { if (currentStops[i]) { groupedIndices.add(i); return { ...currentStops[i], originalIndex: i + 1 }; } return null; }).filter(s => s); 
+                    const stops = g.stops.map(id => { 
+                        const stop = currentStops.find(s => s.id === id);
+                        if (stop) {
+                            groupedIds.add(id);
+                            // Find current index
+                            const currentIndex = currentStops.findIndex(s => s.id === id) + 1;
+                            return { ...stop, originalIndex: currentIndex };
+                        }
+                        return null; 
+                    }).filter(s => s); 
+                    
                     if (stops.length > 0) mapData[g.name] = { paradas: stops, color: g.color };
                 });
-                const ungrouped = currentStops.map((s, i) => { if (groupedIndices.has(i)) return null; return { ...s, originalIndex: i + 1 }; }).filter(s => s);
+                
+                const ungrouped = currentStops.map((s, i) => { 
+                    if (groupedIds.has(s.id)) return null; 
+                    return { ...s, originalIndex: i + 1 }; 
+                }).filter(s => s);
+                
                 if (ungrouped.length > 0) mapData['Ungrouped'] = { paradas: ungrouped, color: '#000000' };
                 return mapData;
             }, [currentStops, stopGroups]);
@@ -866,8 +887,15 @@
                 setLoading(true); setError('');
                 try {
                     const tasks = [];
+                    // Track used IDs to find ungrouped
+                    const usedIds = new Set();
+
                     stopGroups.forEach(g => {
-                        const stops = g.stops.map(i => currentStops[i]).filter(s => s);
+                        const stops = g.stops.map(id => {
+                            usedIds.add(id);
+                            return currentStops.find(s => s.id === id);
+                        }).filter(s => s);
+
                         if (stops.length > 0) {
                             tasks.push({ 
                                 zoneName: g.name, 
@@ -881,8 +909,9 @@
                             });
                         }
                     });
-                    const groupedIndices = new Set(stopGroups.flatMap(g => g.stops));
-                    const ungroupedStops = currentStops.filter((_, i) => !groupedIndices.has(i));
+
+                    const ungroupedStops = currentStops.filter(s => !usedIds.has(s.id));
+                    
                     if (ungroupedStops.length > 0) {
                         tasks.push({ 
                             zoneName: "UNASSIGNED", 
@@ -901,7 +930,7 @@
                         const data = await res.json();
                         
                         Object.keys(data).forEach((key, i) => {
-                             const routeKey = task.zoneName === "UNASSIGNED" ? `UNASSIGNED ${i+1}` : `${task.zoneName} - Route ${i+1}`;
+                             const routeKey = task.zoneName === "UNASSIGNED" ? `UNASSIGNED ${i+1}` : (task.body.num_vans > 1 ? `${task.zoneName} - Route ${i+1}` : task.zoneName);
                              results[routeKey] = { ...data[key], color: task.color };
                         });
                     }));
@@ -1034,11 +1063,6 @@
                 }
                 
                 setOptimizedRoutes(newRoutes);
-                // Trigger quick recalc for time update - REMOVED TO SAVE MATRIX COST
-                // recalculateFixedRoute(sourceZone, newRoutes[sourceZone].paradas);
-                // if(sourceZone !== targetZoneName) {
-                //    recalculateFixedRoute(targetZoneName, newRoutes[targetZoneName].paradas);
-                // }
             };
 
             // CRUD HELPERS
@@ -1316,11 +1340,11 @@
                                                     />
                                                     <p className="text-[10px] text-slate-400 mt-1">Use commas for individual stops and dashes for ranges.</p>
                                                 </div>
-                                                <div className="space-y-2">
+                                                <div className="flex gap-2">
                                                     <input 
                                                         list="zone-options"
                                                         type="text" 
-                                                        className="w-full p-2 border border-slate-300 rounded text-sm focus:border-ess-blue outline-none uppercase font-bold"
+                                                        className="flex-1 p-2 border border-slate-300 rounded text-sm focus:border-ess-blue outline-none uppercase font-bold"
                                                         placeholder="ZONE NAME (E.G. MIAMI)"
                                                         value={groupNameInput}
                                                         onChange={e => setGroupNameInput(e.target.value)}
@@ -1329,23 +1353,9 @@
                                                     <datalist id="zone-options">
                                                         {zones.map(z => <option key={z.id} value={z.name} />)}
                                                     </datalist>
-                                                    
-                                                    <div className="flex gap-2 items-center justify-between">
-                                                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded border border-slate-200">
-                                                            <span className="text-xs font-bold text-slate-500">Routes:</span>
-                                                            <input 
-                                                                type="number" 
-                                                                min="1" 
-                                                                max="10"
-                                                                className="w-12 p-1 border border-slate-300 rounded text-sm text-center outline-none"
-                                                                value={numRoutesInput}
-                                                                onChange={e => setNumRoutesInput(e.target.value)}
-                                                            />
-                                                        </div>
-                                                        <button onClick={saveGroup} className={`flex-1 py-2 text-white font-bold rounded text-sm ${editingGroupId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-ess-blue hover:bg-sky-700'}`}>
-                                                            {editingGroupId ? 'Update Zone' : 'Create Zone'}
-                                                        </button>
-                                                    </div>
+                                                    <button onClick={saveGroup} className={`px-4 py-2 text-white font-bold rounded text-sm ${editingGroupId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-ess-blue hover:bg-sky-700'}`}>
+                                                        {editingGroupId ? 'Update' : 'Create'}
+                                                    </button>
                                                 </div>
                                                 {editingGroupId && <button onClick={() => { setEditingGroupId(null); setGroupNameInput(''); setStopSelectionInput(''); setNumRoutesInput(1); }} className="text-xs text-slate-500 hover:underline">Cancel Edit</button>}
                                             </div>
@@ -1357,17 +1367,17 @@
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div className="flex items-center gap-2">
                                                             <div className="w-3 h-3 rounded-full" style={{backgroundColor: group.color}}></div>
-                                                            <div>
-                                                                <h4 className="font-bold text-slate-700">{group.name}</h4>
-                                                                <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 border border-slate-200">{group.numRoutes || 1} Route(s)</span>
-                                                            </div>
+                                                            <h4 className="font-bold text-slate-700">{group.name}</h4>
                                                         </div>
                                                         <div className="flex gap-2">
                                                             <button onClick={() => startEditGroup(group)} className="text-slate-400 hover:text-ess-blue"><Icon name="pencil" className="h-4 w-4" /></button>
                                                             <button onClick={() => deleteGroup(group.id)} className="text-slate-400 hover:text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
                                                         </div>
                                                     </div>
-                                                    <div className="text-xs text-slate-500">Stops: {group.stops.map(i => i+1).join(', ')}</div>
+                                                    <div className="text-xs text-slate-500">Stops: {group.stops.map(id => {
+                                                        const idx = currentStops.findIndex(s => s.id === id) + 1;
+                                                        return idx > 0 ? idx : '?';
+                                                    }).join(', ')}</div>
                                                 </div>
                                             ))}
                                             {stopGroups.length === 0 && (
