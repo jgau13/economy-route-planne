@@ -592,6 +592,7 @@
             // ZONE CREATION INPUTS (MANUAL PANEL)
             const [stopSelectionInput, setStopSelectionInput] = useState('');
             const [groupNameInput, setGroupNameInput] = useState('');
+            const [numRoutesInput, setNumRoutesInput] = useState(1);
             const [editingGroupId, setEditingGroupId] = useState(null);
             
             // SETTINGS STATE
@@ -808,25 +809,29 @@
                 if (selectedIndices.size === 0) return alert("Invalid stop selection.");
                 
                 const cleanName = groupNameInput.toUpperCase().trim();
+                const numRoutes = parseInt(numRoutesInput) || 1;
+
                 if (!zones.find(z => z.name === cleanName) && window.fbDb) {
                      await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones'), { name: cleanName });
                 }
 
                 if (editingGroupId) {
-                    setStopGroups(stopGroups.map(g => g.id === editingGroupId ? { ...g, name: cleanName, stops: Array.from(selectedIndices).sort((a,b) => a-b) } : g));
+                    setStopGroups(stopGroups.map(g => g.id === editingGroupId ? { ...g, name: cleanName, numRoutes, stops: Array.from(selectedIndices).sort((a,b) => a-b) } : g));
                     setEditingGroupId(null);
                 } else {
                     const color = ZONE_COLORS[stopGroups.length % ZONE_COLORS.length].hex;
-                    const newGroup = { id: Date.now(), name: cleanName, stops: Array.from(selectedIndices).sort((a,b) => a-b), color: color, assignedDrivers: [] };
+                    const newGroup = { id: Date.now(), name: cleanName, numRoutes, stops: Array.from(selectedIndices).sort((a,b) => a-b), color: color, assignedDrivers: [] };
                     setStopGroups([...stopGroups, newGroup]);
                 }
                 setStopSelectionInput('');
                 setGroupNameInput('');
+                setNumRoutesInput(1);
             };
 
             const startEditGroup = (group) => {
                 setEditingGroupId(group.id);
                 setGroupNameInput(group.name);
+                setNumRoutesInput(group.numRoutes || 1);
                 const stopsStr = group.stops.map(i => i + 1).join(', ');
                 setStopSelectionInput(stopsStr);
             };
@@ -863,17 +868,42 @@
                     const tasks = [];
                     stopGroups.forEach(g => {
                         const stops = g.stops.map(i => currentStops[i]).filter(s => s);
-                        if (stops.length > 0) tasks.push({ zoneName: g.name, color: g.color, body: { direcciones: stops, num_vans: 1, base_address: baseAddress, dwell_time: 6 } });
+                        if (stops.length > 0) {
+                            tasks.push({ 
+                                zoneName: g.name, 
+                                color: g.color, 
+                                body: { 
+                                    direcciones: stops, 
+                                    num_vans: g.numRoutes || 1, 
+                                    base_address: baseAddress, 
+                                    dwell_time: 10 
+                                } 
+                            });
+                        }
                     });
                     const groupedIndices = new Set(stopGroups.flatMap(g => g.stops));
                     const ungroupedStops = currentStops.filter((_, i) => !groupedIndices.has(i));
-                    if (ungroupedStops.length > 0) tasks.push({ zoneName: "UNASSIGNED", color: "#000000", body: { direcciones: ungroupedStops, num_vans: 1, base_address: baseAddress, dwell_time: 6 } });
+                    if (ungroupedStops.length > 0) {
+                        tasks.push({ 
+                            zoneName: "UNASSIGNED", 
+                            color: "#000000", 
+                            body: { 
+                                direcciones: ungroupedStops, 
+                                num_vans: 1, 
+                                base_address: baseAddress, 
+                                dwell_time: 10 
+                            } 
+                        });
+                    }
                     const results = {};
                     await Promise.all(tasks.map(async (task) => {
                         const res = await fetch('/optimizar', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(task.body) });
                         const data = await res.json();
-                        const firstKey = Object.keys(data)[0];
-                        if (firstKey) results[task.zoneName] = { ...data[firstKey], color: task.color };
+                        
+                        Object.keys(data).forEach((key, i) => {
+                             const routeKey = task.zoneName === "UNASSIGNED" ? `UNASSIGNED ${i+1}` : `${task.zoneName} - Route ${i+1}`;
+                             results[routeKey] = { ...data[key], color: task.color };
+                        });
                     }));
                     setOptimizedRoutes(results);
                     setView('results');
@@ -887,7 +917,7 @@
                     const res = await fetch('/recalcular', { 
                         method: 'POST', 
                         headers: {'Content-Type':'application/json'}, 
-                        body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: 6 }) 
+                        body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: 10 }) 
                     });
                     const d = await res.json();
                     if (!res.ok) throw new Error(d.error);
@@ -906,7 +936,7 @@
                     const res = await fetch('/optimizar', { 
                         method: 'POST', 
                         headers: {'Content-Type':'application/json'}, 
-                        body: JSON.stringify({ direcciones: stops, num_vans: 1, base_address: baseAddress, dwell_time: 6 }) 
+                        body: JSON.stringify({ direcciones: stops, num_vans: 1, base_address: baseAddress, dwell_time: 10 }) 
                     });
                     const d = await res.json();
                     if (!res.ok) throw new Error(d.error);
@@ -926,7 +956,7 @@
                     const res = await fetch('/optimizar_restantes', { 
                         method: 'POST', 
                         headers: {'Content-Type':'application/json'}, 
-                        body: JSON.stringify({ paradas: currentRoute, base_address: baseAddress, dwell_time: 6 }) 
+                        body: JSON.stringify({ paradas: currentRoute, base_address: baseAddress, dwell_time: 10 }) 
                     });
                     const d = await res.json();
                     if (!res.ok) throw new Error(d.error);
@@ -1286,11 +1316,11 @@
                                                     />
                                                     <p className="text-[10px] text-slate-400 mt-1">Use commas for individual stops and dashes for ranges.</p>
                                                 </div>
-                                                <div className="flex gap-2">
+                                                <div className="space-y-2">
                                                     <input 
                                                         list="zone-options"
                                                         type="text" 
-                                                        className="flex-1 p-2 border border-slate-300 rounded text-sm focus:border-ess-blue outline-none uppercase font-bold"
+                                                        className="w-full p-2 border border-slate-300 rounded text-sm focus:border-ess-blue outline-none uppercase font-bold"
                                                         placeholder="ZONE NAME (E.G. MIAMI)"
                                                         value={groupNameInput}
                                                         onChange={e => setGroupNameInput(e.target.value)}
@@ -1299,11 +1329,25 @@
                                                     <datalist id="zone-options">
                                                         {zones.map(z => <option key={z.id} value={z.name} />)}
                                                     </datalist>
-                                                    <button onClick={saveGroup} className={`px-4 py-2 text-white font-bold rounded text-sm ${editingGroupId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-ess-blue hover:bg-sky-700'}`}>
-                                                        {editingGroupId ? 'Update' : 'Create'}
-                                                    </button>
+                                                    
+                                                    <div className="flex gap-2 items-center justify-between">
+                                                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded border border-slate-200">
+                                                            <span className="text-xs font-bold text-slate-500">Routes:</span>
+                                                            <input 
+                                                                type="number" 
+                                                                min="1" 
+                                                                max="10"
+                                                                className="w-12 p-1 border border-slate-300 rounded text-sm text-center outline-none"
+                                                                value={numRoutesInput}
+                                                                onChange={e => setNumRoutesInput(e.target.value)}
+                                                            />
+                                                        </div>
+                                                        <button onClick={saveGroup} className={`flex-1 py-2 text-white font-bold rounded text-sm ${editingGroupId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-ess-blue hover:bg-sky-700'}`}>
+                                                            {editingGroupId ? 'Update Zone' : 'Create Zone'}
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                {editingGroupId && <button onClick={() => { setEditingGroupId(null); setGroupNameInput(''); setStopSelectionInput(''); }} className="text-xs text-slate-500 hover:underline">Cancel Edit</button>}
+                                                {editingGroupId && <button onClick={() => { setEditingGroupId(null); setGroupNameInput(''); setStopSelectionInput(''); setNumRoutesInput(1); }} className="text-xs text-slate-500 hover:underline">Cancel Edit</button>}
                                             </div>
                                         </div>
                                         
@@ -1313,7 +1357,10 @@
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div className="flex items-center gap-2">
                                                             <div className="w-3 h-3 rounded-full" style={{backgroundColor: group.color}}></div>
-                                                            <h4 className="font-bold text-slate-700">{group.name}</h4>
+                                                            <div>
+                                                                <h4 className="font-bold text-slate-700">{group.name}</h4>
+                                                                <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 border border-slate-200">{group.numRoutes || 1} Route(s)</span>
+                                                            </div>
                                                         </div>
                                                         <div className="flex gap-2">
                                                             <button onClick={() => startEditGroup(group)} className="text-slate-400 hover:text-ess-blue"><Icon name="pencil" className="h-4 w-4" /></button>
