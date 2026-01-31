@@ -511,7 +511,17 @@
             return (
                 <div id="global-manifest" className="hidden print:block bg-white text-black p-8 font-sans">
                     <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
-                        <img src="https://static.wixstatic.com/media/63d26f_c1a293a0b9cd4c379a17696a06d2a808~mv2.png" alt="Logo" className="h-12 w-auto object-contain" />
+                        <img
+  src="https://static.wixstatic.com/media/63d26f_c1a293a0b9cd4c379a17696a06d2a808~mv2.png"
+  alt="Logo"
+  className="
+    h-12
+    w-auto
+    object-contain
+    print:h-[70px]
+    print:max-w-[260px]
+  "
+/>
                         <div className="text-right">
                             <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
                             <p className="text-lg font-bold">{dateStr} <span className="text-sm font-normal ml-2">{timeStr}</span></p>
@@ -1930,3 +1940,4 @@
     </script>
 </body>
 </html>
+
