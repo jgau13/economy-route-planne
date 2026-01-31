@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Economy Sign Supply Route Planner</title>
     
-    <!-- React and ReactDOM -->
+    <!-- React y ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel for JSX -->
+    <!-- Babel para JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <!-- Tailwind CSS -->
@@ -24,10 +24,11 @@
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, getDocs, setDoc, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+        // Función global para inyectar la configuración desde fuera o usarla si se pega aquí
         window.initializeFirebaseGlobally = (config) => {
             try {
                 if (!config || !config.apiKey || config.apiKey.includes("Pega_aquí")) {
-                    console.warn("⚠️ Waiting for valid Firebase configuration...");
+                    console.warn("⚠️ Esperando configuración de Firebase válida...");
                     return false; 
                 }
                 const app = initializeApp(config);
@@ -52,7 +53,7 @@
                 window.fbOrderBy = orderBy;
                 window.fbGetDocs = getDocs;
                 window.fbLimit = limit;
-                window.fbWriteBatch = writeBatch;
+                window.fbWriteBatch = writeBatch; // IMPORTANTE: Agregado para importación masiva
                 
                 window.firebaseReady = true; 
                 return true;
@@ -78,6 +79,7 @@
         .animate-fade-in { animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         
+        /* GOOGLE MAPS AUTOCOMPLETE FIXES */
         .pac-container { 
             z-index: 99999 !important; 
             border-radius: 8px; 
@@ -104,6 +106,7 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .custom-checkbox { width: 20px; height: 20px; accent-color: #1b6e9b; cursor: pointer; }
 
+        /* PRINT STYLES - FIXED TO PORTRAIT */
         @media print {
             @page { size: portrait; margin: 0.5cm; }
             body * { visibility: hidden; }
@@ -119,15 +122,16 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
+        // --- PALETA DE COLORES CORPORATIVA UNIFICADA ---
         const COMPANY_PALETTE = [
-            { hex: "#1b6e9b", tw: "bg-ess-blue text-white" },
-            { hex: "#6bbf5d", tw: "bg-ess-green text-white" },
-            { hex: "#0f4c6e", tw: "bg-ess-dark text-white" },
-            { hex: "#0284c7", tw: "bg-sky-600 text-white" },
-            { hex: "#0d9488", tw: "bg-teal-600 text-white" },
-            { hex: "#1e40af", tw: "bg-blue-800 text-white" },
-            { hex: "#059669", tw: "bg-emerald-600 text-white" },
-            { hex: "#0e7490", tw: "bg-cyan-700 text-white" }
+            { hex: "#1b6e9b", tw: "bg-ess-blue text-white" },       // 0: Azul Principal
+            { hex: "#6bbf5d", tw: "bg-ess-green text-white" },      // 1: Verde Principal
+            { hex: "#0f4c6e", tw: "bg-ess-dark text-white" },       // 2: Azul Oscuro
+            { hex: "#0284c7", tw: "bg-sky-600 text-white" },        // 3: Azul Cielo
+            { hex: "#0d9488", tw: "bg-teal-600 text-white" },       // 4: Verde Azulado
+            { hex: "#1e40af", tw: "bg-blue-800 text-white" },       // 5: Azul Marino
+            { hex: "#059669", tw: "bg-emerald-600 text-white" },    // 6: Esmeralda
+            { hex: "#0e7490", tw: "bg-cyan-700 text-white" }         // 7: Cian
         ];
 
         const ConfigErrorScreen = ({ errorDetails }) => (
@@ -250,6 +254,7 @@
             const [mapLoading, setMapLoading] = useState(false); 
             const [mapReady, setMapReady] = useState(false); 
             
+            // Refs to keep track of latest callbacks without triggering effect re-run
             const onMarkerClickRef = useRef(onMarkerClick);
             const onStopsSelectedRef = useRef(onStopsSelected);
 
@@ -259,14 +264,6 @@
             }, [onMarkerClick, onStopsSelected]);
             
             const ROUTE_HEX_COLORS = COMPANY_PALETTE.map(c => c.hex);
-
-            const legendData = useMemo(() => {
-                return Object.entries(routes).map(([name, data], index) => {
-                    let color = ROUTE_HEX_COLORS[index % ROUTE_HEX_COLORS.length];
-                    if (name.startsWith('Ungrouped') || name === 'Sin Asignar') color = '#000000';
-                    return { name, color, stopCount: data.paradas ? data.paradas.length : 0 };
-                }).filter(item => item.stopCount > 0);
-            }, [routes]);
             
             useEffect(() => {
                 if (!window.google || !googleMapRef.current || !mapReady) return;
@@ -281,7 +278,7 @@
                                     position: window.google.maps.ControlPosition.TOP_CENTER,
                                     drawingModes: [
                                         window.google.maps.drawing.OverlayType.RECTANGLE,
-                                        window.google.maps.drawing.OverlayType.POLYGON 
+                                        window.google.maps.drawing.OverlayType.POLYGON // Added Polygon support
                                     ],
                                 },
                                 rectangleOptions: {
@@ -314,8 +311,11 @@
                                         if (event.type === 'rectangle') {
                                             if (shape.getBounds().contains(marker.getPosition())) isInside = true;
                                         } else if (event.type === 'polygon') {
+                                            // Requires geometry library
                                             if (window.google.maps.geometry && window.google.maps.geometry.poly) {
                                                 if (window.google.maps.geometry.poly.containsLocation(marker.getPosition(), shape)) isInside = true;
+                                            } else {
+                                                console.warn("Geometry library not loaded for polygon check");
                                             }
                                         }
 
@@ -348,7 +348,7 @@
                 return () => {
                     if (drawingManagerRef.current) drawingManagerRef.current.setMap(null);
                 };
-            }, [enableDrawing, mapReady]);
+            }, [enableDrawing, mapReady]); // Removed onStopsSelected from dependency to avoid recreation
 
             useEffect(() => {
                 if (!window.google || !mapRef.current) return;
@@ -388,6 +388,8 @@
                     marker.customInfo = { originalIndex: originalIndex };
                     
                     marker.addListener("click", (e) => { 
+                        // Shift+Click Logic
+                        // Use Ref to get latest callback function
                         if (e.domEvent && e.domEvent.shiftKey && onMarkerClickRef.current) {
                             onMarkerClickRef.current(originalIndex, true);
                         } else {
@@ -538,22 +540,6 @@
                             </div>
                         </div>
                     )}
-
-                    {legendData.length > 0 && mapReady && (
-                        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-lg border border-slate-200 z-[1000] max-w-[180px] animate-fade-in">
-                            <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider border-b pb-1">Map Routes</h4>
-                            <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
-                                {legendData.map((item, idx) => (
-                                    <div key={idx} className="flex items-center gap-2">
-                                        <div className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: item.color }}></div>
-                                        <span className="text-[11px] font-bold text-slate-700 truncate">{item.name}</span>
-                                        <span className="text-[9px] text-slate-500 ml-auto font-mono bg-slate-100 px-1 rounded">x{item.stopCount}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
                     <div className="flex-1 min-h-[400px]"><div ref={mapRef} className="w-full h-full rounded-xl"></div></div>
                 </div>
             );
@@ -2027,7 +2013,7 @@
                                 <div className="flex justify-between items-center mb-4 border-b pb-2">
                                     <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
                                         <Icon name="upload" className="h-5 w-5 text-ess-blue" /> 
-                                        Bulk Import from Excel
+                                        Importación Masiva desde Excel
                                     </h3>
                                     <button onClick={() => setShowBulkImportModal(false)} className="text-slate-400 hover:text-red-500">
                                         <Icon name="x" className="h-5 w-5" />
@@ -2036,33 +2022,33 @@
                                 
                                 <div className="flex-1 flex flex-col space-y-4">
                                     <p className="text-sm text-slate-500">
-                                        Copy and paste the columns from your Excel here. <br/><br/>
-                                        <strong>Format:</strong> Column A (Name) [TAB] Column B (Address).
+                                        Copia y pega las columnas de tu Excel aquí. <br/><br/>
+                                        <strong>Formato:</strong> Columna A (Nombre) [TAB] Columna B (Dirección).
                                     </p>
                                     
                                     <textarea 
                                         className="flex-1 p-3 border border-slate-300 rounded-lg font-mono text-xs outline-none focus:ring-2 focus:ring-ess-blue"
-                                        placeholder="Paste rows here..."
+                                        placeholder="Pega las filas aquí..."
                                         value={bulkInputText}
                                         onChange={(e) => setBulkInputText(e.target.value)}
                                     ></textarea>
                                     
                                     <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-xs text-blue-700">
                                         <Icon name="info" className="h-3 w-3 inline mr-1" />
-                                        Records will be added exactly as they appear in the text. You can edit them later.
+                                        Los registros se añadirán tal cual están en el texto. Podrás editarlos después individualmente.
                                     </div>
                                 </div>
                                 
                                 <div className="mt-6 flex gap-3">
                                     <button onClick={() => setShowBulkImportModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">
-                                        Cancel
+                                        Cancelar
                                     </button>
                                     <button 
                                         onClick={handleBulkImport} 
                                         disabled={importLoading || !bulkInputText.trim()} 
                                         className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg flex justify-center items-center gap-2"
                                     >
-                                        {importLoading ? <div className="loader"></div> : <><Icon name="plus" className="h-4 w-4" /> Start Import</>}
+                                        {importLoading ? <div className="loader"></div> : <><Icon name="plus" className="h-4 w-4" /> Iniciar Importación</>}
                                     </button>
                                 </div>
                             </div>
@@ -2120,7 +2106,7 @@
                                 <td className="p-4 text-sm text-slate-600">{c.address}</td>
                                 <td className="p-4 text-right">
                                     <div className="flex justify-end gap-2">
-                                        <button onClick={() => addClientToRoute(c)} className={`p-1 rounded transition-colors ${isInRoute ? 'text-green-600 bg-green-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`} title="Add/Remove from Route">
+                                        <button onClick={() => addClientToRoute(c)} className={`p-1 rounded transition-colors ${isInRoute ? 'text-green-600 bg-green-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`} title="Add to Today's Route">
                                             <Icon name={isInRoute ? "check-circle" : "plus-circle"} className="h-4 w-4" />
                                         </button>
                                         <button onClick={()=>{setEditingClientId(c.id); setClientFormName(c.name); setClientFormAddress(c.address)}} className="text-blue-600 p-1 hover:bg-blue-50 rounded"><Icon name="pencil" className="h-4 w-4"/></button>
