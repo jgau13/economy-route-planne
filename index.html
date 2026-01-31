@@ -1345,11 +1345,11 @@
                                                     />
                                                     <p className="text-[10px] text-slate-400 mt-1">Use commas for individual stops and dashes for ranges.</p>
                                                 </div>
-                                                <div className="flex gap-2">
+                                                <div className="space-y-2">
                                                     <input 
                                                         list="zone-options"
                                                         type="text" 
-                                                        className="flex-1 p-2 border border-slate-300 rounded text-sm focus:border-ess-blue outline-none uppercase font-bold"
+                                                        className="w-full p-2 border border-slate-300 rounded text-sm focus:border-ess-blue outline-none uppercase font-bold"
                                                         placeholder="ZONE NAME (E.G. MIAMI)"
                                                         value={groupNameInput}
                                                         onChange={e => setGroupNameInput(e.target.value)}
@@ -1358,9 +1358,23 @@
                                                     <datalist id="zone-options">
                                                         {zones.map(z => <option key={z.id} value={z.name} />)}
                                                     </datalist>
-                                                    <button onClick={saveGroup} className={`px-4 py-2 text-white font-bold rounded text-sm ${editingGroupId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-ess-blue hover:bg-sky-700'}`}>
-                                                        {editingGroupId ? 'Update' : 'Create'}
-                                                    </button>
+                                                    
+                                                    <div className="flex gap-2 items-center justify-between">
+                                                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded border border-slate-200">
+                                                            <span className="text-xs font-bold text-slate-500">Routes:</span>
+                                                            <input 
+                                                                type="number" 
+                                                                min="1" 
+                                                                max="10"
+                                                                className="w-12 p-1 border border-slate-300 rounded text-sm text-center outline-none"
+                                                                value={numRoutesInput}
+                                                                onChange={e => setNumRoutesInput(e.target.value)}
+                                                            />
+                                                        </div>
+                                                        <button onClick={saveGroup} className={`flex-1 py-2 text-white font-bold rounded text-sm ${editingGroupId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-ess-blue hover:bg-sky-700'}`}>
+                                                            {editingGroupId ? 'Update Zone' : 'Create Zone'}
+                                                        </button>
+                                                    </div>
                                                 </div>
                                                 {editingGroupId && <button onClick={() => { setEditingGroupId(null); setGroupNameInput(''); setStopSelectionInput(''); setNumRoutesInput(1); }} className="text-xs text-slate-500 hover:underline">Cancel Edit</button>}
                                             </div>
