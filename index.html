@@ -132,7 +132,16 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- DETERMINISTIC COLOR GENERATOR (HSL for uniqueness) ---
+        // --- EXTENDED PALETTE FOR UNIQUE ZONES (40 Custom Colors) ---
+        const EXTENDED_PALETTE = [
+            "#E53935", "#F4511E", "#FB8C00", "#FDD835", "#C0CA33", "#7CB342", "#43A047", "#00C853",
+            "#00BFA5", "#00ACC1", "#039BE5", "#1E88E5", "#3949AB", "#5E35B1", "#8E24AA", "#D81B60",
+            "#EC407A", "#F06292", "#AD1457", "#6A1B9A", "#651FFF", "#3D5AFE", "#2979FF", "#00E5FF",
+            "#1DE9B6", "#76FF03", "#C6FF00", "#FFEA00", "#FFC400", "#FF9100", "#FF1744", "#FF6D00",
+            "#AEEA00", "#00E676", "#00B0FF", "#304FFE", "#7C4DFF", "#E040FB", "#F50057", "#FF4081"
+        ];
+        
+        // --- DETERMINISTIC COLOR GENERATOR ---
         const getZoneColor = (name) => {
             if (!name) return "#000000";
             let hash = 0;
@@ -140,21 +149,9 @@
             for (let i = 0; i < str.length; i++) {
                 hash = str.charCodeAt(i) + ((hash << 5) - hash);
             }
-            // Generate distinct HSL color based on string hash
-            // Hue: 0-360, Saturation: 65-85%, Lightness: 35-55% (to ensure good contrast with white text)
-            const h = Math.abs(hash % 360);
-            const s = 65 + (Math.abs(hash % 20));
-            const l = 35 + (Math.abs(hash % 20)); 
-            return `hsl(${h}, ${s}%, ${l}%)`;
+            const index = Math.abs(hash) % EXTENDED_PALETTE.length;
+            return EXTENDED_PALETTE[index];
         };
-
-        // Static palette for fallback/initial options if needed, but we mainly use the generator now for consistency
-        const EXTENDED_PALETTE = [
-            "#e11d48", "#2563eb", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#4b5563",
-            "#dc2626", "#ea580c", "#65a30d", "#059669", "#0d9488", "#0284c7", "#4f46e5", "#9333ea",
-            "#c026d3", "#be123c", "#be185d", "#a21caf", "#7e22ce", "#6d28d9", "#5b21b6", "#4338ca",
-            "#3730a3", "#1e40af", "#1e3a8a", "#1e293b", "#0f172a"
-        ];
 
         const ConfigErrorScreen = ({ errorDetails }) => (
             <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
@@ -541,11 +538,11 @@
                           src="https://static.wixstatic.com/media/63d26f_c1a293a0b9cd4c379a17696a06d2a808~mv2.png"
                           alt="Logo"
                           className="
-                            h-12
+                            h-10
                             w-auto
                             object-contain
-                            print:h-[70px]
-                            print:max-w-[260px]
+                            print:h-[50px]
+                            print:max-w-[200px]
                           "
                         />
                         <div className="text-right">
@@ -790,6 +787,27 @@
                     return newRoutes;
                 });
             };
+            
+            const handleDeleteRoute = (zoneName) => {
+                if(!confirm("Delete this route? Stops will be unassigned.")) return;
+                setOptimizedRoutes(prev => {
+                    const newRoutes = {...prev};
+                    delete newRoutes[zoneName];
+                    
+                    // Create unassigned entry if not exists
+                    if (!newRoutes["UNASSIGNED"]) {
+                         newRoutes["UNASSIGNED"] = { paradas: [], color: "#000000", duracion_estimada: 0, link: '' };
+                    }
+                    
+                    // Move stops to unassigned
+                    const deletedRouteStops = prev[zoneName].paradas;
+                    if(deletedRouteStops && deletedRouteStops.length > 0) {
+                        newRoutes["UNASSIGNED"].paradas = [...newRoutes["UNASSIGNED"].paradas, ...deletedRouteStops];
+                    }
+                    
+                    return newRoutes;
+                });
+            };
 
             const confirmAddStop = async () => {
                 // If editing a result stop (in driver card)
@@ -958,14 +976,25 @@
                 const nameExists = stopGroups.some(g => g.name === cleanName && g.id !== editingGroupId);
                 if (nameExists) return alert("A zone with this name already exists active. Please use a unique name.");
 
-                if (!zones.find(z => z.name === cleanName) && window.fbDb) {
-                     await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones'), { name: cleanName });
+                // SAVE ZONE NAME TO DB (NON-BLOCKING)
+                if (window.fbDb && user && !zones.find(z => z.name === cleanName)) {
+                     window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones'), { name: cleanName })
+                     .catch(e => console.error("Auto-save zone failed", e));
                 }
                 
-                // Determine Color
-                const color = getZoneColor(cleanName);
+                // Determine Color (Uniqueness logic)
+                let candidateColor = getZoneColor(cleanName);
+                const otherGroups = stopGroups.filter(g => g.id !== editingGroupId);
+                const usedColors = new Set(otherGroups.map(g => g.color));
+                
+                if (usedColors.has(candidateColor)) {
+                     // Find first unused color in palette
+                     const freeColor = EXTENDED_PALETTE.find(c => !usedColors.has(c));
+                     if (freeColor) candidateColor = freeColor;
+                     // If all palette colors used, candidateColor remains the hash-based one (collision inevitable > 30 zones)
+                }
 
-                // Map indices to IDs for robust tracking - FIX: No need for (i-1) as user sees 1-based but indices are 0-based in selectedIndices due to the loop above doing (num-1)
+                // Map indices to IDs for robust tracking
                 const selectedIds = Array.from(selectedIndices).map(i => currentStops[i]?.id).filter(id => id);
 
                 if (editingGroupId) {
@@ -973,12 +1002,12 @@
                         ...g, 
                         name: cleanName, 
                         numRoutes, 
-                        color, // Update color based on new name
+                        color: candidateColor, 
                         stops: selectedIds 
                     } : g));
                     setEditingGroupId(null);
                 } else {
-                    const newGroup = { id: Date.now(), name: cleanName, numRoutes, stops: selectedIds, color: color };
+                    const newGroup = { id: Date.now(), name: cleanName, numRoutes, stops: selectedIds, color: candidateColor };
                     setStopGroups([...stopGroups, newGroup]);
                 }
                 setStopSelectionInput('');
@@ -992,8 +1021,13 @@
                 
                 if (optimizedRoutes && optimizedRoutes[zoneName]) return alert("Zone already exists");
                 
-                // Assign deterministic color based on name
-                const color = getZoneColor(zoneName);
+                // Assign unique color
+                const usedColors = new Set(Object.values(optimizedRoutes || {}).map(r => r.color));
+                let color = getZoneColor(zoneName);
+                if (usedColors.has(color)) {
+                     const free = EXTENDED_PALETTE.find(c => !usedColors.has(c));
+                     if(free) color = free;
+                }
                 
                 setOptimizedRoutes(prev => ({
                     ...prev,
@@ -1229,6 +1263,32 @@
                     }
                 }
             };
+            
+            // KEYBOARD HANDLING FOR MANUAL STOP MODAL SUGGESTIONS
+            const handleModalClientKeyDown = (e) => {
+                if (!showSuggestions) return;
+                const filtered = clientDB.filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => (prev < filtered.length - 1 ? prev + 1 : prev));
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => (prev > 0 ? prev - 1 : 0));
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (activeSuggestion >= 0 && filtered[activeSuggestion]) {
+                        const selection = filtered[activeSuggestion];
+                        setNewStopName(selection.name);
+                        setNewStopAddress(selection.address);
+                        setTempStopData({name: selection.name, address: selection.address});
+                        setShowSuggestions(false);
+                        if(addressInputRef.current) addressInputRef.current.focus();
+                    } else {
+                         if(addressInputRef.current) addressInputRef.current.focus();
+                    }
+                }
+            };
 
             // ROUTE MODIFICATION FUNCTIONS
             const recalculateFixedRoute = async (zoneName, stops) => {
@@ -1450,7 +1510,7 @@
                 };
                 reader.readAsText(file);
             };
-            const handleChangePassword = async () => { try { await window.fbSendPasswordResetEmail(window.fbAuth, user.email); setSettingsSettings("Reset email sent!"); } catch(e) { setSettingsMsg("Error: "+e.message); } };
+            const handleChangePassword = async () => { try { await window.fbSendPasswordResetEmail(window.fbAuth, user.email); setSettingsMsg("Reset email sent!"); } catch(e) { setSettingsMsg("Error: "+e.message); } };
 
             const assignDriver = (zoneName, driverId) => { setDriverAssignments(prev => ({ ...prev, [zoneName]: driverId })); };
             const overrideVehicle = (zoneName, vehicleName) => { setManualVehicleAssignments(prev => ({ ...prev, [zoneName]: vehicleName })); };
@@ -1635,7 +1695,9 @@
                                                 onChange={e => {
                                                     setNewStopName(e.target.value);
                                                     setShowSuggestions(true);
+                                                    setActiveSuggestion(-1);
                                                 }}
+                                                onKeyDown={handleModalClientKeyDown}
                                             />
                                             {showSuggestions && newStopName && (
                                                 <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full max-h-40 overflow-y-auto">
@@ -1643,7 +1705,13 @@
                                                         <div 
                                                             key={c.id} 
                                                             className={`p-3 cursor-pointer border-b text-sm ${i === activeSuggestion ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
-                                                            onClick={()=>{setNewStopName(c.name); setNewStopAddress(c.address); setTempStopData({name: c.name, address: c.address}); setShowSuggestions(false); if(addressInputRef.current) addressInputRef.current.focus();}}
+                                                            onClick={()=>{
+                                                                setNewStopName(c.name); 
+                                                                setNewStopAddress(c.address); 
+                                                                setTempStopData({name: c.name, address: c.address}); 
+                                                                setShowSuggestions(false); 
+                                                                if(addressInputRef.current) addressInputRef.current.focus();
+                                                            }}
                                                         >
                                                             <div className="font-bold">{c.name}</div>
                                                             <div className="text-xs text-gray-500">{c.address}</div>
@@ -1729,11 +1797,6 @@
                                             <Icon name="folder-open" className="h-4 w-4" /> Saved Planners
                                         </button>
                                         <div className="h-6 w-px bg-slate-300 mx-1"></div>
-                                        {optimizedRoutes && view === 'planning' && (
-                                            <button onClick={() => setView('results')} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-green-600 hover:bg-green-700 transition-colors shadow-sm animate-pulse mr-2">
-                                                <Icon name="check-circle" className="h-4 w-4" /> Go to Results
-                                            </button>
-                                        )}
                                         <button onClick={() => setView('planning')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'planning' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
                                         <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
                                         <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Fleet & Drivers</button>
@@ -1945,7 +2008,7 @@
                                                 {loading ? <div className="loader w-4 h-4 border-white"></div> : <><Icon name="play" className="h-4 w-4" /> GENERATE ROUTES</>}
                                             </button>
                                             {stopGroups.length > 0 && (
-                                                <button onClick={clearAllStops} className="w-full mt-2 py-2 text-xs text-red-500 hover:text-red-700 font-bold">Clear All Zones</button>
+                                                <button onClick={clearAllGroups} className="w-full mt-2 py-2 text-xs text-red-500 hover:text-red-700 font-bold">Clear All Zones</button>
                                             )}
                                         </div>
                                     </div>
@@ -2037,7 +2100,10 @@
                                                             </button>
                                                             <h2 className="font-bold text-lg text-slate-800 uppercase">{zoneName}</h2>
                                                         </div>
-                                                        <span className="text-xs font-bold bg-white border px-2 py-1 rounded shadow-sm">{routeData.paradas.length} Stops</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-bold bg-white border px-2 py-1 rounded shadow-sm">{routeData.paradas.length} Stops</span>
+                                                            <button onClick={() => handleDeleteRoute(zoneName)} className="text-red-400 hover:text-red-600 p-1 rounded-full hover:bg-red-50" title="Delete Route"><Icon name="x" className="h-4 w-4" /></button>
+                                                        </div>
                                                     </div>
                                                     
                                                     {/* DRIVER SELECTION DROPDOWN */}
