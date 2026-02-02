@@ -132,15 +132,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- EXTENDED PALETTE FOR UNIQUE ZONES ---
-        const EXTENDED_PALETTE = [
-            "#e11d48", "#2563eb", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#4b5563",
-            "#dc2626", "#ea580c", "#65a30d", "#059669", "#0d9488", "#0284c7", "#4f46e5", "#9333ea",
-            "#c026d3", "#be123c", "#be185d", "#a21caf", "#7e22ce", "#6d28d9", "#5b21b6", "#4338ca",
-            "#3730a3", "#1e40af", "#1e3a8a", "#1e293b", "#0f172a"
-        ];
-        
-        // --- DETERMINISTIC COLOR GENERATOR ---
+        // --- DETERMINISTIC COLOR GENERATOR (HSL for uniqueness) ---
         const getZoneColor = (name) => {
             if (!name) return "#000000";
             let hash = 0;
@@ -148,9 +140,21 @@
             for (let i = 0; i < str.length; i++) {
                 hash = str.charCodeAt(i) + ((hash << 5) - hash);
             }
-            const index = Math.abs(hash % EXTENDED_PALETTE.length);
-            return EXTENDED_PALETTE[index];
+            // Generate distinct HSL color based on string hash
+            // Hue: 0-360, Saturation: 65-85%, Lightness: 35-55% (to ensure good contrast with white text)
+            const h = Math.abs(hash % 360);
+            const s = 65 + (Math.abs(hash % 20));
+            const l = 35 + (Math.abs(hash % 20)); 
+            return `hsl(${h}, ${s}%, ${l}%)`;
         };
+
+        // Static palette for fallback/initial options if needed, but we mainly use the generator now for consistency
+        const EXTENDED_PALETTE = [
+            "#e11d48", "#2563eb", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#4b5563",
+            "#dc2626", "#ea580c", "#65a30d", "#059669", "#0d9488", "#0284c7", "#4f46e5", "#9333ea",
+            "#c026d3", "#be123c", "#be185d", "#a21caf", "#7e22ce", "#6d28d9", "#5b21b6", "#4338ca",
+            "#3730a3", "#1e40af", "#1e3a8a", "#1e293b", "#0f172a"
+        ];
 
         const ConfigErrorScreen = ({ errorDetails }) => (
             <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
@@ -795,6 +799,7 @@
                         const stop = newRoutes[editingResultStop.zoneName].paradas[editingResultStop.index];
                         stop.invoices = tempInvoices;
                         stop.pieces = tempPieces;
+                        // Not changing name/address here to avoid geo issues, but could be added
                         return newRoutes;
                     });
                     setEditingResultStop(null);
@@ -1161,15 +1166,15 @@
                              // Recalc
                              relatedRouteKeys.forEach(key => delete newResults[key]);
                              tasks.push({ 
-                                zoneName: "UNASSIGNED", 
-                                color: "#000000", 
-                                body: { 
-                                    direcciones: ungroupedStops, 
-                                    num_vans: 1, 
-                                    base_address: baseAddress, 
-                                    dwell_time: 10 
-                                } 
-                            });
+                                 zoneName: "UNASSIGNED", 
+                                 color: "#000000", 
+                                 body: { 
+                                     direcciones: ungroupedStops, 
+                                     num_vans: 1, 
+                                     base_address: baseAddress, 
+                                     dwell_time: 10 
+                                 } 
+                             });
                          }
                     } else {
                          // If no ungrouped stops now, remove any old unassigned routes
@@ -1445,7 +1450,7 @@
                 };
                 reader.readAsText(file);
             };
-            const handleChangePassword = async () => { try { await window.fbSendPasswordResetEmail(window.fbAuth, user.email); setSettingsMsg("Reset email sent!"); } catch(e) { setSettingsMsg("Error: "+e.message); } };
+            const handleChangePassword = async () => { try { await window.fbSendPasswordResetEmail(window.fbAuth, user.email); setSettingsSettings("Reset email sent!"); } catch(e) { setSettingsMsg("Error: "+e.message); } };
 
             const assignDriver = (zoneName, driverId) => { setDriverAssignments(prev => ({ ...prev, [zoneName]: driverId })); };
             const overrideVehicle = (zoneName, vehicleName) => { setManualVehicleAssignments(prev => ({ ...prev, [zoneName]: vehicleName })); };
@@ -1631,7 +1636,6 @@
                                                     setNewStopName(e.target.value);
                                                     setShowSuggestions(true);
                                                 }}
-                                                onKeyDown={(e) => handleEnter(e, () => addressInputRef.current?.focus())}
                                             />
                                             {showSuggestions && newStopName && (
                                                 <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full max-h-40 overflow-y-auto">
