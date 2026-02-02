@@ -132,16 +132,12 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- PALETA DE COLORES DE ALTO CONTRASTE (Para Zonas) ---
-        const ZONE_COLORS = [
-            { hex: "#e11d48", tw: "bg-rose-600 text-white" },      // Rojo
-            { hex: "#2563eb", tw: "bg-blue-600 text-white" },      // Azul
-            { hex: "#16a34a", tw: "bg-green-600 text-white" },     // Verde
-            { hex: "#d97706", tw: "bg-amber-600 text-white" },     // Naranja
-            { hex: "#7c3aed", tw: "bg-violet-600 text-white" },    // Violeta
-            { hex: "#0891b2", tw: "bg-cyan-600 text-white" },      // Cian
-            { hex: "#db2777", tw: "bg-pink-600 text-white" },      // Rosa
-            { hex: "#4b5563", tw: "bg-gray-600 text-white" }       // Gris
+        // --- EXTENDED PALETTE FOR UNIQUE ZONES ---
+        const EXTENDED_PALETTE = [
+            "#e11d48", "#2563eb", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#4b5563",
+            "#dc2626", "#ea580c", "#65a30d", "#059669", "#0d9488", "#0284c7", "#4f46e5", "#9333ea",
+            "#c026d3", "#be123c", "#be185d", "#a21caf", "#7e22ce", "#6d28d9", "#5b21b6", "#4338ca",
+            "#3730a3", "#1e40af", "#1e3a8a", "#1e293b", "#0f172a"
         ];
 
         const ConfigErrorScreen = ({ errorDetails }) => (
@@ -499,6 +495,17 @@
                             ))}
                         </tbody>
                     </table>
+                    <div className="flex justify-between items-end mt-4 pt-4 border-t border-black">
+                        <div className="space-y-4">
+                            <div>Checked by: __________________________</div>
+                            <div>Time: __________________________</div>
+                        </div>
+                        <div className="text-right text-[10px]">
+                            <div className="font-bold text-xs">{config.companyName || "ECONOMY SIGN SUPPLY"}</div>
+                            <div>PHONE: {config.phone || "407-901-0900"}</div>
+                            <div>{config.address || "8350 PARKLINE BLVD, ORLANDO, FL"}</div>
+                        </div>
+                    </div>
                 </div>
             );
         };
@@ -606,6 +613,14 @@
             const [tempInvoices, setTempInvoices] = useState('');
             const [tempPieces, setTempPieces] = useState('');
             const [editingDraftId, setEditingDraftId] = useState(null);
+            const [editingResultStop, setEditingResultStop] = useState(null); // { zoneName, index }
+            
+            // ADD STOP MANUALLY TO ROUTE
+            const [targetZoneForManualAdd, setTargetZoneForManualAdd] = useState(null);
+            
+            // ADD NEW ROUTE MODAL
+            const [showAddRouteModal, setShowAddRouteModal] = useState(false);
+            const [newRouteConfig, setNewRouteConfig] = useState({ zoneName: '', driverId: '' });
 
             // VEHICLE INPUTS
             const [newVehicleName, setNewVehicleName] = useState('');
@@ -722,8 +737,53 @@
                 setTempPieces('');
                 setShowAddDetailsModal(true);
             };
+            
+            const initiateAddStopToRoute = (zoneName) => {
+                setTargetZoneForManualAdd(zoneName);
+                setNewStopName('');
+                setNewStopAddress('');
+                setTempStopData(null);
+                setTempInvoices('');
+                setTempPieces('');
+                setShowAddDetailsModal(true);
+            };
+            
+            const initiateEditResultStop = (zoneName, index, stopData) => {
+                setEditingResultStop({ zoneName, index });
+                setTempStopData({
+                    name: stopData.nombre,
+                    address: stopData.direccion
+                });
+                setTempInvoices(stopData.invoices || '');
+                setTempPieces(stopData.pieces || '');
+                setShowAddDetailsModal(true);
+            };
+            
+            const deleteResultStop = (zoneName, index) => {
+                if(!confirm("Remove this stop from route?")) return;
+                setOptimizedRoutes(prev => {
+                    const newRoutes = JSON.parse(JSON.stringify(prev));
+                    newRoutes[zoneName].paradas.splice(index, 1);
+                    return newRoutes;
+                });
+            };
 
             const confirmAddStop = async () => {
+                // If editing a result stop (in driver card)
+                if (editingResultStop) {
+                    setOptimizedRoutes(prev => {
+                        const newRoutes = JSON.parse(JSON.stringify(prev));
+                        const stop = newRoutes[editingResultStop.zoneName].paradas[editingResultStop.index];
+                        stop.invoices = tempInvoices;
+                        stop.pieces = tempPieces;
+                        // Not changing name/address here to avoid geo issues, but could be added
+                        return newRoutes;
+                    });
+                    setEditingResultStop(null);
+                    setShowAddDetailsModal(false);
+                    return;
+                }
+
                 if (!tempStopData) return;
                 
                 const data = {
@@ -749,7 +809,26 @@
                     } catch (e) { console.error("Error auto-saving client:", e); }
                 }
 
-                if (editingDraftId) {
+                if (targetZoneForManualAdd) {
+                    const newStop = {
+                        nombre: tempStopData.name,
+                        direccion: tempStopData.address,
+                        invoices: tempInvoices,
+                        pieces: tempPieces,
+                    };
+                    
+                    setOptimizedRoutes(prev => {
+                        const route = prev[targetZoneForManualAdd];
+                        return {
+                            ...prev,
+                            [targetZoneForManualAdd]: {
+                                ...route,
+                                paradas: [...route.paradas, newStop]
+                            }
+                        };
+                    });
+                    setTargetZoneForManualAdd(null);
+                } else if (editingDraftId) {
                     await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops', editingDraftId), data);
                     setEditingDraftId(null);
                 } else {
@@ -758,7 +837,7 @@
                 }
                 
                 setNewStopName(''); setNewStopAddress(''); setShowAddDetailsModal(false); setTempStopData(null);
-                if(inputRef.current) inputRef.current.focus();
+                if(inputRef.current && !targetZoneForManualAdd) inputRef.current.focus();
             };
 
             const handleEditStop = (stop) => {
@@ -849,27 +928,67 @@
                 });
                 if (selectedIndices.size === 0) return alert("Invalid stop selection.");
                 
-                // Map indices to IDs for robust tracking - FIX: No need for (i-1) as user sees 1-based but indices are 0-based in selectedIndices due to the loop above doing (num-1)
-                const selectedIds = Array.from(selectedIndices).map(i => currentStops[i]?.id).filter(id => id);
-
                 const cleanName = groupNameInput.toUpperCase().trim();
                 const numRoutes = parseInt(numRoutesInput) || 1;
+                
+                // UNIQUE NAME VALIDATION
+                const nameExists = stopGroups.some(g => g.name === cleanName && g.id !== editingGroupId);
+                if (nameExists) return alert("A zone with this name already exists active. Please use a unique name.");
 
                 if (!zones.find(z => z.name === cleanName) && window.fbDb) {
                      await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones'), { name: cleanName });
                 }
 
                 if (editingGroupId) {
-                    setStopGroups(stopGroups.map(g => g.id === editingGroupId ? { ...g, name: cleanName, numRoutes, stops: selectedIds } : g));
+                    setStopGroups(stopGroups.map(g => g.id === editingGroupId ? { 
+                        ...g, 
+                        name: cleanName, 
+                        numRoutes, 
+                        stops: Array.from(selectedIndices).map(i => currentStops[i]?.id).filter(id => id) 
+                    } : g));
                     setEditingGroupId(null);
                 } else {
-                    const color = ZONE_COLORS[stopGroups.length % ZONE_COLORS.length].hex;
+                    // Find unused color
+                    const usedColors = new Set(stopGroups.map(g => g.color));
+                    let color = EXTENDED_PALETTE.find(c => !usedColors.has(c));
+                    if (!color) color = "#" + Math.floor(Math.random()*16777215).toString(16);
+
+                    const selectedIds = Array.from(selectedIndices).map(i => currentStops[i]?.id).filter(id => id);
                     const newGroup = { id: Date.now(), name: cleanName, numRoutes, stops: selectedIds, color: color };
                     setStopGroups([...stopGroups, newGroup]);
                 }
                 setStopSelectionInput('');
                 setGroupNameInput('');
                 setNumRoutesInput(1);
+            };
+            
+            const handleCreateNewRoute = () => {
+                if (!newRouteConfig.zoneName) return alert("Enter a Zone Name");
+                const zoneName = newRouteConfig.zoneName.toUpperCase();
+                
+                if (optimizedRoutes && optimizedRoutes[zoneName]) return alert("Zone already exists");
+                
+                // Assign unique color for new empty route
+                const usedColors = new Set(Object.values(optimizedRoutes || {}).map(r => r.color));
+                let color = EXTENDED_PALETTE.find(c => !usedColors.has(c));
+                if (!color) color = "#" + Math.floor(Math.random()*16777215).toString(16);
+                
+                setOptimizedRoutes(prev => ({
+                    ...prev,
+                    [zoneName]: {
+                        paradas: [],
+                        duracion_estimada: 0,
+                        link: '',
+                        color: color
+                    }
+                }));
+                
+                if (newRouteConfig.driverId) {
+                    setDriverAssignments(prev => ({ ...prev, [zoneName]: newRouteConfig.driverId }));
+                }
+                
+                setShowAddRouteModal(false);
+                setNewRouteConfig({ driverId: '', zoneName: '' });
             };
 
             const startEditGroup = (group) => {
@@ -927,9 +1046,12 @@
                 setLoading(true); setError('');
                 try {
                     const tasks = [];
+                    const newResults = { ...optimizedRoutes }; // Start with existing to support "locking"
+
                     // Track used IDs to find ungrouped
                     const usedIds = new Set();
 
+                    // 1. Process Defined Zones
                     stopGroups.forEach(g => {
                         const stops = g.stops.map(id => {
                             usedIds.add(id);
@@ -937,44 +1059,101 @@
                         }).filter(s => s);
 
                         if (stops.length > 0) {
-                            tasks.push({ 
-                                zoneName: g.name, 
-                                color: g.color, 
+                            
+                            // LOCKING LOGIC: Check if this zone exists in optimizedRoutes AND has the same set of stops
+                            let needsRecalc = true;
+                            const existingStops = [];
+                            Object.keys(newResults || {}).forEach(key => {
+                                if (key === g.name || key.startsWith(g.name + " - Route")) {
+                                    newResults[key].paradas.forEach(p => existingStops.push(p.direccion));
+                                }
+                            });
+                            
+                            // Compare addresses
+                            const currentAddresses = stops.map(s => s.address).sort();
+                            const existingAddressesSorted = existingStops.sort();
+                            
+                            if (currentAddresses.length > 0 && 
+                                currentAddresses.length === existingAddressesSorted.length &&
+                                currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
+                                needsRecalc = false; // LOCKED
+                                // Ensure color is updated if changed in planning
+                                Object.keys(newResults).forEach(key => {
+                                     if (key === g.name || key.startsWith(g.name + " - Route")) newResults[key].color = g.color;
+                                });
+                            }
+                            
+                            if (needsRecalc) {
+                                // If recalc, remove old entries for this zone from newResults to avoid duplicates
+                                Object.keys(newResults).forEach(key => {
+                                    if (key === g.name || key.startsWith(g.name + " - Route")) delete newResults[key];
+                                });
+                                
+                                tasks.push({ 
+                                    zoneName: g.name, 
+                                    color: g.color, 
+                                    body: { 
+                                        direcciones: stops, 
+                                        num_vans: g.numRoutes || 1, 
+                                        base_address: baseAddress, 
+                                        dwell_time: 10 
+                                    } 
+                                });
+                            }
+                        }
+                    });
+
+                    // 2. Process Ungrouped
+                    const ungroupedStops = currentStops.filter(s => !usedIds.has(s.id));
+                    if (ungroupedStops.length > 0) {
+                        // Same locking logic for UNASSIGNED
+                         const existingStops = [];
+                         Object.keys(newResults || {}).forEach(key => {
+                            if (key.startsWith("UNASSIGNED")) newResults[key].paradas.forEach(p => existingStops.push(p.direccion));
+                         });
+                         const currentAddresses = ungroupedStops.map(s => s.address).sort();
+                         const existingAddressesSorted = existingStops.sort();
+                         
+                         if (currentAddresses.length > 0 && 
+                             currentAddresses.length === existingAddressesSorted.length &&
+                             currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
+                             // Locked
+                         } else {
+                             // Recalc
+                             Object.keys(newResults).forEach(key => { if (key.startsWith("UNASSIGNED")) delete newResults[key]; });
+                             tasks.push({ 
+                                zoneName: "UNASSIGNED", 
+                                color: "#000000", 
                                 body: { 
-                                    direcciones: stops, 
-                                    num_vans: g.numRoutes || 1, 
+                                    direcciones: ungroupedStops, 
+                                    num_vans: 1, 
                                     base_address: baseAddress, 
                                     dwell_time: 10 
                                 } 
                             });
-                        }
-                    });
-
-                    const ungroupedStops = currentStops.filter(s => !usedIds.has(s.id));
-                    
-                    if (ungroupedStops.length > 0) {
-                        tasks.push({ 
-                            zoneName: "UNASSIGNED", 
-                            color: "#000000", 
-                            body: { 
-                                direcciones: ungroupedStops, 
-                                num_vans: 1, 
-                                base_address: baseAddress, 
-                                dwell_time: 10 
-                            } 
-                        });
+                         }
+                    } else {
+                         // If no ungrouped stops now, remove any old unassigned routes
+                         Object.keys(newResults).forEach(key => { if (key.startsWith("UNASSIGNED")) delete newResults[key]; });
                     }
-                    const results = {};
-                    await Promise.all(tasks.map(async (task) => {
-                        const res = await fetch('/optimizar', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(task.body) });
-                        const data = await res.json();
-                        
-                        Object.keys(data).forEach((key, i) => {
-                             const routeKey = task.zoneName === "UNASSIGNED" ? `UNASSIGNED ${i+1}` : (task.body.num_vans > 1 ? `${task.zoneName} - Route ${i+1}` : task.zoneName);
-                             results[routeKey] = { ...data[key], color: task.color };
-                        });
-                    }));
-                    setOptimizedRoutes(results);
+                    
+                    // 3. Remove routes for zones that no longer exist/have stops (cleanup)
+                    // (Simplified cleanup to avoid deleting manual routes for now, relying on user to delete if needed)
+
+                    // 4. Fetch & Merge
+                    if (tasks.length > 0) {
+                        await Promise.all(tasks.map(async (task) => {
+                            const res = await fetch('/optimizar', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(task.body) });
+                            const data = await res.json();
+                            
+                            Object.keys(data).forEach((key, i) => {
+                                 const routeKey = task.zoneName === "UNASSIGNED" ? `UNASSIGNED ${i+1}` : (task.body.num_vans > 1 ? `${task.zoneName} - Route ${i+1}` : task.zoneName);
+                                 newResults[routeKey] = { ...data[key], color: task.color };
+                            });
+                        }));
+                    }
+                    
+                    setOptimizedRoutes(newResults);
                     setView('results');
                 } catch (e) { setError("Error generating routes: " + e.message); } finally { setLoading(false); }
             };
@@ -1277,6 +1456,47 @@
                             </div>
                         </div>
                     )}
+                    
+                    {/* ADD NEW ROUTE MODAL */}
+                    {showAddRouteModal && (
+                        <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                                <h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center gap-2"><Icon name="plus" className="h-5 w-5 text-green-600" /> Add New Route</h3>
+                                <div className="space-y-4 mb-6">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Zone Name</label>
+                                        <input 
+                                            list="route-zone-options"
+                                            autoFocus
+                                            type="text" 
+                                            className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue uppercase" 
+                                            placeholder="e.g. EXTRA ROUTE" 
+                                            value={newRouteConfig.zoneName}
+                                            onChange={e => setNewRouteConfig({...newRouteConfig, zoneName: e.target.value})}
+                                        />
+                                        <datalist id="route-zone-options">
+                                            {zones.map(z => <option key={z.id} value={z.name} />)}
+                                        </datalist>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Assign Driver (Optional)</label>
+                                        <select 
+                                            className="w-full p-3 border rounded-lg outline-none bg-white"
+                                            value={newRouteConfig.driverId}
+                                            onChange={e => setNewRouteConfig({...newRouteConfig, driverId: e.target.value})}
+                                        >
+                                            <option value="">-- Select Driver --</option>
+                                            {drivers.filter(d => d.active).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="flex gap-3">
+                                    <button onClick={() => setShowAddRouteModal(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">Cancel</button>
+                                    <button onClick={handleCreateNewRoute} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg hover:bg-sky-700">Create</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* GLOBAL MAP MODAL */}
                     {viewingGlobalMap && optimizedRoutes && (
@@ -1325,15 +1545,61 @@
                     {showAddDetailsModal && (
                         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
-                                <h3 className="font-bold text-lg mb-4 text-slate-800">Add Stop Details</h3>
-                                <div className="mb-4 text-sm text-slate-600">
-                                    <p><strong>Client:</strong> {tempStopData?.name}</p>
-                                    <p className="truncate"><strong>Addr:</strong> {tempStopData?.address}</p>
-                                </div>
+                                <h3 className="font-bold text-lg mb-4 text-slate-800">
+                                    {targetZoneForManualAdd ? `Add Stop to ${targetZoneForManualAdd}` : 'Add Stop Details'}
+                                </h3>
+                                
+                                {targetZoneForManualAdd && (
+                                    <div className="mb-4 space-y-4">
+                                        <div className="relative">
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client</label>
+                                            <input 
+                                                ref={inputRef}
+                                                type="text" 
+                                                className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:border-ess-blue" 
+                                                placeholder="Name" 
+                                                value={newStopName} 
+                                                onChange={e => {
+                                                    setNewStopName(e.target.value);
+                                                    setShowSuggestions(true);
+                                                }}
+                                            />
+                                            {showSuggestions && newStopName && (
+                                                <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full max-h-40 overflow-y-auto">
+                                                    {clientDB.filter(c=>c.name.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5).map(c => (
+                                                        <div key={c.id} onClick={()=>{setNewStopName(c.name); setNewStopAddress(c.address); setTempStopData({name: c.name, address: c.address}); setShowSuggestions(false);}} className="p-3 hover:bg-blue-50 cursor-pointer border-b text-sm">
+                                                            <div className="font-bold">{c.name}</div>
+                                                            <div className="text-xs text-gray-500">{c.address}</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="relative">
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label>
+                                            <GoogleAddressInput 
+                                                value={newStopAddress} 
+                                                onChange={e => { setNewStopAddress(e.target.value); setTempStopData(prev => ({...prev, name: newStopName, address: e.target.value})); }}
+                                                className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:border-ess-blue"
+                                                placeholder="Search Google Maps"
+                                                disabled={!scriptLoaded}
+                                                isLoaded={scriptLoaded}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!targetZoneForManualAdd && (
+                                    <div className="mb-4 text-sm text-slate-600">
+                                        <p><strong>Client:</strong> {tempStopData?.name}</p>
+                                        <p className="truncate"><strong>Addr:</strong> {tempStopData?.address}</p>
+                                    </div>
+                                )}
+
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices (Optional)</label>
-                                        <input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} onKeyDown={(e) => handleEnter(e, () => piecesInputRef.current?.focus())} autoFocus />
+                                        <input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} onKeyDown={(e) => handleEnter(e, () => piecesInputRef.current?.focus())} autoFocus={!targetZoneForManualAdd} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pieces Shipped</label>
@@ -1341,7 +1607,7 @@
                                     </div>
                                 </div>
                                 <div className="mt-6 flex gap-3">
-                                    <button onClick={() => { setShowAddDetailsModal(false); setTempStopData(null); }} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
+                                    <button onClick={() => { setShowAddDetailsModal(false); setTempStopData(null); setTargetZoneForManualAdd(null); setEditingResultStop(null); }} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
                                     <button onClick={confirmAddStop} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg">Save</button>
                                 </div>
                             </div>
@@ -1362,6 +1628,9 @@
                                 <span className="text-xs text-slate-400 font-bold mr-2 hidden md:inline-block">User: {user.email}</span>
                                 {view === 'results' && (
                                     <>
+                                        <button onClick={() => setShowAddRouteModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-slate-600 hover:bg-slate-800 transition-colors shadow-sm">
+                                            <Icon name="plus-circle" className="h-4 w-4" /> Add New Route
+                                        </button>
                                         <button onClick={() => setShowSavePlanModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-green-600 hover:bg-green-700 transition-colors shadow-sm">
                                             <Icon name="save" className="h-4 w-4" /> Save Planner
                                         </button>
@@ -1384,6 +1653,11 @@
                                             <Icon name="folder-open" className="h-4 w-4" /> Saved Planners
                                         </button>
                                         <div className="h-6 w-px bg-slate-300 mx-1"></div>
+                                        {optimizedRoutes && view === 'planning' && (
+                                            <button onClick={() => setView('results')} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-green-600 hover:bg-green-700 transition-colors shadow-sm animate-pulse mr-2">
+                                                <Icon name="check-circle" className="h-4 w-4" /> Go to Results
+                                            </button>
+                                        )}
                                         <button onClick={() => setView('planning')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'planning' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
                                         <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
                                         <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Fleet & Drivers</button>
@@ -1635,7 +1909,16 @@
                                             >
                                                 <div className="p-4 bg-slate-50 border-b border-slate-200">
                                                     <div className="flex justify-between items-start mb-3">
-                                                        <h2 className="font-bold text-lg text-slate-800 uppercase">{zoneName}</h2>
+                                                        <div className="flex items-center gap-2">
+                                                            <button 
+                                                                onClick={() => initiateAddStopToRoute(zoneName)}
+                                                                className="bg-green-100 hover:bg-green-200 text-green-700 p-1 rounded transition-colors shadow-sm"
+                                                                title="Add Stop to Route"
+                                                            >
+                                                                <Icon name="plus" className="h-4 w-4" />
+                                                            </button>
+                                                            <h2 className="font-bold text-lg text-slate-800 uppercase">{zoneName}</h2>
+                                                        </div>
                                                         <span className="text-xs font-bold bg-white border px-2 py-1 rounded shadow-sm">{routeData.paradas.length} Stops</span>
                                                     </div>
                                                     
@@ -1686,7 +1969,7 @@
                                                     {routeData.paradas.map((stop, i) => (
                                                         <div 
                                                             key={i} 
-                                                            className="flex gap-3 p-3 border-b border-slate-100 text-sm hover:bg-slate-50 transition-colors cursor-grab active:cursor-grabbing"
+                                                            className="flex gap-3 p-3 border-b border-slate-100 text-sm hover:bg-slate-50 transition-colors cursor-grab active:cursor-grabbing group"
                                                             draggable="true"
                                                             onDragStart={(e) => handleResultDragStart(e, zoneName, i)}
                                                             onDragEnd={handleResultDragEnd}
@@ -1694,9 +1977,19 @@
                                                             onDragOver={(e) => e.preventDefault()}
                                                         >
                                                             <span className="font-bold text-slate-400 text-xs mt-0.5 w-5 text-right">{i+1}.</span>
-                                                            <div className="leading-tight">
+                                                            <div className="flex-1 leading-tight">
                                                                 <div className="font-bold text-slate-700">{stop.nombre}</div>
                                                                 <div className="text-xs text-slate-500 truncate">{stop.direccion}</div>
+                                                                {(stop.invoices || stop.pieces) && (
+                                                                    <div className="flex gap-2 mt-0.5 text-[9px] text-slate-500">
+                                                                        {stop.invoices && <span className="bg-yellow-50 px-1 rounded border border-yellow-100 text-yellow-700">Inv: {stop.invoices}</span>}
+                                                                        {stop.pieces && <span className="bg-blue-50 px-1 rounded border border-blue-100 text-blue-700">Pcs: {stop.pieces}</span>}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button onClick={() => initiateEditResultStop(zoneName, i, stop)} className="text-blue-400 hover:text-blue-600 p-0.5"><Icon name="pencil" className="h-3 w-3" /></button>
+                                                                <button onClick={() => deleteResultStop(zoneName, i)} className="text-red-400 hover:text-red-600 p-0.5"><Icon name="trash-2" className="h-3 w-3" /></button>
                                                             </div>
                                                         </div>
                                                     ))}
