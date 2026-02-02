@@ -512,16 +512,16 @@
                 <div id="global-manifest" className="hidden print:block bg-white text-black p-8 font-sans">
                     <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
                         <img
-  src="https://static.wixstatic.com/media/63d26f_c1a293a0b9cd4c379a17696a06d2a808~mv2.png"
-  alt="Logo"
-  className="
-    h-12
-    w-auto
-    object-contain
-    print:h-[70px]
-    print:max-w-[260px]
-  "
-/>
+                          src="https://static.wixstatic.com/media/63d26f_c1a293a0b9cd4c379a17696a06d2a808~mv2.png"
+                          alt="Logo"
+                          className="
+                            h-12
+                            w-auto
+                            object-contain
+                            print:h-[70px]
+                            print:max-w-[260px]
+                          "
+                        />
                         <div className="text-right">
                             <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
                             <p className="text-lg font-bold">{dateStr} <span className="text-sm font-normal ml-2">{timeStr}</span></p>
@@ -1384,11 +1384,6 @@
                                             <Icon name="folder-open" className="h-4 w-4" /> Saved Planners
                                         </button>
                                         <div className="h-6 w-px bg-slate-300 mx-1"></div>
-                                        {optimizedRoutes && view === 'planning' && (
-                                            <button onClick={() => setView('results')} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-green-600 hover:bg-green-700 transition-colors shadow-sm animate-pulse mr-2">
-                                                <Icon name="check-circle" className="h-4 w-4" /> Go to Results
-                                            </button>
-                                        )}
                                         <button onClick={() => setView('planning')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'planning' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
                                         <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
                                         <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Fleet & Drivers</button>
@@ -1940,4 +1935,3 @@
     </script>
 </body>
 </html>
-
