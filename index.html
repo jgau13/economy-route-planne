@@ -429,8 +429,9 @@
                                     routeData.paradas.forEach((stop, i) => {
                                         const address = stop.direccion || stop.address;
                                         if (i < legs.length) {
-                                            const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${i+1}. ${stop.nombre}</strong><br><span style="color:#666">${address}</span></div>`;
-                                            addMarker(legs[i].end_location, stop.nombre, (i+1).toString(), color, content, null);
+                                            const clientName = stop.nombre || stop.name || 'Client';
+                                            const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${i+1}. ${clientName}</strong><br><span style="color:#666">${address}</span></div>`;
+                                            addMarker(legs[i].end_location, clientName, (i+1).toString(), color, content, null);
                                         }
                                     });
                                 }
@@ -442,14 +443,15 @@
                             if (!address) return;
                             const pos = parseCoord(stop.coord || stop.latlng);
                             const label = (stop.originalIndex || i + 1).toString();
-                            const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${label}. ${stop.nombre}</strong><br><span style="color:#666">${address}</span><br><span style="color:${color}; font-weight:bold;">${groupName}</span></div>`;
+                            const clientName = stop.nombre || stop.name || 'Client';
+                            const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${label}. ${clientName}</strong><br><span style="color:#666">${address}</span><br><span style="color:${color}; font-weight:bold;">${groupName}</span></div>`;
 
                             if (pos) {
-                                addMarker(pos, stop.nombre, label, color, content, stop.originalIndex);
+                                addMarker(pos, clientName, label, color, content, stop.originalIndex);
                             } else {
                                 geocoderRef.current.geocode({ address: address }, (results, status) => {
                                     if (status === 'OK' && results[0]) {
-                                        addMarker(results[0].geometry.location, stop.nombre, label, color, content, stop.originalIndex);
+                                        addMarker(results[0].geometry.location, clientName, label, color, content, stop.originalIndex);
                                     }
                                 });
                             }
@@ -500,7 +502,7 @@
                                 <tr key={index} className="h-14">
                                     <td className="border border-black p-1 text-center font-bold">{index + 1}</td>
                                     <td className="border border-black p-2 align-top">
-                                        <div className="font-bold text-sm truncate">{stop.nombre}</div>
+                                        <div className="font-bold text-sm truncate">{stop.nombre || stop.name}</div>
                                         <div className="text-[10px] text-gray-600 leading-tight">{stop.direccion || stop.address}</div>
                                     </td>
                                     <td className="border border-black p-1 text-center font-mono font-bold text-sm align-middle">{stop.invoices || '-'}</td>
@@ -578,7 +580,7 @@
                                             <tr key={sIdx}>
                                                 <td className="border border-black p-1 text-center">{sIdx + 1}</td>
                                                 <td className="border border-black p-1">
-                                                    <span className="font-bold">{stop.nombre}</span> - {stop.direccion}
+                                                    <span className="font-bold">{stop.nombre || stop.name}</span> - {stop.direccion || stop.address}
                                                 </td>
                                                 <td className="border border-black p-1 text-center">{stop.invoices || '-'}</td>
                                                 <td className="border border-black p-1 text-center">{stop.pieces || '-'}</td>
@@ -764,8 +766,8 @@
             const initiateEditResultStop = (zoneName, index, stopData) => {
                 setEditingResultStop({ zoneName, index });
                 setTempStopData({
-                    name: stopData.nombre,
-                    address: stopData.direccion
+                    name: stopData.nombre || stopData.name,
+                    address: stopData.direccion || stopData.address
                 });
                 setTempInvoices(stopData.invoices || '');
                 setTempPieces(stopData.pieces || '');
@@ -2103,8 +2105,8 @@
                                                         >
                                                             <span className="font-bold text-slate-400 text-xs mt-0.5 w-5 text-right">{i+1}.</span>
                                                             <div className="flex-1 leading-tight">
-                                                                <div className="font-bold text-slate-700">{stop.nombre}</div>
-                                                                <div className="text-xs text-slate-500 truncate">{stop.direccion}</div>
+                                                                <div className="font-bold text-slate-700">{stop.nombre || stop.name}</div>
+                                                                <div className="text-xs text-slate-500 truncate">{stop.direccion || stop.address}</div>
                                                                 {(stop.invoices || stop.pieces) && (
                                                                     <div className="flex gap-2 mt-0.5 text-[9px] text-slate-500">
                                                                         {stop.invoices && <span className="bg-yellow-50 px-1 rounded border border-yellow-100 text-yellow-700">Inv: {stop.invoices}</span>}
