@@ -315,7 +315,7 @@
                                     setTimeout(() => shape.setMap(null), 600);
                                 }
                             });
-                        } catch(e) { console.error("Error initializing drawing:", e); }
+                        } catch(e) { console.error("Error init drawing:", e); }
                     } else {
                         drawingManagerRef.current.setMap(googleMapRef.current);
                     }
@@ -840,13 +840,16 @@
                 }
 
                 if (targetZoneForManualAdd) {
-                    const newStop = {
-                        nombre: tempStopData.name,
-                        direccion: tempStopData.address,
-                        invoices: tempInvoices,
-                        pieces: tempPieces,
-                    };
-                    
+                    // 1. Save to DB so it persists
+                    const newStopData = { ...data, createdAt: Date.now() };
+                    const docRef = await window.fbAddDoc(col, newStopData);
+                    const newId = docRef.id;
+
+                    // 2. Update STOP GROUPS so generateRoutes sees it as assigned
+                    setStopGroups(prev => prev.map(g => g.name === targetZoneForManualAdd ? { ...g, stops: [...g.stops, newId] } : g));
+
+                    // 3. Update Optimized Routes visual state
+                    const newStop = { ...newStopData, id: newId, nombre: data.name, direccion: data.address };
                     setOptimizedRoutes(prev => {
                         const route = prev[targetZoneForManualAdd];
                         return {
@@ -1114,8 +1117,6 @@
                                 } else if (!currentOwner && !activeZoneNames.has(keyBase)) {
                                     delete newResults[key];
                                 }
-                            } else {
-                                delete newResults[key];
                             }
                         }
                     });
@@ -1233,52 +1234,50 @@
             };
 
             const handleClientKeyDown = (e) => {
-                if (!showSuggestions) return;
-                const filtered = clientDB.filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
-                
-                if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setActiveSuggestion(prev => (prev < filtered.length - 1 ? prev + 1 : prev));
-                } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setActiveSuggestion(prev => (prev > 0 ? prev - 1 : 0));
-                } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (activeSuggestion >= 0 && filtered[activeSuggestion]) {
+                if (e.key === 'Tab' || e.key === 'Enter') {
+                    if (showSuggestions && activeSuggestion >= 0) {
+                        e.preventDefault();
+                        const filtered = clientDB.filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
                         const selection = filtered[activeSuggestion];
                         setNewStopName(selection.name);
                         setNewStopAddress(selection.address);
                         setTempStopData({name: selection.name, address: selection.address});
                         setShowSuggestions(false);
                         if (addressInputRef.current) addressInputRef.current.focus();
-                    } else {
-                         if (addressInputRef.current) addressInputRef.current.focus();
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (addressInputRef.current) addressInputRef.current.focus();
                     }
+                } else if (e.key === 'ArrowDown' && showSuggestions) {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => Math.min(prev + 1, 4));
+                } else if (e.key === 'ArrowUp' && showSuggestions) {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => Math.max(prev - 1, 0));
                 }
             };
             
             const handleModalClientKeyDown = (e) => {
-                if (!showSuggestions) return;
-                const filtered = clientDB.filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
-                
-                if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setActiveSuggestion(prev => (prev < filtered.length - 1 ? prev + 1 : prev));
-                } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setActiveSuggestion(prev => (prev > 0 ? prev - 1 : 0));
-                } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (activeSuggestion >= 0 && filtered[activeSuggestion]) {
+                if (e.key === 'Tab' || e.key === 'Enter') {
+                    if (showSuggestions && activeSuggestion >= 0) {
+                        e.preventDefault();
+                        const filtered = clientDB.filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
                         const selection = filtered[activeSuggestion];
                         setNewStopName(selection.name);
                         setNewStopAddress(selection.address);
                         setTempStopData({name: selection.name, address: selection.address});
                         setShowSuggestions(false);
                         if(addressInputRef.current) addressInputRef.current.focus();
-                    } else {
-                         if(addressInputRef.current) addressInputRef.current.focus();
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if(addressInputRef.current) addressInputRef.current.focus();
                     }
+                } else if (e.key === 'ArrowDown' && showSuggestions) {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => Math.min(prev + 1, 4));
+                } else if (e.key === 'ArrowUp' && showSuggestions) {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => Math.max(prev - 1, 0));
                 }
             };
 
@@ -1351,7 +1350,7 @@
                 if (driver && driver.phone) phone = driver.phone.replace(/\D/g, '');
                 
                 const link = stops && stops.length > 0 
-                    ? `https://www.google.com/maps/dir/${encodeURIComponent(baseAddress)}/${stops.map(s => encodeURIComponent(s.direccion)).join('/')}/${encodeURIComponent(baseAddress)}` 
+                    ? `https://www.google.com/maps/dir/${encodeURIComponent(baseAddress)}/${stops.map(s => encodeURIComponent(s.direccion || s.address)).join('/')}/${encodeURIComponent(baseAddress)}` 
                     : "";
                 
                 const text = encodeURIComponent(`Hello, here is your updated route:\n\n${link}\n\nDrive safely!`);
@@ -1481,7 +1480,7 @@
                     try {
                         const data = JSON.parse(event.target.result);
                         if (data.clients) for (const c of data.clients) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients'), c.id), c);
-                        if (data.drivers) for (const d of data.drivers) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients'), d.id), d);
+                        if (data.drivers) for (const d of data.drivers) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers'), d.id), d);
                         alert("Data restored!"); window.location.reload();
                     } catch(err) { alert("Error restoring: "+err.message); }
                 };
@@ -1793,7 +1792,7 @@
                                                 <input 
                                                     ref={inputRef}
                                                     type="text" 
-                                                    className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:border-ess-blue" 
+                                                    className="w-full p-3 border rounded-lg outline-none focus:border-ess-blue" 
                                                     placeholder="Name" 
                                                     value={newStopName} 
                                                     onChange={e => {
@@ -1814,7 +1813,7 @@
                                                                     setNewStopAddress(c.address); 
                                                                     setTempStopData({name: c.name, address: c.address}); 
                                                                     setShowSuggestions(false); 
-                                                                    if(addressInputRef.current) addressInputRef.current.focus();
+                                                                    if(ghostInputRef.current) ghostInputRef.current.focus();
                                                                 }}
                                                             >
                                                                 <div className="font-bold">{c.name}</div>
