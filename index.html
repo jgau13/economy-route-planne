@@ -1040,6 +1040,9 @@
                         color: color
                     }
                 }));
+
+                // Sincronizar con el Planner creando un nuevo grupo
+                setStopGroups(prev => [...prev, { id: Date.now(), name: zoneName, numRoutes: 1, stops: [], color: color }]);
                 
                 if (newRouteConfig.driverId) {
                     setDriverAssignments(prev => ({ ...prev, [zoneName]: newRouteConfig.driverId }));
@@ -1415,6 +1418,16 @@
                 }
                 
                 setOptimizedRoutes(newRoutes);
+
+                // Sincronizar cambios de movimiento de paradas con los grupos del Planner
+                setStopGroups(gs => gs.map(g => {
+                    let newStops = g.stops.filter(id => id !== movedStop.id);
+                    const targetBase = targetZoneName.split(' - Route')[0];
+                    if (g.name === targetBase) {
+                         if (!newStops.includes(movedStop.id)) newStops.push(movedStop.id);
+                    }
+                    return { ...g, stops: newStops };
+                }));
             };
 
             const handleSavePlan = async () => {
@@ -1511,18 +1524,6 @@
             const overrideVehicle = (zoneName, vehicleName) => { setManualVehicleAssignments(prev => ({ ...prev, [zoneName]: vehicleName })); };
             
             const handleLogout = () => { if(window.fbSignOut && window.fbAuth) window.fbSignOut(window.fbAuth); else window.location.reload(); };
-
-            const openDriverMap = (zoneName, data) => setViewingDriver({ name: zoneName, data });
-
-            const filteredClientsDB = useMemo(() => {
-                return clientDB.filter(c => {
-                    const searchName = clientFormName.toLowerCase();
-                    const searchAddr = clientFormAddress.toLowerCase();
-                    const nameMatch = c.name.toLowerCase().includes(searchName);
-                    const addrMatch = c.address.toLowerCase().includes(searchAddr);
-                    return nameMatch && addrMatch;
-                });
-            }, [clientDB, clientFormName, clientFormAddress]);
 
             if (!user) return <LoginScreen />;
 
@@ -2181,23 +2182,10 @@
                                     })}
                                 </div>
 
-                                {/* NUEVA SECCIÓN DE ACCIONES INFERIOR */}
-                                <div className="mt-12 p-8 bg-white rounded-2xl border border-slate-200 shadow-lg text-center animate-fade-in">
-                                    <h3 className="text-xl font-bold text-slate-800 mb-2">Finalize Planning</h3>
-                                    <p className="text-slate-500 mb-6 max-w-md mx-auto">Generate all individual route manifest sheets at once. Each driver will get two copies of their manifest.</p>
-                                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                                        <button 
-                                            onClick={handleBulkManifestPrint}
-                                            className="px-8 py-4 bg-ess-blue text-white rounded-xl font-bold shadow-xl hover:bg-sky-700 transition-all flex items-center justify-center gap-3 text-lg"
-                                        >
-                                            <Icon name="printer" className="h-6 w-6" /> 
-                                            PRINT ALL MANIFESTS (2 Sheets Each)
-                                        </button>
-                                    </div>
-                                    <div className="mt-4 text-xs text-slate-400 flex items-center justify-center gap-4">
-                                        <span className="flex items-center gap-1"><Icon name="check-circle" className="h-3 w-3" /> {Object.keys(optimizedRoutes).length} Routes ready</span>
-                                        <span className="flex items-center gap-1"><Icon name="copy" className="h-3 w-3" /> Total {Object.keys(optimizedRoutes).length * 2} Pages</span>
-                                    </div>
+                                <div className="mt-8 flex justify-center pb-8">
+                                    <button onClick={handleBulkManifestPrint} className="px-8 py-4 bg-ess-blue text-white rounded-xl font-bold shadow-xl hover:bg-sky-700 transition-all flex items-center gap-3 text-lg">
+                                        <Icon name="printer" className="h-6 w-6" /> PRINT ALL MANIFESTS (2 Sheets Each)
+                                    </button>
                                 </div>
                             </div>
                         )}
