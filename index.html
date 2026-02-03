@@ -1481,7 +1481,7 @@
                     try {
                         const data = JSON.parse(event.target.result);
                         if (data.clients) for (const c of data.clients) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients'), c.id), c);
-                        if (data.drivers) for (const d of data.drivers) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers'), d.id), d);
+                        if (data.drivers) for (const d of data.drivers) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients'), d.id), d);
                         alert("Data restored!"); window.location.reload();
                     } catch(err) { alert("Error restoring: "+err.message); }
                 };
@@ -1670,7 +1670,7 @@
                                                 onKeyDown={handleModalClientKeyDown}
                                             />
                                             {showSuggestions && newStopName && (
-                                                <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full max-h-40 overflow-y-auto">
+                                                <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full h-auto">
                                                     {clientDB.filter(c=>c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5).map((c, i) => (
                                                         <div 
                                                             key={c.id} 
@@ -1804,7 +1804,7 @@
                                                     onKeyDown={handleClientKeyDown}
                                                 />
                                                 {showSuggestions && newStopName && (
-                                                    <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full max-h-40 overflow-y-auto">
+                                                    <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full h-auto">
                                                         {clientDB.filter(c=>c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5).map((c, i) => (
                                                             <div 
                                                                 key={c.id} 
@@ -1814,7 +1814,7 @@
                                                                     setNewStopAddress(c.address); 
                                                                     setTempStopData({name: c.name, address: c.address}); 
                                                                     setShowSuggestions(false); 
-                                                                    if(ghostInputRef.current) ghostInputRef.current.focus();
+                                                                    if(addressInputRef.current) addressInputRef.current.focus();
                                                                 }}
                                                             >
                                                                 <div className="font-bold">{c.name}</div>
@@ -1843,6 +1843,12 @@
                                                         placeholder="Search Google Maps"
                                                         disabled={!scriptLoaded}
                                                         isLoaded={scriptLoaded}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                e.preventDefault();
+                                                                initiateAddStop();
+                                                            }
+                                                        }}
                                                     />
                                                     <input 
                                                         ref={ghostInputRef}
