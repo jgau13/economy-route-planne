@@ -538,11 +538,11 @@
                           src="https://static.wixstatic.com/media/63d26f_c1a293a0b9cd4c379a17696a06d2a808~mv2.png"
                           alt="Logo"
                           className="
-                            h-12
+                            h-10
                             w-auto
                             object-contain
-                            print:h-[70px]
-                            print:max-w-[260px]
+                            print:h-[50px]
+                            print:max-w-[200px]
                           "
                         />
                         <div className="text-right">
@@ -810,14 +810,12 @@
             };
 
             const confirmAddStop = async () => {
-                // If editing a result stop (in driver card)
                 if (editingResultStop) {
                     setOptimizedRoutes(prev => {
                         const newRoutes = JSON.parse(JSON.stringify(prev));
                         const stop = newRoutes[editingResultStop.zoneName].paradas[editingResultStop.index];
                         stop.invoices = tempInvoices;
                         stop.pieces = tempPieces;
-                        // Not changing name/address here to avoid geo issues, but could be added
                         return newRoutes;
                     });
                     setEditingResultStop(null);
@@ -832,12 +830,10 @@
                     address: tempStopData.address,
                     invoices: tempInvoices,
                     pieces: tempPieces,
-                    // REMOVED createdAt here to avoid reordering on edit
                 };
 
                 const col = window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops');
 
-                // Auto-save to Clients DB if not exists
                 const normalize = s => s ? s.toLowerCase().trim() : "";
                 const addressExists = clientDB.some(c => normalize(c.address) === normalize(tempStopData.address));
                 
@@ -873,7 +869,7 @@
                     await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops', editingDraftId), data);
                     setEditingDraftId(null);
                 } else {
-                    data.createdAt = Date.now(); // Only for new stops
+                    data.createdAt = Date.now();
                     await window.fbAddDoc(col, data);
                 }
                 
@@ -917,6 +913,16 @@
                 snapshot.docs.forEach(doc => batch.delete(doc.ref));
                 await batch.commit();
                 setStopGroups([]);
+            };
+
+            const clearAllGroups = () => {
+                if(confirm("Clear all zones? Stops will remain as Ungrouped.")){
+                    setStopGroups([]);
+                    setEditingGroupId(null);
+                    setGroupNameInput('');
+                    setStopSelectionInput('');
+                    setNumRoutesInput(1);
+                }
             };
 
             const handleMapSelection = (indices) => {
@@ -972,29 +978,23 @@
                 const cleanName = groupNameInput.toUpperCase().trim();
                 const numRoutes = parseInt(numRoutesInput) || 1;
                 
-                // UNIQUE NAME VALIDATION
                 const nameExists = stopGroups.some(g => g.name === cleanName && g.id !== editingGroupId);
                 if (nameExists) return alert("A zone with this name already exists active. Please use a unique name.");
 
-                // SAVE ZONE NAME TO DB (NON-BLOCKING)
                 if (window.fbDb && user && !zones.find(z => z.name === cleanName)) {
                      window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones'), { name: cleanName })
                      .catch(e => console.error("Auto-save zone failed", e));
                 }
                 
-                // Determine Color (Uniqueness logic)
                 let candidateColor = getZoneColor(cleanName);
                 const otherGroups = stopGroups.filter(g => g.id !== editingGroupId);
                 const usedColors = new Set(otherGroups.map(g => g.color));
                 
                 if (usedColors.has(candidateColor)) {
-                     // Find first unused color in palette
                      const freeColor = EXTENDED_PALETTE.find(c => !usedColors.has(c));
                      if (freeColor) candidateColor = freeColor;
-                     // If all palette colors used, candidateColor remains the hash-based one (collision inevitable > 30 zones)
                 }
 
-                // Map indices to IDs for robust tracking
                 const selectedIds = Array.from(selectedIndices).map(i => currentStops[i]?.id).filter(id => id);
 
                 if (editingGroupId) {
@@ -1021,7 +1021,6 @@
                 
                 if (optimizedRoutes && optimizedRoutes[zoneName]) return alert("Zone already exists");
                 
-                // Assign unique color
                 const usedColors = new Set(Object.values(optimizedRoutes || {}).map(r => r.color));
                 let color = getZoneColor(zoneName);
                 if (usedColors.has(color)) {
@@ -1051,21 +1050,11 @@
                 setEditingGroupId(group.id);
                 setGroupNameInput(group.name);
                 setNumRoutesInput(group.numRoutes || 1);
-                // Map IDs back to indices
                 const indices = group.stops.map(id => currentStops.findIndex(s => s.id === id)).filter(i => i !== -1).map(i => i + 1).sort((a,b)=>a-b);
                 setStopSelectionInput(indices.join(', '));
             };
 
             const deleteGroup = (id) => setStopGroups(stopGroups.filter(g => g.id !== id));
-            
-            const clearAllGroups = () => {
-                if(confirm("Clear all zones? Stops will remain as Ungrouped.")){
-                    setStopGroups([]);
-                    setEditingGroupId(null);
-                    setGroupNameInput('');
-                    setStopSelectionInput('');
-                }
-            };
 
             const handleEnter = (e, cb) => { if(e.key === 'Enter') cb(); };
 
@@ -1078,7 +1067,6 @@
                         const stop = currentStops.find(s => s.id === id);
                         if (stop) {
                             groupedIds.add(id);
-                            // Find current index
                             const currentIndex = currentStops.findIndex(s => s.id === id) + 1;
                             return { ...stop, originalIndex: currentIndex };
                         }
@@ -1102,12 +1090,10 @@
                 setLoading(true); setError('');
                 try {
                     const tasks = [];
-                    const newResults = { ...optimizedRoutes }; // Start with existing to support "locking"
+                    const newResults = { ...optimizedRoutes };
 
-                    // Track used IDs to find ungrouped
                     const usedIds = new Set();
 
-                    // 1. Process Defined Zones
                     stopGroups.forEach(g => {
                         const stops = g.stops.map(id => {
                             usedIds.add(id);
@@ -1115,11 +1101,8 @@
                         }).filter(s => s);
 
                         if (stops.length > 0) {
-                            
-                            // LOCKING LOGIC: Check if this zone exists in optimizedRoutes AND has the same set of stops
                             let needsRecalc = true;
                             const existingStops = [];
-                            // Collect routes for this zone
                             const relatedRouteKeys = Object.keys(newResults || {}).filter(key => 
                                 key === g.name || key.startsWith(g.name + " - Route")
                             );
@@ -1129,20 +1112,17 @@
                                     newResults[key].paradas.forEach(p => existingStops.push(p.direccion));
                                 });
                                 
-                                // Compare addresses (Sorted to ignore order changes done manually)
                                 const currentAddresses = stops.map(s => s.address).sort();
                                 const existingAddressesSorted = existingStops.sort();
                                 
                                 if (currentAddresses.length > 0 && 
                                     currentAddresses.length === existingAddressesSorted.length &&
                                     currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
-                                    needsRecalc = false; // LOCKED
+                                    needsRecalc = false;
                                     
-                                    // DATA SYNC: Update metadata for locked routes without recalc
                                     relatedRouteKeys.forEach(key => {
-                                         newResults[key].color = g.color; // Sync color
+                                         newResults[key].color = g.color;
                                          newResults[key].paradas = newResults[key].paradas.map(p => {
-                                             // Find matching stop in current list by address to get latest invoices/pieces
                                              const freshStop = stops.find(s => s.address === p.direccion);
                                              if (freshStop) {
                                                  return { ...p, invoices: freshStop.invoices, pieces: freshStop.pieces, nombre: freshStop.name };
@@ -1154,9 +1134,7 @@
                             }
                             
                             if (needsRecalc) {
-                                // If recalc, remove old entries for this zone from newResults to avoid duplicates
                                 relatedRouteKeys.forEach(key => delete newResults[key]);
-                                
                                 tasks.push({ 
                                     zoneName: g.name, 
                                     color: g.color, 
@@ -1171,10 +1149,8 @@
                         }
                     });
 
-                    // 2. Process Ungrouped
                     const ungroupedStops = currentStops.filter(s => !usedIds.has(s.id));
                     if (ungroupedStops.length > 0) {
-                        // Same locking logic for UNASSIGNED
                          const existingStops = [];
                          const relatedRouteKeys = Object.keys(newResults || {}).filter(key => key.startsWith("UNASSIGNED"));
                          
@@ -1188,16 +1164,14 @@
                          if (currentAddresses.length > 0 && 
                              currentAddresses.length === existingAddressesSorted.length &&
                              currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
-                             // Locked
                               relatedRouteKeys.forEach(key => {
-                                 newResults[key].paradas = newResults[key].paradas.map(p => {
-                                     const freshStop = ungroupedStops.find(s => s.address === p.direccion);
-                                     if (freshStop) return { ...p, invoices: freshStop.invoices, pieces: freshStop.pieces, nombre: freshStop.name };
-                                     return p;
-                                 });
-                             });
+                                  newResults[key].paradas = newResults[key].paradas.map(p => {
+                                      const freshStop = ungroupedStops.find(s => s.address === p.direccion);
+                                      if (freshStop) return { ...p, invoices: freshStop.invoices, pieces: freshStop.pieces, nombre: freshStop.name };
+                                      return p;
+                                  });
+                              });
                          } else {
-                             // Recalc
                              relatedRouteKeys.forEach(key => delete newResults[key]);
                              tasks.push({ 
                                  zoneName: "UNASSIGNED", 
@@ -1211,14 +1185,9 @@
                              });
                          }
                     } else {
-                         // If no ungrouped stops now, remove any old unassigned routes
                          Object.keys(newResults).forEach(key => { if (key.startsWith("UNASSIGNED")) delete newResults[key]; });
                     }
                     
-                    // 3. Remove routes for zones that no longer exist/have stops (cleanup)
-                    // (Simplified cleanup to avoid deleting manual routes for now, relying on user to delete if needed)
-
-                    // 4. Fetch & Merge
                     if (tasks.length > 0) {
                         await Promise.all(tasks.map(async (task) => {
                             const res = await fetch('/optimizar', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(task.body) });
@@ -1236,7 +1205,6 @@
                 } catch (e) { setError("Error generating routes: " + e.message); } finally { setLoading(false); }
             };
 
-            // KEYBOARD HANDLING FOR CLIENT SUGGESTIONS
             const handleClientKeyDown = (e) => {
                 if (!showSuggestions) return;
                 const filtered = clientDB.filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
@@ -1255,17 +1223,13 @@
                         setNewStopAddress(selection.address);
                         setTempStopData({name: selection.name, address: selection.address});
                         setShowSuggestions(false);
-                        // Focus Address Input via Ref (Dummy ghost field logic next)
-                         // But here we set address state, so maybe focus address input directly
                         if (addressInputRef.current) addressInputRef.current.focus();
                     } else {
-                         // Normal Enter -> Focus Address
                          if (addressInputRef.current) addressInputRef.current.focus();
                     }
                 }
             };
             
-            // KEYBOARD HANDLING FOR MANUAL STOP MODAL SUGGESTIONS
             const handleModalClientKeyDown = (e) => {
                 if (!showSuggestions) return;
                 const filtered = clientDB.filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
@@ -1291,7 +1255,6 @@
                 }
             };
 
-            // ROUTE MODIFICATION FUNCTIONS
             const recalculateFixedRoute = async (zoneName, stops) => {
                 setRecalculating(p => ({...p, [zoneName]: true}));
                 try {
@@ -1311,7 +1274,7 @@
                 finally { setRecalculating(p => ({...p, [zoneName]: false})); }
             };
 
-            const recalculateRoute = async (zoneName, stops) => { // SHUFFLE
+            const recalculateRoute = async (zoneName, stops) => {
                 setRecalculating(p => ({...p, [zoneName]: true}));
                 try {
                     const res = await fetch('/optimizar', { 
@@ -1353,7 +1316,6 @@
                 const newRoutes = JSON.parse(JSON.stringify(optimizedRoutes));
                 newRoutes[zoneName].paradas.reverse();
                 setOptimizedRoutes(newRoutes);
-                // Removed auto-recalc to avoid API cost
             };
 
             const getWhatsappLink = (stops, driverName) => {
@@ -1370,7 +1332,7 @@
             };
 
             const handleGlobalPrint = () => {
-                setPrintData(null); // Clear single print to avoid conflicts
+                setPrintData(null);
                 setShowGlobalPrint(true);
                 setTimeout(() => {
                     window.print();
@@ -1378,7 +1340,6 @@
                 }, 500);
             };
             
-            // Drag and Drop Logic for Results
             const handleResultDragStart = (e, zoneName, index) => {
                 setDraggedResultItem({ zoneName, index });
                 e.dataTransfer.effectAllowed = "move";
@@ -1393,32 +1354,23 @@
             const handleResultDrop = (e, targetZoneName, targetIndex) => {
                 e.preventDefault();
                 if (!draggedResultItem) return;
-                
                 const { zoneName: sourceZone, index: sourceIndex } = draggedResultItem;
-                
-                // Deep copy
                 const newRoutes = JSON.parse(JSON.stringify(optimizedRoutes));
-                
-                // Remove from source
                 const [movedStop] = newRoutes[sourceZone].paradas.splice(sourceIndex, 1);
                 
-                // Add to target
                 if (targetIndex !== null) {
-                    // Adjust target index if shifting in same list
                     let adjustedTarget = targetIndex;
                     if (sourceZone === targetZoneName && sourceIndex < targetIndex) {
                         adjustedTarget -= 1; 
                     }
                     newRoutes[targetZoneName].paradas.splice(adjustedTarget, 0, movedStop);
                 } else {
-                    // Append to end
                     newRoutes[targetZoneName].paradas.push(movedStop);
                 }
                 
                 setOptimizedRoutes(newRoutes);
             };
 
-            // SAVED PLANS LOGIC
             const handleSavePlan = async () => {
                 if (!planName.trim()) return alert("Please enter a name");
                 const planData = {
@@ -1450,10 +1402,9 @@
 
             const handleDeletePlan = async (id) => {
                 if(!confirm("Delete this saved plan?")) return;
-                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'saved_plans', id));
+                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'saved_plans', id));
             };
 
-            // CRUD HELPERS
             const addVehicle = async () => { if(newVehicleName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles'), { name: newVehicleName }); setNewVehicleName(''); } };
             const deleteVehicle = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles', id)); };
             const updateVehicle = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles', id), data); setEditingVehicleId(null); };
@@ -1474,7 +1425,6 @@
             const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients', id)); };
             const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setEditingClientId(c.id); };
 
-            // ZONE SETTINGS FUNCTIONS
             const addZoneFromSettings = async () => { 
                 if(newZoneName.trim()){ 
                     await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones'), { name: newZoneName.toUpperCase() }); 
@@ -1483,11 +1433,9 @@
             };
             const deleteZoneFromSettings = async (id) => { if(confirm('Delete Zone?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones', id)); };
 
-            // SETTINGS FUNCTIONS
             const saveSettings = async () => {
                 if (window.fbDb) {
                     await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'settings', 'config'), { companyConfig, baseAddress }, { merge: true });
-                    if(newPin.length >= 4) { /* Handle PIN update logic if needed later */ }
                     alert("Settings Saved!");
                 }
             };
@@ -1520,7 +1468,6 @@
 
             const openDriverMap = (zoneName, data) => setViewingDriver({ name: zoneName, data });
 
-            // Clients Database Filtering Logic
             const filteredClientsDB = useMemo(() => {
                 return clientDB.filter(c => {
                     const searchName = clientFormName.toLowerCase();
@@ -1535,7 +1482,6 @@
 
             return (
                 <div className="min-h-screen bg-slate-50 text-slate-800 pb-20">
-                    {/* SAVE PLAN MODAL */}
                     {showSavePlanModal && (
                         <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
@@ -1557,7 +1503,6 @@
                         </div>
                     )}
 
-                    {/* LOAD PLAN MODAL */}
                     {showLoadPlanModal && (
                         <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md h-[500px] flex flex-col">
@@ -1590,7 +1535,6 @@
                         </div>
                     )}
                     
-                    {/* ADD NEW ROUTE MODAL */}
                     {showAddRouteModal && (
                         <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
@@ -1631,7 +1575,6 @@
                         </div>
                     )}
 
-                    {/* GLOBAL MAP MODAL */}
                     {viewingGlobalMap && optimizedRoutes && (
                         <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden relative">
@@ -1659,7 +1602,6 @@
                         </div>
                     )}
 
-                    {/* SINGLE DRIVER MAP MODAL */}
                     {viewingDriver && (
                         <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden relative">
@@ -1674,7 +1616,6 @@
                         </div>
                     )}
 
-                    {/* ADD STOP DETAILS MODAL */}
                     {showAddDetailsModal && (
                         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
@@ -1701,7 +1642,7 @@
                                                 onKeyDown={handleModalClientKeyDown}
                                             />
                                             {showSuggestions && newStopName && (
-                                                <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full max-h-40 overflow-y-auto">
+                                                <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full max-h-40">
                                                     {clientDB.filter(c=>c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5).map((c, i) => (
                                                         <div 
                                                             key={c.id} 
@@ -1762,7 +1703,6 @@
                         </div>
                     )}
 
-                    {/* GLOBAL PRINT PREVIEW (Hidden UI, rendered for print) */}
                     {showGlobalPrint && optimizedRoutes && <GlobalManifest routes={optimizedRoutes} config={companyConfig} driverAssignments={driverAssignments} drivers={drivers} />}
 
                     {/* HEADER */}
@@ -1798,7 +1738,6 @@
                                             <Icon name="folder-open" className="h-4 w-4" /> Saved Planners
                                         </button>
                                         <div className="h-6 w-px bg-slate-300 mx-1"></div>
-                                        {/* REMOVED: Go to Results button from here */}
                                         <button onClick={() => setView('planning')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'planning' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
                                         <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
                                         <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Fleet & Drivers</button>
@@ -1814,11 +1753,8 @@
 
                     <main className="max-w-7xl mx-auto p-4 space-y-4">
                         
-                        {/* VISTA DE PLANIFICACIÓN (ADD STOPS + MAPA) */}
                         {view === 'planning' && (
                             <div className="animate-fade-in space-y-4">
-                                
-                                {/* 1. ADD STOP CARD - FULL WIDTH */}
                                 <div className="col-span-12 bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
                                     <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
                                         <div className="bg-green-100 p-1.5 rounded-full text-green-700"><Icon name="plus" className="h-5 w-5" /></div>
@@ -1842,7 +1778,7 @@
                                                     onKeyDown={handleClientKeyDown}
                                                 />
                                                 {showSuggestions && newStopName && (
-                                                    <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full max-h-40 overflow-y-auto">
+                                                    <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full">
                                                         {clientDB.filter(c=>c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5).map((c, i) => (
                                                             <div 
                                                                 key={c.id} 
@@ -1852,7 +1788,6 @@
                                                                     setNewStopAddress(c.address); 
                                                                     setTempStopData({name: c.name, address: c.address}); 
                                                                     setShowSuggestions(false); 
-                                                                    // Focus ghost input to trigger NEXT logic flow
                                                                     if(ghostInputRef.current) ghostInputRef.current.focus();
                                                                 }}
                                                             >
@@ -1873,27 +1808,16 @@
                                                         value={newStopAddress} 
                                                         onChange={e => {
                                                             setNewStopAddress(e.target.value);
-                                                            // Also update temp data if typing manually
                                                             setTempStopData(prev => ({...prev, name: newStopName, address: e.target.value}));
                                                         }} 
-                                                        // When place selected from GMaps, we focus the GHOST input
                                                         onSelection={() => {
                                                              if(ghostInputRef.current) ghostInputRef.current.focus();
-                                                        }}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') {
-                                                                // If just pressing Enter without selection, maybe focus ghost too
-                                                                // But Google's Autocomplete usually traps Enter first.
-                                                                // We rely on onSelection callback mainly.
-                                                            }
                                                         }}
                                                         className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:border-ess-blue"
                                                         placeholder="Search Google Maps"
                                                         disabled={!scriptLoaded}
                                                         isLoaded={scriptLoaded}
                                                     />
-                                                    
-                                                    {/* GHOST INPUT FOR "DOUBLE ENTER" LOGIC */}
                                                     <input 
                                                         ref={ghostInputRef}
                                                         className="opacity-0 w-0 h-0 absolute top-0 left-0"
@@ -1913,10 +1837,7 @@
                                     </div>
                                 </div>
 
-                                {/* 2. MAIN WORKSPACE: LEFT PANEL (Zones) + RIGHT (Map) */}
                                 <div className="grid md:grid-cols-12 gap-4 h-[650px]">
-                                    
-                                    {/* LEFT: ZONE CREATION PANEL */}
                                     <div className="md:col-span-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
                                         <div className="p-4 bg-slate-50 border-b border-slate-200">
                                             <h3 className="text-xs font-bold text-slate-500 uppercase mb-3">{editingGroupId ? 'Edit Zone' : 'Create New Zone'}</h3>
@@ -2010,12 +1931,11 @@
                                                 {loading ? <div className="loader w-4 h-4 border-white"></div> : <><Icon name="play" className="h-4 w-4" /> GENERATE ROUTES</>}
                                             </button>
                                             {stopGroups.length > 0 && (
-                                                <button onClick={clearAllStops} className="w-full mt-2 py-2 text-xs text-red-500 hover:text-red-700 font-bold">Clear All Zones</button>
+                                                <button onClick={clearAllGroups} className="w-full mt-2 py-2 text-xs text-red-500 hover:text-red-700 font-bold">Clear All Zones</button>
                                             )}
                                         </div>
                                     </div>
 
-                                    {/* RIGHT: MAP */}
                                     <div className="md:col-span-8 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden relative flex flex-col">
                                         <div className="flex-1 relative">
                                             <GlobalMapView 
@@ -2029,7 +1949,6 @@
                                     </div>
                                 </div>
 
-                                {/* 3. COMPACT STOP LIST (Reference) */}
                                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm relative">
                                     <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
                                         <h3 className="font-bold text-sm text-slate-500 uppercase flex items-center gap-2"><Icon name="list" className="h-4 w-4" /> Reference List</h3>
@@ -2067,7 +1986,6 @@
                             </div>
                         )}
 
-                        {/* VISTA DE RESULTADOS (Asignación de Drivers) */}
                         {view === 'results' && optimizedRoutes && (
                             <div className="animate-fade-in space-y-6">
                                 <div className="flex justify-start mb-4">
@@ -2108,7 +2026,6 @@
                                                         </div>
                                                     </div>
                                                     
-                                                    {/* DRIVER SELECTION DROPDOWN */}
                                                     <div className="relative mb-2">
                                                         <select 
                                                             className={`w-full p-2.5 rounded-lg border-2 font-bold text-sm outline-none appearance-none cursor-pointer ${assignedDriverId ? 'border-ess-green bg-green-50 text-green-800' : 'border-slate-300 bg-white text-slate-500'}`}
@@ -2137,7 +2054,6 @@
                                                         </div>
                                                     )}
 
-                                                    {/* TOOLBAR */}
                                                     <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
                                                         <div className="bg-white p-2 rounded border border-slate-200 flex items-center gap-2 shadow-sm">
                                                             {recalculating[zoneName] ? <span className="text-ess-blue font-bold animate-pulse">Updating...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(routeData.duracion_estimada / 60)}h {Math.round(routeData.duracion_estimada % 60)}m</>}
@@ -2247,7 +2163,6 @@
 
                         {view === 'vehicles' && (
                             <div className="grid md:grid-cols-2 gap-6 animate-fade-in">
-                                {/* VEHICLES SECTION */}
                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="truck" className="h-6 w-6 text-ess-blue" /> Vehicles</h2>
                                     <div className="flex gap-2 mb-4">
@@ -2287,7 +2202,6 @@
                                         ))}
                                     </div>
                                 </div>
-                                {/* DRIVERS SECTION */}
                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="users" className="h-6 w-6 text-ess-blue" /> Drivers</h2>
                                     <div className="flex gap-2 mb-4">
@@ -2405,7 +2319,6 @@
                                 config={companyConfig}
                             />
                         )}
-
                     </main>
                 </div>
             );
