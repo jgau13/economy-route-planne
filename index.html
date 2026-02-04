@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Economy Sign Supply Route Planner</title>
     
-    <!-- React and ReactDOM -->
+    <!-- React y ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel for JSX -->
+    <!-- Babel para JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <!-- Tailwind CSS -->
@@ -27,7 +27,7 @@
         window.initializeFirebaseGlobally = (config) => {
             try {
                 if (!config || !config.apiKey || config.apiKey.includes("Pega_aquí")) {
-                    console.warn("⚠️ Waiting for valid Firebase configuration...");
+                    console.warn("⚠️ Esperando configuración de Firebase válida...");
                     return false; 
                 }
                 const app = initializeApp(config);
@@ -109,24 +109,18 @@
                 height: 0; 
                 overflow: hidden; 
             }
-            #printable-sheet, #printable-sheet *, 
-            #global-manifest, #global-manifest *, 
-            .bulk-print-container, .bulk-print-container * { 
+            #printable-sheet, #printable-sheet *, #global-manifest, #global-manifest * { 
                 visibility: visible; 
                 height: auto;
                 overflow: visible;
             }
-            #printable-sheet, #global-manifest, .bulk-print-container { 
+            #printable-sheet, #global-manifest { 
                 position: absolute; 
                 left: 0; 
                 top: 0; 
                 width: 100%; 
                 background: white;
                 z-index: 9999;
-            }
-            .page-break {
-                page-break-after: always;
-                break-after: page;
             }
             .no-print { display: none !important; }
         }
@@ -435,9 +429,8 @@
                                     routeData.paradas.forEach((stop, i) => {
                                         const address = stop.direccion || stop.address;
                                         if (i < legs.length) {
-                                            const clientName = stop.nombre || stop.name || 'Client';
-                                            const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${i+1}. ${clientName}</strong><br><span style="color:#666">${address}</span></div>`;
-                                            addMarker(legs[i].end_location, clientName, (i+1).toString(), color, content, null);
+                                            const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${i+1}. ${stop.nombre}</strong><br><span style="color:#666">${address}</span></div>`;
+                                            addMarker(legs[i].end_location, stop.nombre, (i+1).toString(), color, content, null);
                                         }
                                     });
                                 }
@@ -449,15 +442,14 @@
                             if (!address) return;
                             const pos = parseCoord(stop.coord || stop.latlng);
                             const label = (stop.originalIndex || i + 1).toString();
-                            const clientName = stop.nombre || stop.name || 'Client';
-                            const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${label}. ${clientName}</strong><br><span style="color:#666">${address}</span><br><span style="color:${color}; font-weight:bold;">${groupName}</span></div>`;
+                            const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${label}. ${stop.nombre}</strong><br><span style="color:#666">${address}</span><br><span style="color:${color}; font-weight:bold;">${groupName}</span></div>`;
 
                             if (pos) {
-                                addMarker(pos, clientName, label, color, content, stop.originalIndex);
+                                addMarker(pos, stop.nombre, label, color, content, stop.originalIndex);
                             } else {
                                 geocoderRef.current.geocode({ address: address }, (results, status) => {
                                     if (status === 'OK' && results[0]) {
-                                        addMarker(results[0].geometry.location, clientName, label, color, content, stop.originalIndex);
+                                        addMarker(results[0].geometry.location, stop.nombre, label, color, content, stop.originalIndex);
                                     }
                                 });
                             }
@@ -470,13 +462,13 @@
             return <div className="w-full h-full rounded-xl" ref={mapRef}></div>;
         };
 
-        const PrintableSheet = ({ routeData, driverName, vehicle, config, duration, zoneName, hideId = false }) => {
+        const PrintableSheet = ({ routeData, driverName, vehicle, config, duration, zoneName }) => {
             const today = new Date();
             const hours = Math.floor((duration || 0) / 60);
             const minutes = Math.round((duration || 0) % 60);
 
             return (
-                <div id={hideId ? undefined : "printable-sheet"} className="hidden print:block bg-white text-black p-4 font-sans text-sm page-break">
+                <div id="printable-sheet" className="hidden print:block bg-white text-black p-4 font-sans text-sm">
                     <div className="flex justify-between items-start mb-6 border-b-2 border-black pb-4">
                         <div className="flex items-center gap-4">
                             <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
@@ -508,7 +500,7 @@
                                 <tr key={index} className="h-14">
                                     <td className="border border-black p-1 text-center font-bold">{index + 1}</td>
                                     <td className="border border-black p-2 align-top">
-                                        <div className="font-bold text-sm truncate">{stop.nombre || stop.name}</div>
+                                        <div className="font-bold text-sm truncate">{stop.nombre}</div>
                                         <div className="text-[10px] text-gray-600 leading-tight">{stop.direccion || stop.address}</div>
                                     </td>
                                     <td className="border border-black p-1 text-center font-mono font-bold text-sm align-middle">{stop.invoices || '-'}</td>
@@ -545,7 +537,13 @@
                         <img
                           src="https://static.wixstatic.com/media/63d26f_c1a293a0b9cd4c379a17696a06d2a808~mv2.png"
                           alt="Logo"
-                          className="h-10 w-auto object-contain print:h-[50px] print:max-w-[200px]"
+                          className="
+                            h-12
+                            w-auto
+                            object-contain
+                            print:h-[70px]
+                            print:max-w-[260px]
+                          "
                         />
                         <div className="text-right">
                             <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
@@ -586,10 +584,10 @@
                                             <tr key={sIdx}>
                                                 <td className="border border-black p-1 text-center">{sIdx + 1}</td>
                                                 <td className="border border-black p-1">
-                                                    <span className="font-bold">{stop.nombre || stop.name}</span> - {stop.direccion || stop.address}
+                                                    <span className="font-bold">{stop.nombre}</span> - {stop.direccion}
                                                 </td>
-                                                <td className="border border-black p-1 text-center">{stop.invoices || '-'}</td>
-                                                <td className="border border-black p-1 text-center">{stop.pieces || '-'}</td>
+                                                <td className="border border-black p-1 text-center">{stop.invoices}</td>
+                                                <td className="border border-black p-1 text-center">{stop.pieces}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -605,18 +603,17 @@
             const [user, setUser] = useState(null);
             const [dbReady, setDbReady] = useState(false);
             const [clientDB, setClientDB] = useState([]);
-            const [clientSearch, setClientSearch] = useState('');
             const [drivers, setDrivers] = useState([]);
             const [vehicles, setVehicles] = useState([]);
             const [googleApiKey, setGoogleApiKey] = useState(null);
             const [scriptLoaded, setScriptLoaded] = useState(false);
             
-            // APP STATES
+            // STATES DE LA APP UNIFICADA
             const [view, setView] = useState('planning'); 
             const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, USA');
             const [currentStops, setCurrentStops] = useState([]);
             const [stopGroups, setStopGroups] = useState([]); 
-            const [zones, setZones] = useState([]); 
+            const [zones, setZones] = useState([]); // Saved zones for autocomplete
 
             // INPUTS
             const [newStopName, setNewStopName] = useState('');
@@ -627,53 +624,52 @@
             const [error, setError] = useState('');
             const [recalculating, setRecalculating] = useState({});
 
-            // STOP DETAILS MODAL
+            // ADD STOP DETAILS MODAL
             const [showAddDetailsModal, setShowAddDetailsModal] = useState(false);
             const [tempStopData, setTempStopData] = useState(null);
             const [tempInvoices, setTempInvoices] = useState('');
             const [tempPieces, setTempPieces] = useState('');
             const [editingDraftId, setEditingDraftId] = useState(null);
-            const [editingResultStop, setEditingResultStop] = useState(null); 
+            const [editingResultStop, setEditingResultStop] = useState(null); // { zoneName, index }
             
-            // ADD MANUAL STOP
+            // ADD STOP MANUALLY TO ROUTE
             const [targetZoneForManualAdd, setTargetZoneForManualAdd] = useState(null);
             
-            // NEW ROUTE MODAL
+            // ADD NEW ROUTE MODAL
             const [showAddRouteModal, setShowAddRouteModal] = useState(false);
             const [newRouteConfig, setNewRouteConfig] = useState({ zoneName: '', driverId: '' });
 
-            // FLEET
+            // VEHICLE INPUTS
             const [newVehicleName, setNewVehicleName] = useState('');
             const [editingVehicleId, setEditingVehicleId] = useState(null);
-            // DRIVERS
+            // DRIVER INPUTS
             const [newDriverName, setNewDriverName] = useState('');
             const [newDriverPhone, setNewDriverPhone] = useState('');
             const [editingDriverId, setEditingDriverId] = useState(null);
 
-            // CLIENTS
+            // CLIENT INPUTS (For Clients Tab)
             const [clientFormName, setClientFormName] = useState('');
             const [clientFormAddress, setClientFormAddress] = useState('');
             const [editingClientId, setEditingClientId] = useState(null);
 
-            // ZONES
+            // ZONE CREATION INPUTS (MANUAL PANEL)
             const [stopSelectionInput, setStopSelectionInput] = useState('');
             const [groupNameInput, setGroupNameInput] = useState('');
             const [numRoutesInput, setNumRoutesInput] = useState(1);
             const [editingGroupId, setEditingGroupId] = useState(null);
             const [newZoneName, setNewZoneName] = useState('');
             
-            // SETTINGS
+            // SETTINGS STATE
             const [companyConfig, setCompanyConfig] = useState({ companyName: "ECONOMY SIGN SUPPLY", phone: "407-901-0900", address: "8350 PARKLINE BLVD, ORLANDO, FL" });
             const [newPin, setNewPin] = useState('');
             const [settingsMsg, setSettingsMsg] = useState('');
             const fileInputRef = useRef(null);
 
-            // RESULTS
+            // RESULTS STATE
             const [optimizedRoutes, setOptimizedRoutes] = useState(null);
             const [driverAssignments, setDriverAssignments] = useState({}); 
             const [manualVehicleAssignments, setManualVehicleAssignments] = useState({});
             const [printData, setPrintData] = useState(null);
-            const [showBulkManifestPrint, setShowBulkManifestPrint] = useState(false);
             const [viewingDriver, setViewingDriver] = useState(null);
             const [showGlobalPrint, setShowGlobalPrint] = useState(false);
             const [viewingGlobalMap, setViewingGlobalMap] = useState(false);
@@ -703,7 +699,7 @@
                         if (data.firebaseConfig && window.initializeFirebaseGlobally(data.firebaseConfig)) setDbReady(true);
                         setGoogleApiKey(data.googleApiKey);
                     } catch (error) {
-                        console.log("Config fetch skipped:", error);
+                        console.log("Config fetch skipped (local/preview mode):", error);
                     }
                 };
                 loadConfig();
@@ -739,6 +735,7 @@
                 window.fbOnSnapshot(window.fbQuery(userRef('zones'), window.fbOrderBy("name")), (s) => setZones(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                 window.fbOnSnapshot(window.fbQuery(userRef('saved_plans'), window.fbOrderBy('createdAt', 'desc')), s => setSavedPlans(s.docs.map(d => ({id: d.id, ...d.data()}))));
                 
+                // Load Settings
                 window.fbOnSnapshot(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config'), (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
@@ -748,19 +745,7 @@
                 });
             }, [user, dbReady]);
 
-            // --- LÓGICA DE CLIENTES FILTRADOS ---
-            const filteredClientsDB = useMemo(() => {
-                return clientDB.filter(c => 
-                    (c.name || '').toLowerCase().includes(clientSearch.toLowerCase()) || 
-                    (c.address || '').toLowerCase().includes(clientSearch.toLowerCase())
-                ).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-            }, [clientDB, clientSearch]);
-
             // --- LOGIC ---
-
-            const openDriverMap = (name, data) => {
-                setViewingDriver({ name, data });
-            };
 
             const initiateAddStop = () => {
                 if (!newStopAddress.trim()) return;
@@ -786,8 +771,8 @@
             const initiateEditResultStop = (zoneName, index, stopData) => {
                 setEditingResultStop({ zoneName, index });
                 setTempStopData({
-                    name: stopData.nombre || stopData.name,
-                    address: stopData.direccion || stopData.address
+                    name: stopData.nombre,
+                    address: stopData.direccion
                 });
                 setTempInvoices(stopData.invoices || '');
                 setTempPieces(stopData.pieces || '');
@@ -809,10 +794,12 @@
                     const newRoutes = {...prev};
                     delete newRoutes[zoneName];
                     
+                    // Create unassigned entry if not exists
                     if (!newRoutes["UNASSIGNED"]) {
                          newRoutes["UNASSIGNED"] = { paradas: [], color: "#000000", duracion_estimada: 0, link: '' };
                     }
                     
+                    // Move stops to unassigned
                     const deletedRouteStops = prev[zoneName].paradas;
                     if(deletedRouteStops && deletedRouteStops.length > 0) {
                         newRoutes["UNASSIGNED"].paradas = [...newRoutes["UNASSIGNED"].paradas, ...deletedRouteStops];
@@ -823,12 +810,14 @@
             };
 
             const confirmAddStop = async () => {
+                // If editing a result stop (in driver card)
                 if (editingResultStop) {
                     setOptimizedRoutes(prev => {
                         const newRoutes = JSON.parse(JSON.stringify(prev));
                         const stop = newRoutes[editingResultStop.zoneName].paradas[editingResultStop.index];
                         stop.invoices = tempInvoices;
                         stop.pieces = tempPieces;
+                        // Not changing name/address here to avoid geo issues, but could be added
                         return newRoutes;
                     });
                     setEditingResultStop(null);
@@ -843,10 +832,12 @@
                     address: tempStopData.address,
                     invoices: tempInvoices,
                     pieces: tempPieces,
+                    // REMOVED createdAt here to avoid reordering on edit
                 };
 
                 const col = window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops');
 
+                // Auto-save to Clients DB if not exists
                 const normalize = s => s ? s.toLowerCase().trim() : "";
                 const addressExists = clientDB.some(c => normalize(c.address) === normalize(tempStopData.address));
                 
@@ -856,20 +847,17 @@
                             name: tempStopData.name,
                             address: tempStopData.address
                         });
-                    } catch (e) { console.error("Auto-save client failed:", e); }
+                    } catch (e) { console.error("Error auto-saving client:", e); }
                 }
 
                 if (targetZoneForManualAdd) {
-                    // 1. Save to DB so it persists
-                    const newStopData = { ...data, createdAt: Date.now() };
-                    const docRef = await window.fbAddDoc(col, newStopData);
-                    const newId = docRef.id;
-
-                    // 2. Update STOP GROUPS so generateRoutes sees it as assigned
-                    setStopGroups(prev => prev.map(g => g.name === targetZoneForManualAdd ? { ...g, stops: [...g.stops, newId] } : g));
-
-                    // 3. Update Optimized Routes visual state
-                    const newStop = { ...newStopData, id: newId, nombre: data.name, direccion: data.address };
+                    const newStop = {
+                        nombre: tempStopData.name,
+                        direccion: tempStopData.address,
+                        invoices: tempInvoices,
+                        pieces: tempPieces,
+                    };
+                    
                     setOptimizedRoutes(prev => {
                         const route = prev[targetZoneForManualAdd];
                         return {
@@ -885,7 +873,7 @@
                     await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops', editingDraftId), data);
                     setEditingDraftId(null);
                 } else {
-                    data.createdAt = Date.now();
+                    data.createdAt = Date.now(); // Only for new stops
                     await window.fbAddDoc(col, data);
                 }
                 
@@ -931,16 +919,6 @@
                 setStopGroups([]);
             };
 
-            const clearAllGroups = () => {
-                if(confirm("Clear all zones? Stops will remain as Ungrouped.")){
-                    setStopGroups([]);
-                    setEditingGroupId(null);
-                    setGroupNameInput('');
-                    setStopSelectionInput('');
-                    setNumRoutesInput(1);
-                }
-            };
-
             const handleMapSelection = (indices) => {
                 const selectionStr = indices.join(', ');
                 setStopSelectionInput(selectionStr);
@@ -969,7 +947,7 @@
             };
 
             const saveGroup = async () => {
-                if (!groupNameInput.trim() || !stopSelectionInput.trim()) return alert("Please enter a Zone Name and select stops.");
+                if (!groupNameInput.trim() || !stopSelectionInput.trim()) return alert("Please fill Zone Name and Stops.");
                 
                 const parts = stopSelectionInput.split(',').map(s => s.trim());
                 const selectedIndices = new Set();
@@ -994,23 +972,29 @@
                 const cleanName = groupNameInput.toUpperCase().trim();
                 const numRoutes = parseInt(numRoutesInput) || 1;
                 
+                // UNIQUE NAME VALIDATION
                 const nameExists = stopGroups.some(g => g.name === cleanName && g.id !== editingGroupId);
-                if (nameExists) return alert("A zone with this name already exists.");
+                if (nameExists) return alert("A zone with this name already exists active. Please use a unique name.");
 
+                // SAVE ZONE NAME TO DB (NON-BLOCKING)
                 if (window.fbDb && user && !zones.find(z => z.name === cleanName)) {
                      window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones'), { name: cleanName })
-                     .catch(e => console.error("Failed to save zone", e));
+                     .catch(e => console.error("Auto-save zone failed", e));
                 }
                 
+                // Determine Color (Uniqueness logic)
                 let candidateColor = getZoneColor(cleanName);
                 const otherGroups = stopGroups.filter(g => g.id !== editingGroupId);
                 const usedColors = new Set(otherGroups.map(g => g.color));
                 
                 if (usedColors.has(candidateColor)) {
+                     // Find first unused color in palette
                      const freeColor = EXTENDED_PALETTE.find(c => !usedColors.has(c));
                      if (freeColor) candidateColor = freeColor;
+                     // If all palette colors used, candidateColor remains the hash-based one (collision inevitable > 30 zones)
                 }
 
+                // Map indices to IDs for robust tracking
                 const selectedIds = Array.from(selectedIndices).map(i => currentStops[i]?.id).filter(id => id);
 
                 if (editingGroupId) {
@@ -1032,11 +1016,12 @@
             };
             
             const handleCreateNewRoute = () => {
-                if (!newRouteConfig.zoneName) return alert("Enter a zone name");
+                if (!newRouteConfig.zoneName) return alert("Enter a Zone Name");
                 const zoneName = newRouteConfig.zoneName.toUpperCase();
                 
                 if (optimizedRoutes && optimizedRoutes[zoneName]) return alert("Zone already exists");
                 
+                // Assign unique color
                 const usedColors = new Set(Object.values(optimizedRoutes || {}).map(r => r.color));
                 let color = getZoneColor(zoneName);
                 if (usedColors.has(color)) {
@@ -1053,9 +1038,6 @@
                         color: color
                     }
                 }));
-
-                // Sincronizar con el Planner creando un nuevo grupo
-                setStopGroups(prev => [...prev, { id: Date.now(), name: zoneName, numRoutes: 1, stops: [], color: color }]);
                 
                 if (newRouteConfig.driverId) {
                     setDriverAssignments(prev => ({ ...prev, [zoneName]: newRouteConfig.driverId }));
@@ -1069,11 +1051,21 @@
                 setEditingGroupId(group.id);
                 setGroupNameInput(group.name);
                 setNumRoutesInput(group.numRoutes || 1);
+                // Map IDs back to indices
                 const indices = group.stops.map(id => currentStops.findIndex(s => s.id === id)).filter(i => i !== -1).map(i => i + 1).sort((a,b)=>a-b);
                 setStopSelectionInput(indices.join(', '));
             };
 
             const deleteGroup = (id) => setStopGroups(stopGroups.filter(g => g.id !== id));
+            
+            const clearAllGroups = () => {
+                if(confirm("Clear all zones? Stops will remain as Ungrouped.")){
+                    setStopGroups([]);
+                    setEditingGroupId(null);
+                    setGroupNameInput('');
+                    setStopSelectionInput('');
+                }
+            };
 
             const handleEnter = (e, cb) => { if(e.key === 'Enter') cb(); };
 
@@ -1086,6 +1078,7 @@
                         const stop = currentStops.find(s => s.id === id);
                         if (stop) {
                             groupedIds.add(id);
+                            // Find current index
                             const currentIndex = currentStops.findIndex(s => s.id === id) + 1;
                             return { ...stop, originalIndex: currentIndex };
                         }
@@ -1109,40 +1102,10 @@
                 setLoading(true); setError('');
                 try {
                     const tasks = [];
-                    const newResults = { ...optimizedRoutes }; 
+                    const newResults = { ...optimizedRoutes }; // Start with existing to support "locking"
 
+                    // Track used IDs to find ungrouped
                     const usedIds = new Set();
-
-                    // --- CLEANUP SWEEP ---
-                    const stopOwnership = new Map();
-                    stopGroups.forEach(g => g.stops.forEach(id => stopOwnership.set(id, g.name)));
-                    const activeZoneNames = new Set(stopGroups.map(g => g.name));
-
-                    Object.keys(newResults).forEach(key => {
-                        if (key.startsWith("UNASSIGNED")) return;
-
-                        const route = newResults[key];
-                        const keyBase = key.split(' - Route')[0];
-
-                        if ((!route.paradas || route.paradas.length === 0) && !activeZoneNames.has(keyBase)) {
-                            delete newResults[key];
-                            return;
-                        }
-
-                        if (route.paradas && route.paradas.length > 0) {
-                            const firstAddr = route.paradas[0].direccion || route.paradas[0].address;
-                            const stopObj = currentStops.find(s => s.address === firstAddr);
-                            
-                            if (stopObj) {
-                                const currentOwner = stopOwnership.get(stopObj.id);
-                                if (currentOwner && keyBase !== currentOwner) {
-                                    delete newResults[key];
-                                } else if (!currentOwner && !activeZoneNames.has(keyBase)) {
-                                    delete newResults[key];
-                                }
-                            }
-                        }
-                    });
 
                     // 1. Process Defined Zones
                     stopGroups.forEach(g => {
@@ -1152,8 +1115,11 @@
                         }).filter(s => s);
 
                         if (stops.length > 0) {
+                            
+                            // LOCKING LOGIC: Check if this zone exists in optimizedRoutes AND has the same set of stops
                             let needsRecalc = true;
                             const existingStops = [];
+                            // Collect routes for this zone
                             const relatedRouteKeys = Object.keys(newResults || {}).filter(key => 
                                 key === g.name || key.startsWith(g.name + " - Route")
                             );
@@ -1163,17 +1129,20 @@
                                     newResults[key].paradas.forEach(p => existingStops.push(p.direccion));
                                 });
                                 
+                                // Compare addresses (Sorted to ignore order changes done manually)
                                 const currentAddresses = stops.map(s => s.address).sort();
                                 const existingAddressesSorted = existingStops.sort();
                                 
                                 if (currentAddresses.length > 0 && 
                                     currentAddresses.length === existingAddressesSorted.length &&
                                     currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
-                                    needsRecalc = false;
+                                    needsRecalc = false; // LOCKED
                                     
+                                    // DATA SYNC: Update metadata for locked routes without recalc
                                     relatedRouteKeys.forEach(key => {
-                                         newResults[key].color = g.color;
+                                         newResults[key].color = g.color; // Sync color
                                          newResults[key].paradas = newResults[key].paradas.map(p => {
+                                             // Find matching stop in current list by address to get latest invoices/pieces
                                              const freshStop = stops.find(s => s.address === p.direccion);
                                              if (freshStop) {
                                                  return { ...p, invoices: freshStop.invoices, pieces: freshStop.pieces, nombre: freshStop.name };
@@ -1185,7 +1154,9 @@
                             }
                             
                             if (needsRecalc) {
+                                // If recalc, remove old entries for this zone from newResults to avoid duplicates
                                 relatedRouteKeys.forEach(key => delete newResults[key]);
+                                
                                 tasks.push({ 
                                     zoneName: g.name, 
                                     color: g.color, 
@@ -1200,8 +1171,10 @@
                         }
                     });
 
+                    // 2. Process Ungrouped
                     const ungroupedStops = currentStops.filter(s => !usedIds.has(s.id));
                     if (ungroupedStops.length > 0) {
+                        // Same locking logic for UNASSIGNED
                          const existingStops = [];
                          const relatedRouteKeys = Object.keys(newResults || {}).filter(key => key.startsWith("UNASSIGNED"));
                          
@@ -1215,14 +1188,16 @@
                          if (currentAddresses.length > 0 && 
                              currentAddresses.length === existingAddressesSorted.length &&
                              currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
+                             // Locked
                               relatedRouteKeys.forEach(key => {
-                                  newResults[key].paradas = newResults[key].paradas.map(p => {
-                                      const freshStop = ungroupedStops.find(s => s.address === p.direccion);
-                                      if (freshStop) return { ...p, invoices: freshStop.invoices, pieces: freshStop.pieces, nombre: freshStop.name };
-                                      return p;
-                                  });
-                              });
+                                 newResults[key].paradas = newResults[key].paradas.map(p => {
+                                     const freshStop = ungroupedStops.find(s => s.address === p.direccion);
+                                     if (freshStop) return { ...p, invoices: freshStop.invoices, pieces: freshStop.pieces, nombre: freshStop.name };
+                                     return p;
+                                 });
+                             });
                          } else {
+                             // Recalc
                              relatedRouteKeys.forEach(key => delete newResults[key]);
                              tasks.push({ 
                                  zoneName: "UNASSIGNED", 
@@ -1236,9 +1211,14 @@
                              });
                          }
                     } else {
+                         // If no ungrouped stops now, remove any old unassigned routes
                          Object.keys(newResults).forEach(key => { if (key.startsWith("UNASSIGNED")) delete newResults[key]; });
                     }
                     
+                    // 3. Remove routes for zones that no longer exist/have stops (cleanup)
+                    // (Simplified cleanup to avoid deleting manual routes for now, relying on user to delete if needed)
+
+                    // 4. Fetch & Merge
                     if (tasks.length > 0) {
                         await Promise.all(tasks.map(async (task) => {
                             const res = await fetch('/optimizar', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(task.body) });
@@ -1256,54 +1236,62 @@
                 } catch (e) { setError("Error generating routes: " + e.message); } finally { setLoading(false); }
             };
 
+            // KEYBOARD HANDLING FOR CLIENT SUGGESTIONS
             const handleClientKeyDown = (e) => {
-                if (e.key === 'Tab' || e.key === 'Enter') {
-                    if (showSuggestions && activeSuggestion >= 0) {
-                        e.preventDefault();
-                        const filtered = clientDB.filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
+                if (!showSuggestions) return;
+                const filtered = clientDB.filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => (prev < filtered.length - 1 ? prev + 1 : prev));
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => (prev > 0 ? prev - 1 : 0));
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (activeSuggestion >= 0 && filtered[activeSuggestion]) {
                         const selection = filtered[activeSuggestion];
                         setNewStopName(selection.name);
                         setNewStopAddress(selection.address);
                         setTempStopData({name: selection.name, address: selection.address});
                         setShowSuggestions(false);
+                        // Focus Address Input via Ref (Dummy ghost field logic next)
+                         // But here we set address state, so maybe focus address input directly
                         if (addressInputRef.current) addressInputRef.current.focus();
-                    } else if (e.key === 'Enter') {
-                        e.preventDefault();
-                        if (addressInputRef.current) addressInputRef.current.focus();
+                    } else {
+                         // Normal Enter -> Focus Address
+                         if (addressInputRef.current) addressInputRef.current.focus();
                     }
-                } else if (e.key === 'ArrowDown' && showSuggestions) {
-                    e.preventDefault();
-                    setActiveSuggestion(prev => Math.min(prev + 1, 4));
-                } else if (e.key === 'ArrowUp' && showSuggestions) {
-                    e.preventDefault();
-                    setActiveSuggestion(prev => Math.max(prev - 1, 0));
                 }
             };
             
+            // KEYBOARD HANDLING FOR MANUAL STOP MODAL SUGGESTIONS
             const handleModalClientKeyDown = (e) => {
-                if (e.key === 'Tab' || e.key === 'Enter') {
-                    if (showSuggestions && activeSuggestion >= 0) {
-                        e.preventDefault();
-                        const filtered = clientDB.filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
+                if (!showSuggestions) return;
+                const filtered = clientDB.filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => (prev < filtered.length - 1 ? prev + 1 : prev));
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => (prev > 0 ? prev - 1 : 0));
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (activeSuggestion >= 0 && filtered[activeSuggestion]) {
                         const selection = filtered[activeSuggestion];
                         setNewStopName(selection.name);
                         setNewStopAddress(selection.address);
                         setTempStopData({name: selection.name, address: selection.address});
                         setShowSuggestions(false);
                         if(addressInputRef.current) addressInputRef.current.focus();
-                    } else if (e.key === 'Enter') {
-                        e.preventDefault();
-                        if(addressInputRef.current) addressInputRef.current.focus();
+                    } else {
+                         if(addressInputRef.current) addressInputRef.current.focus();
                     }
-                } else if (e.key === 'ArrowDown' && showSuggestions) {
-                    e.preventDefault();
-                    setActiveSuggestion(prev => Math.min(prev + 1, 4));
-                } else if (e.key === 'ArrowUp' && showSuggestions) {
-                    e.preventDefault();
-                    setActiveSuggestion(prev => Math.max(prev - 1, 0));
                 }
             };
 
+            // ROUTE MODIFICATION FUNCTIONS
             const recalculateFixedRoute = async (zoneName, stops) => {
                 setRecalculating(p => ({...p, [zoneName]: true}));
                 try {
@@ -1323,7 +1311,7 @@
                 finally { setRecalculating(p => ({...p, [zoneName]: false})); }
             };
 
-            const recalculateRoute = async (zoneName, stops) => {
+            const recalculateRoute = async (zoneName, stops) => { // SHUFFLE
                 setRecalculating(p => ({...p, [zoneName]: true}));
                 try {
                     const res = await fetch('/optimizar', { 
@@ -1365,6 +1353,7 @@
                 const newRoutes = JSON.parse(JSON.stringify(optimizedRoutes));
                 newRoutes[zoneName].paradas.reverse();
                 setOptimizedRoutes(newRoutes);
+                // Removed auto-recalc to avoid API cost
             };
 
             const getWhatsappLink = (stops, driverName) => {
@@ -1373,7 +1362,7 @@
                 if (driver && driver.phone) phone = driver.phone.replace(/\D/g, '');
                 
                 const link = stops && stops.length > 0 
-                    ? `https://www.google.com/maps/dir/${encodeURIComponent(baseAddress)}/${stops.map(s => encodeURIComponent(s.direccion || s.address)).join('/')}/${encodeURIComponent(baseAddress)}` 
+                    ? `https://www.google.com/maps/dir/${encodeURIComponent(baseAddress)}/${stops.map(s => encodeURIComponent(s.direccion)).join('/')}/${encodeURIComponent(baseAddress)}` 
                     : "";
                 
                 const text = encodeURIComponent(`Hello, here is your updated route:\n\n${link}\n\nDrive safely!`);
@@ -1381,27 +1370,15 @@
             };
 
             const handleGlobalPrint = () => {
-                setPrintData(null);
-                setShowBulkManifestPrint(false);
+                setPrintData(null); // Clear single print to avoid conflicts
                 setShowGlobalPrint(true);
-                // Permite que React renderice el componente GlobalManifest antes de llamar a window.print()
                 setTimeout(() => {
                     window.print();
                     setShowGlobalPrint(false);
-                }, 700);
-            };
-
-            const handleBulkManifestPrint = () => {
-                setPrintData(null);
-                setShowGlobalPrint(false);
-                setShowBulkManifestPrint(true);
-                // Dar tiempo para renderizar todas las hojas
-                setTimeout(() => {
-                    window.print();
-                    setShowBulkManifestPrint(false);
-                }, 1000);
+                }, 500);
             };
             
+            // Drag and Drop Logic for Results
             const handleResultDragStart = (e, zoneName, index) => {
                 setDraggedResultItem({ zoneName, index });
                 e.dataTransfer.effectAllowed = "move";
@@ -1416,35 +1393,34 @@
             const handleResultDrop = (e, targetZoneName, targetIndex) => {
                 e.preventDefault();
                 if (!draggedResultItem) return;
+                
                 const { zoneName: sourceZone, index: sourceIndex } = draggedResultItem;
+                
+                // Deep copy
                 const newRoutes = JSON.parse(JSON.stringify(optimizedRoutes));
+                
+                // Remove from source
                 const [movedStop] = newRoutes[sourceZone].paradas.splice(sourceIndex, 1);
                 
+                // Add to target
                 if (targetIndex !== null) {
+                    // Adjust target index if shifting in same list
                     let adjustedTarget = targetIndex;
                     if (sourceZone === targetZoneName && sourceIndex < targetIndex) {
                         adjustedTarget -= 1; 
                     }
                     newRoutes[targetZoneName].paradas.splice(adjustedTarget, 0, movedStop);
                 } else {
+                    // Append to end
                     newRoutes[targetZoneName].paradas.push(movedStop);
                 }
                 
                 setOptimizedRoutes(newRoutes);
-
-                // Sincronizar cambios de movimiento de paradas con los grupos del Planner
-                setStopGroups(gs => gs.map(g => {
-                    let newStops = g.stops.filter(id => id !== movedStop.id);
-                    const targetBase = targetZoneName.split(' - Route')[0];
-                    if (g.name === targetBase) {
-                         if (!newStops.includes(movedStop.id)) newStops.push(movedStop.id);
-                    }
-                    return { ...g, stops: newStops };
-                }));
             };
 
+            // SAVED PLANS LOGIC
             const handleSavePlan = async () => {
-                if (!planName.trim()) return alert("Enter a plan name");
+                if (!planName.trim()) return alert("Please enter a name");
                 const planData = {
                     name: planName,
                     createdAt: Date.now(),
@@ -1474,16 +1450,17 @@
 
             const handleDeletePlan = async (id) => {
                 if(!confirm("Delete this saved plan?")) return;
-                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'saved_plans', id));
+                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'saved_plans', id));
             };
 
+            // CRUD HELPERS
             const addVehicle = async () => { if(newVehicleName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles'), { name: newVehicleName }); setNewVehicleName(''); } };
-            const deleteVehicle = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'vehicles', id)); };
+            const deleteVehicle = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles', id)); };
             const updateVehicle = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles', id), data); setEditingVehicleId(null); };
             const assignVehicleDriver = async (vehicleId, driverName) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles', vehicleId), { assignedDriver: driverName }); };
             
             const addDriver = async () => { if(newDriverName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers'), { name: newDriverName, phone: newDriverPhone, active: true }); setNewDriverName(''); setNewDriverPhone(''); } };
-            const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'drivers', id)); };
+            const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers', id)); };
             const updateDriver = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers', id), data); setEditingDriverId(null); };
             
             const saveClient = async () => { 
@@ -1494,21 +1471,24 @@
                     setClientFormName(''); setClientFormAddress('');
                 } 
             };
-            const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'clients', id)); };
+            const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients', id)); };
             const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setEditingClientId(c.id); };
 
+            // ZONE SETTINGS FUNCTIONS
             const addZoneFromSettings = async () => { 
                 if(newZoneName.trim()){ 
                     await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones'), { name: newZoneName.toUpperCase() }); 
                     setNewZoneName(''); 
                 } 
             };
-            const deleteZoneFromSettings = async (id) => { if(confirm('Delete zone?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'zones', id)); };
+            const deleteZoneFromSettings = async (id) => { if(confirm('Delete Zone?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones', id)); };
 
+            // SETTINGS FUNCTIONS
             const saveSettings = async () => {
                 if (window.fbDb) {
                     await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'settings', 'config'), { companyConfig, baseAddress }, { merge: true });
-                    alert("Settings saved!");
+                    if(newPin.length >= 4) { /* Handle PIN update logic if needed later */ }
+                    alert("Settings Saved!");
                 }
             };
             const handleBackup = () => {
@@ -1526,7 +1506,7 @@
                         const data = JSON.parse(event.target.result);
                         if (data.clients) for (const c of data.clients) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients'), c.id), c);
                         if (data.drivers) for (const d of data.drivers) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers'), d.id), d);
-                        alert("Data restored!"); window.location.reload();
+                        alert("Data Restored!"); window.location.reload();
                     } catch(err) { alert("Error restoring: "+err.message); }
                 };
                 reader.readAsText(file);
@@ -1538,10 +1518,24 @@
             
             const handleLogout = () => { if(window.fbSignOut && window.fbAuth) window.fbSignOut(window.fbAuth); else window.location.reload(); };
 
+            const openDriverMap = (zoneName, data) => setViewingDriver({ name: zoneName, data });
+
+            // Clients Database Filtering Logic
+            const filteredClientsDB = useMemo(() => {
+                return clientDB.filter(c => {
+                    const searchName = clientFormName.toLowerCase();
+                    const searchAddr = clientFormAddress.toLowerCase();
+                    const nameMatch = c.name.toLowerCase().includes(searchName);
+                    const addrMatch = c.address.toLowerCase().includes(searchAddr);
+                    return nameMatch && addrMatch;
+                });
+            }, [clientDB, clientFormName, clientFormAddress]);
+
             if (!user) return <LoginScreen />;
 
             return (
                 <div className="min-h-screen bg-slate-50 text-slate-800 pb-20">
+                    {/* SAVE PLAN MODAL */}
                     {showSavePlanModal && (
                         <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
@@ -1550,7 +1544,7 @@
                                     autoFocus
                                     type="text" 
                                     className="w-full p-3 border rounded-lg mb-4 outline-none focus:ring-2 focus:ring-ess-blue" 
-                                    placeholder="Name (e.g. Monday Morning)" 
+                                    placeholder="Plan Name (e.g. Monday Morning)" 
                                     value={planName}
                                     onChange={e => setPlanName(e.target.value)}
                                     onKeyDown={e => handleEnter(e, handleSavePlan)}
@@ -1563,6 +1557,7 @@
                         </div>
                     )}
 
+                    {/* LOAD PLAN MODAL */}
                     {showLoadPlanModal && (
                         <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md h-[500px] flex flex-col">
@@ -1595,10 +1590,11 @@
                         </div>
                     )}
                     
+                    {/* ADD NEW ROUTE MODAL */}
                     {showAddRouteModal && (
                         <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
-                                <h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center gap-2"><Icon name="plus" className="h-5 w-5 text-green-600" /> New Route</h3>
+                                <h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center gap-2"><Icon name="plus" className="h-5 w-5 text-green-600" /> Add New Route</h3>
                                 <div className="space-y-4 mb-6">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Zone Name</label>
@@ -1616,13 +1612,13 @@
                                         </datalist>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Driver (Optional)</label>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Assign Driver (Optional)</label>
                                         <select 
                                             className="w-full p-3 border rounded-lg outline-none bg-white"
                                             value={newRouteConfig.driverId}
                                             onChange={e => setNewRouteConfig({...newRouteConfig, driverId: e.target.value})}
                                         >
-                                            <option value="">-- Select --</option>
+                                            <option value="">-- Select Driver --</option>
                                             {drivers.filter(d => d.active).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                                         </select>
                                     </div>
@@ -1635,11 +1631,12 @@
                         </div>
                     )}
 
+                    {/* GLOBAL MAP MODAL */}
                     {viewingGlobalMap && optimizedRoutes && (
                         <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden relative">
                                 <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center z-10 relative">
-                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Icon name="map" className="h-5 w-5 text-ess-blue" /> Global Route Map</h3>
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Icon name="map" className="h-5 w-5 text-ess-blue" /> All Routes Overview</h3>
                                     <button onClick={() => setViewingGlobalMap(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-6 w-6" /></button>
                                 </div>
                                 <div className="flex-1 relative w-full h-full">
@@ -1662,6 +1659,7 @@
                         </div>
                     )}
 
+                    {/* SINGLE DRIVER MAP MODAL */}
                     {viewingDriver && (
                         <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden relative">
@@ -1676,11 +1674,12 @@
                         </div>
                     )}
 
+                    {/* ADD STOP DETAILS MODAL */}
                     {showAddDetailsModal && (
                         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
                                 <h3 className="font-bold text-lg mb-4 text-slate-800">
-                                    {targetZoneForManualAdd ? `Add Stop to ${targetZoneForManualAdd}` : 'Stop Details'}
+                                    {targetZoneForManualAdd ? `Add Stop to ${targetZoneForManualAdd}` : 'Add Stop Details'}
                                 </h3>
                                 
                                 {targetZoneForManualAdd && (
@@ -1702,7 +1701,7 @@
                                                 onKeyDown={handleModalClientKeyDown}
                                             />
                                             {showSuggestions && newStopName && (
-                                                <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full h-auto">
+                                                <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full max-h-40 overflow-y-auto">
                                                     {clientDB.filter(c=>c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5).map((c, i) => (
                                                         <div 
                                                             key={c.id} 
@@ -1763,6 +1762,9 @@
                         </div>
                     )}
 
+                    {/* GLOBAL PRINT PREVIEW (Hidden UI, rendered for print) */}
+                    {showGlobalPrint && optimizedRoutes && <GlobalManifest routes={optimizedRoutes} config={companyConfig} driverAssignments={driverAssignments} drivers={drivers} />}
+
                     {/* HEADER */}
                     <div className="bg-white border-b border-slate-200 sticky top-0 z-40 no-print shadow-sm">
                         <div className="max-w-7xl mx-auto px-6 py-3 flex justify-between items-center">
@@ -1778,13 +1780,13 @@
                                             <Icon name="plus-circle" className="h-4 w-4" /> Add New Route
                                         </button>
                                         <button onClick={() => setShowSavePlanModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-green-600 hover:bg-green-700 transition-colors shadow-sm">
-                                            <Icon name="save" className="h-4 w-4" /> Save Plan
+                                            <Icon name="save" className="h-4 w-4" /> Save Planner
                                         </button>
                                         <button onClick={() => setViewingGlobalMap(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-slate-600 bg-white border border-slate-200 hover:text-ess-blue hover:bg-slate-50 transition-colors shadow-sm">
                                             <Icon name="map" className="h-4 w-4" /> Global Map
                                         </button>
                                         <button onClick={handleGlobalPrint} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-slate-800 hover:bg-black transition-colors shadow-sm">
-                                            <Icon name="printer" className="h-4 w-4" /> Summary
+                                            <Icon name="printer" className="h-4 w-4" /> Print All Summary
                                         </button>
                                         <div className="h-6 w-px bg-slate-300 mx-1"></div>
                                     </>
@@ -1792,14 +1794,15 @@
                                 
                                 {view !== 'results' && (
                                     <>
-                                        <button onClick={() => setShowLoadPlanModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-slate-600 bg-white border border-slate-200 hover:text-ess-blue hover:bg-slate-50 transition-colors shadow-sm" title="Saved Plans">
-                                            <Icon name="folder-open" className="h-4 w-4" /> Saved Plans
+                                        <button onClick={() => setShowLoadPlanModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-slate-600 bg-white border border-slate-200 hover:text-ess-blue hover:bg-slate-50 transition-colors shadow-sm" title="Saved Planners">
+                                            <Icon name="folder-open" className="h-4 w-4" /> Saved Planners
                                         </button>
                                         <div className="h-6 w-px bg-slate-300 mx-1"></div>
+                                        {/* REMOVED: Go to Results button from here */}
                                         <button onClick={() => setView('planning')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'planning' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
                                         <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
-                                        <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Fleet</button>
-                                        <button onClick={() => setView('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Config</button>
+                                        <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Fleet & Drivers</button>
+                                        <button onClick={() => setView('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Settings</button>
                                     </>
                                 )}
                                 
@@ -1811,8 +1814,11 @@
 
                     <main className="max-w-7xl mx-auto p-4 space-y-4">
                         
+                        {/* VISTA DE PLANIFICACIÓN (ADD STOPS + MAPA) */}
                         {view === 'planning' && (
                             <div className="animate-fade-in space-y-4">
+                                
+                                {/* 1. ADD STOP CARD - FULL WIDTH */}
                                 <div className="col-span-12 bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
                                     <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
                                         <div className="bg-green-100 p-1.5 rounded-full text-green-700"><Icon name="plus" className="h-5 w-5" /></div>
@@ -1825,7 +1831,7 @@
                                                 <input 
                                                     ref={inputRef}
                                                     type="text" 
-                                                    className="w-full p-3 border rounded-lg outline-none focus:border-ess-blue" 
+                                                    className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:border-ess-blue" 
                                                     placeholder="Name" 
                                                     value={newStopName} 
                                                     onChange={e => {
@@ -1836,7 +1842,7 @@
                                                     onKeyDown={handleClientKeyDown}
                                                 />
                                                 {showSuggestions && newStopName && (
-                                                    <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full h-auto">
+                                                    <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full max-h-40 overflow-y-auto">
                                                         {clientDB.filter(c=>c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5).map((c, i) => (
                                                             <div 
                                                                 key={c.id} 
@@ -1846,6 +1852,7 @@
                                                                     setNewStopAddress(c.address); 
                                                                     setTempStopData({name: c.name, address: c.address}); 
                                                                     setShowSuggestions(false); 
+                                                                    // Focus ghost input to trigger NEXT logic flow
                                                                     if(ghostInputRef.current) ghostInputRef.current.focus();
                                                                 }}
                                                             >
@@ -1866,22 +1873,27 @@
                                                         value={newStopAddress} 
                                                         onChange={e => {
                                                             setNewStopAddress(e.target.value);
+                                                            // Also update temp data if typing manually
                                                             setTempStopData(prev => ({...prev, name: newStopName, address: e.target.value}));
                                                         }} 
+                                                        // When place selected from GMaps, we focus the GHOST input
                                                         onSelection={() => {
                                                              if(ghostInputRef.current) ghostInputRef.current.focus();
+                                                        }}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                // If just pressing Enter without selection, maybe focus ghost too
+                                                                // But Google's Autocomplete usually traps Enter first.
+                                                                // We rely on onSelection callback mainly.
+                                                            }
                                                         }}
                                                         className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:border-ess-blue"
                                                         placeholder="Search Google Maps"
                                                         disabled={!scriptLoaded}
                                                         isLoaded={scriptLoaded}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') {
-                                                                e.preventDefault();
-                                                                initiateAddStop();
-                                                            }
-                                                        }}
                                                     />
+                                                    
+                                                    {/* GHOST INPUT FOR "DOUBLE ENTER" LOGIC */}
                                                     <input 
                                                         ref={ghostInputRef}
                                                         className="opacity-0 w-0 h-0 absolute top-0 left-0"
@@ -1901,10 +1913,20 @@
                                     </div>
                                 </div>
 
+                                {/* 2. MAIN WORKSPACE: LEFT PANEL (Zones) + RIGHT (Map) */}
                                 <div className="grid md:grid-cols-12 gap-4 h-[650px]">
+                                    
+                                    {/* LEFT: ZONE CREATION PANEL */}
                                     <div className="md:col-span-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
                                         <div className="p-4 bg-slate-50 border-b border-slate-200">
                                             <h3 className="text-xs font-bold text-slate-500 uppercase mb-3">{editingGroupId ? 'Edit Zone' : 'Create New Zone'}</h3>
+                                            
+                                            {/* --- GO TO RESULTS MOVED HERE --- */}
+                                            {optimizedRoutes && (
+                                                <button onClick={() => setView('results')} className="w-full mb-3 py-2 bg-white border border-green-600 text-green-600 rounded-lg font-bold shadow-sm flex justify-center items-center gap-2 hover:bg-green-50 transition-all text-sm">
+                                                    <Icon name="check-circle" className="h-4 w-4" /> Go to Results
+                                                </button>
+                                            )}
                                             
                                             <div className="space-y-3">
                                                 <div>
@@ -1944,11 +1966,11 @@
                                                             />
                                                         </div>
                                                         <button onClick={saveGroup} className={`flex-1 py-2 text-white font-bold rounded text-sm ${editingGroupId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-ess-blue hover:bg-sky-700'}`}>
-                                                            {editingGroupId ? 'Update' : 'Create Zone'}
+                                                            {editingGroupId ? 'Update Zone' : 'Create Zone'}
                                                         </button>
                                                     </div>
                                                 </div>
-                                                {editingGroupId && <button onClick={() => { setEditingGroupId(null); setGroupNameInput(''); setStopSelectionInput(''); setNumRoutesInput(1); }} className="text-xs text-slate-500 hover:underline">Cancel edit</button>}
+                                                {editingGroupId && <button onClick={() => { setEditingGroupId(null); setGroupNameInput(''); setStopSelectionInput(''); setNumRoutesInput(1); }} className="text-xs text-slate-500 hover:underline">Cancel Edit</button>}
                                             </div>
                                         </div>
                                         
@@ -1978,26 +2000,22 @@
                                             ))}
                                             {stopGroups.length === 0 && (
                                                 <div className="text-center py-8 text-slate-400 text-sm italic">
-                                                    No zones. Draw on map or create above.
+                                                    No zones created.<br/>Draw on map or create manually above.
                                                 </div>
                                             )}
                                         </div>
                                         
-                                        <div className="p-4 border-t border-slate-200 bg-white space-y-3">
-                                            {optimizedRoutes && (
-                                                <button onClick={() => setView('results')} className="w-full py-2 bg-white border border-green-600 text-green-600 rounded-lg font-bold shadow-sm flex justify-center items-center gap-2 hover:bg-green-50 transition-all text-sm">
-                                                    <Icon name="check-circle" className="h-4 w-4" /> Go to Results
-                                                </button>
-                                            )}
+                                        <div className="p-4 border-t border-slate-200 bg-white">
                                             <button onClick={generateRoutes} disabled={loading || (stopGroups.length === 0 && currentStops.length === 0)} className="w-full py-3 bg-green-600 text-white rounded-lg font-bold shadow-lg hover:bg-green-700 flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                                                 {loading ? <div className="loader w-4 h-4 border-white"></div> : <><Icon name="play" className="h-4 w-4" /> GENERATE ROUTES</>}
                                             </button>
                                             {stopGroups.length > 0 && (
-                                                <button onClick={clearAllGroups} className="w-full py-2 text-xs text-red-500 hover:text-red-700 font-bold">Clear All Zones</button>
+                                                <button onClick={clearAllStops} className="w-full mt-2 py-2 text-xs text-red-500 hover:text-red-700 font-bold">Clear All Zones</button>
                                             )}
                                         </div>
                                     </div>
 
+                                    {/* RIGHT: MAP */}
                                     <div className="md:col-span-8 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden relative flex flex-col">
                                         <div className="flex-1 relative">
                                             <GlobalMapView 
@@ -2011,12 +2029,13 @@
                                     </div>
                                 </div>
 
+                                {/* 3. COMPACT STOP LIST (Reference) */}
                                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm relative">
                                     <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
                                         <h3 className="font-bold text-sm text-slate-500 uppercase flex items-center gap-2"><Icon name="list" className="h-4 w-4" /> Reference List</h3>
                                         {currentStops.length > 0 && (
                                             <button onClick={clearAllStops} className="text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors">
-                                                <Icon name="trash-2" className="h-3 w-3" /> Clear All
+                                                <Icon name="trash-2" className="h-3 w-3" /> Clear All Stops
                                             </button>
                                         )}
                                     </div>
@@ -2042,23 +2061,20 @@
                                                 </div>
                                             </div>
                                         ))}
-                                        {currentStops.length === 0 && <span className="text-xs text-slate-400 italic">No stops.</span>}
+                                        {currentStops.length === 0 && <span className="text-xs text-slate-400 italic">No stops added yet.</span>}
                                     </div>
                                 </div>
                             </div>
                         )}
 
+                        {/* VISTA DE RESULTADOS (Asignación de Drivers) */}
                         {view === 'results' && optimizedRoutes && (
                             <div className="animate-fade-in space-y-6">
-                                <div className="flex justify-between items-center mb-4">
+                                <div className="flex justify-start mb-4">
                                     <button onClick={() => setView('planning')} className="px-4 py-2 border bg-white rounded-lg font-bold hover:bg-slate-50 text-sm flex items-center gap-2 shadow-sm">
                                         <Icon name="arrow-left" className="h-4 w-4" /> Back to Planning
                                     </button>
-                                    <div className="flex gap-3">
-                                        {/* Acciones principales movidas al header si es necesario, o mantenemos redundancia aquí */}
-                                    </div>
                                 </div>
-                                
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {Object.entries(optimizedRoutes).map(([zoneName, routeData]) => {
                                         const assignedDriverId = driverAssignments[zoneName];
@@ -2080,7 +2096,7 @@
                                                             <button 
                                                                 onClick={() => initiateAddStopToRoute(zoneName)}
                                                                 className="bg-green-100 hover:bg-green-200 text-green-700 p-1 rounded transition-colors shadow-sm"
-                                                                title="Add Manual Stop"
+                                                                title="Add Stop to Route"
                                                             >
                                                                 <Icon name="plus" className="h-4 w-4" />
                                                             </button>
@@ -2092,6 +2108,7 @@
                                                         </div>
                                                     </div>
                                                     
+                                                    {/* DRIVER SELECTION DROPDOWN */}
                                                     <div className="relative mb-2">
                                                         <select 
                                                             className={`w-full p-2.5 rounded-lg border-2 font-bold text-sm outline-none appearance-none cursor-pointer ${assignedDriverId ? 'border-ess-green bg-green-50 text-green-800' : 'border-slate-300 bg-white text-slate-500'}`}
@@ -2114,20 +2131,21 @@
                                                                 value={currentVehicleName}
                                                                 onChange={(e) => overrideVehicle(zoneName, e.target.value)}
                                                             >
-                                                                <option value="">No Truck</option>
+                                                                <option value="">No Truck Assigned</option>
                                                                 {vehicles.map(v => <option key={v.id} value={v.name}>{v.name} {v.assignedDriver === driver.name ? '(Default)' : ''}</option>)}
                                                             </select>
                                                         </div>
                                                     )}
 
+                                                    {/* TOOLBAR */}
                                                     <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
                                                         <div className="bg-white p-2 rounded border border-slate-200 flex items-center gap-2 shadow-sm">
-                                                            {recalculating[zoneName] ? <span className="text-ess-blue font-bold animate-pulse">Loading...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(routeData.duracion_estimada / 60)}h {Math.round(routeData.duracion_estimada % 60)}m</>}
+                                                            {recalculating[zoneName] ? <span className="text-ess-blue font-bold animate-pulse">Updating...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(routeData.duracion_estimada / 60)}h {Math.round(routeData.duracion_estimada % 60)}m</>}
                                                         </div>
                                                         <div className="flex gap-1 justify-end">
                                                             <button onClick={() => reverseRoute(zoneName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200 shadow-sm" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
                                                             <button onClick={() => handleOptimizeRemaining(zoneName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 shadow-sm font-bold" title="Optimize Remaining (Keep 1st)"><Icon name="wand-2" className="h-4 w-4" /></button>
-                                                            <button onClick={() => recalculateRoute(zoneName, routeData.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 p-1.5 rounded border border-slate-200 shadow-sm font-bold" title="Full Optimization"><Icon name="shuffle" className="h-4 w-4" /></button>
+                                                            <button onClick={() => recalculateRoute(zoneName, routeData.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 p-1.5 rounded border border-slate-200 shadow-sm font-bold" title="Full Re-optimize (Shuffle All)"><Icon name="shuffle" className="h-4 w-4" /></button>
                                                             <button onClick={() => recalculateFixedRoute(zoneName, routeData.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200 shadow-sm" title="Refresh Time"><Icon name="refresh-cw" className="h-4 w-4" /></button>
                                                         </div>
                                                     </div>
@@ -2146,8 +2164,8 @@
                                                         >
                                                             <span className="font-bold text-slate-400 text-xs mt-0.5 w-5 text-right">{i+1}.</span>
                                                             <div className="flex-1 leading-tight">
-                                                                <div className="font-bold text-slate-700">{stop.nombre || stop.name}</div>
-                                                                <div className="text-xs text-slate-500 truncate">{stop.direccion || stop.address}</div>
+                                                                <div className="font-bold text-slate-700">{stop.nombre}</div>
+                                                                <div className="text-xs text-slate-500 truncate">{stop.direccion}</div>
                                                                 {(stop.invoices || stop.pieces) && (
                                                                     <div className="flex gap-2 mt-0.5 text-[9px] text-slate-500">
                                                                         {stop.invoices && <span className="bg-yellow-50 px-1 rounded border border-yellow-100 text-yellow-700">Inv: {stop.invoices}</span>}
@@ -2171,7 +2189,7 @@
                                                         <Icon name="send" className="h-3 w-3" /> App
                                                     </a>
                                                     <a href={getWhatsappLink(routeData.paradas, driver?.name)} target="_blank" className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors">
-                                                        <Icon name="message-circle" className="h-4 w-4" /> WhatsApp
+                                                        <Icon name="message-circle" className="h-4 w-4" /> WhatsApp Route
                                                     </a>
                                                     <button 
                                                         onClick={() => {
@@ -2194,12 +2212,6 @@
                                         );
                                     })}
                                 </div>
-
-                                <div className="mt-8 flex justify-center pb-8">
-                                    <button onClick={handleBulkManifestPrint} className="px-8 py-4 bg-ess-blue text-white rounded-xl font-bold shadow-xl hover:bg-sky-700 transition-all flex items-center gap-3 text-lg">
-                                        <Icon name="printer" className="h-6 w-6" /> PRINT ALL MANIFESTS (2 Sheets Each)
-                                    </button>
-                                </div>
                             </div>
                         )}
 
@@ -2207,76 +2219,193 @@
                             <div className="animate-fade-in bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="database" className="h-6 w-6 text-ess-blue" /> Clients Database</h2>
                                 <div className="flex gap-4 mb-6">
-                                    <div className="flex-1 relative">
-                                        <div className="absolute left-3 top-2.5 text-slate-400"><Icon name="search" className="h-5 w-5" /></div>
-                                        <input type="text" placeholder="Search by name or address..." className="w-full pl-10 p-2 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue" value={clientSearch} onChange={e=>setClientSearch(e.target.value)} />
-                                    </div>
+                                    <input type="text" placeholder="New Client Name" className="flex-1 p-2 border rounded" value={clientFormName} onChange={e=>setClientFormName(e.target.value)} />
+                                    <div className="flex-[2]"><GoogleAddressInput placeholder="Address" value={clientFormAddress} onChange={e=>setClientFormAddress(e.target.value)} className="w-full p-2 border rounded" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div>
+                                    <button onClick={saveClient} className="bg-green-600 text-white px-4 py-2 rounded font-bold">
+                                        {editingClientId ? 'Update' : 'Add'}
+                                    </button>
                                 </div>
-                                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 p-4 bg-slate-50 rounded-xl border border-dashed border-slate-300">
-                                    <div className="space-y-3">
-                                        <h3 className="text-sm font-bold text-slate-500 uppercase">Quick Add / Edit</h3>
-                                        <input type="text" placeholder="Client Name" className="w-full p-2 border rounded bg-white" value={clientFormName} onChange={e=>setClientFormName(e.target.value)} />
-                                        <GoogleAddressInput placeholder="Address" value={clientFormAddress} onChange={e=>setClientFormAddress(e.target.value)} className="w-full p-2 border rounded bg-white" isLoaded={scriptLoaded} />
-                                        <button onClick={saveClient} className="w-full bg-green-600 text-white py-2 rounded font-bold">{editingClientId ? 'Update Client' : 'Add New Client'}</button>
-                                        {editingClientId && <button onClick={() => { setEditingClientId(null); setClientFormName(''); setClientFormAddress(''); }} className="w-full text-xs text-slate-500">Cancel Edit</button>}
-                                    </div>
-                                </div>
-                                <div className="overflow-y-auto max-h-[500px] border rounded-lg">
+                                <div className="overflow-y-auto max-h-[500px]">
                                     {filteredClientsDB.map(c => {
                                         const isInRoute = currentStops.some(s => s.address === c.address);
                                         return (
-                                            <div key={c.id} className="flex justify-between items-center p-4 border-b last:border-0 hover:bg-slate-50 transition-colors">
-                                                <div className="flex-1 min-w-0 mr-4">
-                                                    <div className="font-bold text-slate-800 truncate">{c.name || 'Unnamed Client'}</div>
-                                                    <div className="text-xs text-slate-500 truncate">{c.address}</div>
-                                                </div>
-                                                <div className="flex gap-2 shrink-0">
-                                                    <button onClick={() => addClientToRoute(c)} className={`p-2 rounded-full border ${isInRoute ? 'bg-green-100 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-400 hover:text-green-600'}`} title={isInRoute ? "Remove from stops" : "Add to stops"}><Icon name={isInRoute ? 'check' : 'plus'} className="h-4 w-4" /></button>
-                                                    <button onClick={()=>startEditingClient(c)} className="p-2 text-blue-500 hover:bg-blue-50 rounded" title="Edit"><Icon name="pencil" className="h-4 w-4" /></button>
-                                                    <button onClick={async ()=>{ if(confirm('Delete client?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients', c.id)); }} className="p-2 text-red-500 hover:bg-red-50 rounded" title="Delete"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                            <div key={c.id} className="flex justify-between items-center p-3 border-b hover:bg-slate-50">
+                                                <div><div className="font-bold">{c.name}</div><div className="text-xs text-slate-500">{c.address}</div></div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => addClientToRoute(c)} className={`p-1.5 rounded-full transition-colors ${isInRoute ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400 hover:bg-green-50 hover:text-green-600'}`}>
+                                                        <Icon name={isInRoute ? 'check' : 'plus'} className="h-4 w-4" />
+                                                    </button>
+                                                    <button onClick={()=>startEditingClient(c)} className="text-blue-500 hover:bg-blue-50 p-2 rounded"><Icon name="pencil" className="h-4 w-4" /></button>
+                                                    <button onClick={()=>deleteClient(c.id)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Icon name="trash-2" className="h-4 w-4" /></button>
                                                 </div>
                                             </div>
                                         );
                                     })}
-                                    {filteredClientsDB.length === 0 && <div className="p-10 text-center text-slate-400 italic">No clients found.</div>}
                                 </div>
                             </div>
                         )}
 
                         {view === 'vehicles' && (
                             <div className="grid md:grid-cols-2 gap-6 animate-fade-in">
-                                <div className="bg-white rounded-xl shadow-sm border p-6">
+                                {/* VEHICLES SECTION */}
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="truck" className="h-6 w-6 text-ess-blue" /> Vehicles</h2>
-                                    <div className="flex gap-2 mb-4"><input type="text" placeholder="Name/Plate" className="flex-1 p-2 border rounded" value={newVehicleName} onChange={e=>setNewVehicleName(e.target.value)} /><button onClick={addVehicle} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add</button></div>
-                                    <div className="space-y-2">{vehicles.map(v => (<div key={v.id} className="p-3 border rounded flex justify-between items-center"><div className="font-bold">{v.name}</div><button onClick={()=>deleteVehicle(v.id)} className="text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button></div>))}</div>
+                                    <div className="flex gap-2 mb-4">
+                                        <input type="text" placeholder="Vehicle Name / Plate" className="flex-1 p-2 border rounded" value={newVehicleName} onChange={e=>setNewVehicleName(e.target.value)} />
+                                        <button onClick={addVehicle} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add</button>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {vehicles.map(v => (
+                                            <div key={v.id} className="p-3 border rounded hover:bg-slate-50">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    {editingVehicleId === v.id ? (
+                                                        <input 
+                                                            type="text" 
+                                                            defaultValue={v.name} 
+                                                            className="border p-1 rounded text-sm w-full mr-2"
+                                                            onBlur={(e) => updateVehicle(v.id, { name: e.target.value })}
+                                                            onKeyDown={(e) => handleEnter(e, () => e.target.blur())}
+                                                            autoFocus
+                                                        />
+                                                    ) : (
+                                                        <div className="font-bold flex items-center gap-2">{v.name} <button onClick={() => setEditingVehicleId(v.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
+                                                    )}
+                                                    <button onClick={()=>deleteVehicle(v.id)} className="text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-xs">
+                                                    <span className="text-slate-500">Default Driver:</span>
+                                                    <select 
+                                                        className="border rounded p-1 bg-white outline-none"
+                                                        value={v.assignedDriver || ""}
+                                                        onChange={(e) => assignVehicleDriver(v.id, e.target.value)}
+                                                    >
+                                                        <option value="">-- None --</option>
+                                                        {drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
-                                <div className="bg-white rounded-xl shadow-sm border p-6">
+                                {/* DRIVERS SECTION */}
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="users" className="h-6 w-6 text-ess-blue" /> Drivers</h2>
-                                    <div className="flex gap-2 mb-4"><input type="text" placeholder="Name" className="flex-1 p-2 border rounded" value={newDriverName} onChange={e=>setNewDriverName(e.target.value)} /><button onClick={addDriver} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add</button></div>
-                                    <div className="space-y-2">{drivers.map(d => (<div key={d.id} className="p-3 border rounded flex justify-between items-center"><div className="font-bold">{d.name}</div><button onClick={()=>deleteDriver(d.id)} className="text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button></div>))}</div>
+                                    <div className="flex gap-2 mb-4">
+                                        <input type="text" placeholder="Name" className="flex-1 p-2 border rounded" value={newDriverName} onChange={e=>setNewDriverName(e.target.value)} />
+                                        <input type="text" placeholder="Phone" className="flex-1 p-2 border rounded" value={newDriverPhone} onChange={e=>setNewDriverPhone(e.target.value)} />
+                                        <button onClick={addDriver} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add</button>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {drivers.map(d => (
+                                            <div key={d.id} className="flex justify-between items-center p-3 border rounded hover:bg-slate-50">
+                                                {editingDriverId === d.id ? (
+                                                    <div className="flex-1 mr-2 space-y-1">
+                                                        <input type="text" defaultValue={d.name} className="border p-1 rounded text-sm w-full" placeholder="Name" onBlur={(e) => updateDriver(d.id, { name: e.target.value })} />
+                                                        <input type="text" defaultValue={d.phone} className="border p-1 rounded text-sm w-full" placeholder="Phone" onBlur={(e) => updateDriver(d.id, { phone: e.target.value })} />
+                                                        <button onClick={() => setEditingDriverId(null)} className="text-xs text-blue-500">Done</button>
+                                                    </div>
+                                                ) : (
+                                                    <div>
+                                                        <div className="font-bold flex items-center gap-2">{d.name} <button onClick={() => setEditingDriverId(d.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
+                                                        <div className="text-xs text-slate-500">{d.phone}</div>
+                                                    </div>
+                                                )}
+                                                <button onClick={()=>deleteDriver(d.id)} className="text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                         )}
 
                         {view === 'settings' && (
                             <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
-                                <div className="bg-white rounded-xl shadow-sm border p-6">
-                                    <h2 className="text-xl font-bold mb-4 border-b pb-2">Manifest Header</h2>
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2">Manifest Header Info</h2>
                                     <div className="space-y-4">
                                         <div><label className="block text-sm font-bold text-slate-500 mb-1">Company Name</label><input className="w-full p-2 border rounded" value={companyConfig.companyName} onChange={e => setCompanyConfig({...companyConfig, companyName: e.target.value})} /></div>
-                                        <button onClick={async () => { await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'settings', 'config'), { companyConfig, baseAddress }, { merge: true }); alert("Saved!"); }} className="bg-slate-800 text-white px-4 py-2 rounded font-bold w-full">Save Settings</button>
+                                        <div><label className="block text-sm font-bold text-slate-500 mb-1">Phone</label><input className="w-full p-2 border rounded" value={companyConfig.phone} onChange={e => setCompanyConfig({...companyConfig, phone: e.target.value})} /></div>
+                                        <div><label className="block text-sm font-bold text-slate-500 mb-1">Footer Address</label><input className="w-full p-2 border rounded" value={companyConfig.address} onChange={e => setCompanyConfig({...companyConfig, address: e.target.value})} /></div>
+                                    </div>
+
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2 pt-6">Base Address Configuration</h2>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-500 mb-1">Base Address (Start/End Point)</label>
+                                            <GoogleAddressInput 
+                                                value={baseAddress} 
+                                                onChange={e => setBaseAddress(e.target.value)} 
+                                                className="w-full p-2 border rounded" 
+                                                placeholder="Enter warehouse address" 
+                                                disabled={!scriptLoaded} 
+                                                isLoaded={scriptLoaded} 
+                                            />
+                                        </div>
+                                        <button onClick={saveSettings} className="bg-slate-800 text-white px-4 py-2 rounded font-bold w-full">Save All Changes</button>
                                     </div>
                                 </div>
-                                <div className="bg-white rounded-xl shadow-sm border p-6">
+
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2">Zone Management</h2>
+                                    <div className="space-y-4">
+                                        <div className="flex gap-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="New Zone Name (e.g. DOWNTOWN)" 
+                                                className="flex-1 p-2 border rounded uppercase" 
+                                                value={newZoneName} 
+                                                onChange={e => setNewZoneName(e.target.value)} 
+                                                onKeyDown={e => handleEnter(e, addZoneFromSettings)}
+                                            />
+                                            <button onClick={addZoneFromSettings} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add</button>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                                            {zones.map(z => (
+                                                <div key={z.id} className="flex justify-between items-center p-2 border rounded bg-slate-50">
+                                                    <span className="font-bold text-sm">{z.name}</span>
+                                                    <button onClick={() => deleteZoneFromSettings(z.id)} className="text-red-500 hover:text-red-700"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                </div>
+                                            ))}
+                                            {zones.length === 0 && <span className="text-sm text-slate-400 italic">No saved zones.</span>}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2">Data Management</h2>
+                                    <div className="flex gap-4">
+                                        <button onClick={handleBackup} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded font-bold flex items-center justify-center gap-2"><Icon name="download" className="h-4 w-4" /> Backup Data</button>
+                                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
+                                        <button onClick={handleRestoreClick} className="flex-1 bg-ess-blue text-white hover:bg-sky-700 px-4 py-3 rounded font-bold flex items-center justify-center gap-2"><Icon name="upload" className="h-4 w-4" /> Restore Data</button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 border-b pb-2">Security</h2>
-                                    <p className="text-sm text-slate-600 mb-2">Reset password for <strong>{user.email}</strong></p>
-                                    <button onClick={async () => { try { await window.fbSendPasswordResetEmail(window.fbAuth, user.email); alert("Check email!"); } catch(e) { alert(e.message); } }} className="text-ess-blue font-bold text-sm hover:underline">Send reset email</button>
+                                    <div className="space-y-4">
+                                        <div><label className="block text-sm font-bold text-slate-500 mb-1">Change PIN</label><input type="text" maxLength="6" className="w-full p-2 border rounded" placeholder="New PIN" value={newPin} onChange={e => setNewPin(e.target.value)} /></div>
+                                        <div className="pt-2 border-t mt-4">
+                                            <p className="text-sm text-slate-600 mb-2">Reset password for <strong>{user.email}</strong></p>
+                                            <button onClick={handleChangePassword} className="text-ess-blue font-bold text-sm hover:underline">Send Reset Email</button>
+                                            {settingsMsg && <p className="text-xs text-green-600 mt-1">{settingsMsg}</p>}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
-                        
-                        {/* IMPRESIÓN */}
-                        {printData && <PrintableSheet routeData={printData.stops} driverName={printData.driverName} zoneName={printData.zoneName} duration={printData.duration} config={printData.config} />}
+
+                        {printData && (
+                            <PrintableSheet 
+                                routeData={printData.stops}
+                                driverName={printData.driverName}
+                                vehicle={printData.vehicle}
+                                phone={printData.phone}
+                                duration={printData.duration}
+                                zoneName={printData.zoneName}
+                                config={companyConfig}
+                            />
+                        )}
+
                     </main>
                 </div>
             );
