@@ -1354,14 +1354,15 @@
                 setOptimizedRoutes(newRoutes);
             };
 
-            const getWhatsappLink = (stops, driverName) => {
+            const getWhatsappLink = (stops, driverName, routeLink) => {
                 let phone = '';
                 const driver = drivers.find(d => d.name === driverName);
                 if (driver && driver.phone) phone = driver.phone.replace(/\D/g, '');
                 
-                const link = stops && stops.length > 0 
+                // Use the provided routeLink if available, otherwise construct it
+                const link = routeLink ? routeLink : (stops && stops.length > 0 
                     ? `https://www.google.com/maps/dir/${encodeURIComponent(baseAddress)}/${stops.map(s => encodeURIComponent(s.direccion || s.address)).join('/')}/${encodeURIComponent(baseAddress)}` 
-                    : "";
+                    : "");
                 
                 const text = encodeURIComponent(`Hello, here is your updated route:\n\n${link}\n\nDrive safely!`);
                 return phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
@@ -2168,7 +2169,7 @@
                                                     <a href={routeData.link} target="_blank" className="bg-white border border-slate-300 hover:border-ess-blue hover:text-ess-blue text-slate-600 font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors">
                                                         <Icon name="send" className="h-3 w-3" /> App
                                                     </a>
-                                                    <a href={getWhatsappLink(routeData.paradas, driver?.name)} target="_blank" className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors">
+                                                    <a href={getWhatsappLink(routeData.paradas, driver?.name, routeData.link)} target="_blank" className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors">
                                                         <Icon name="message-circle" className="h-4 w-4" /> WhatsApp
                                                     </a>
                                                     <button 
