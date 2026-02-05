@@ -2179,9 +2179,34 @@
                                                     <a href={routeData.link} target="_blank" className="bg-white border border-slate-300 hover:border-ess-blue hover:text-ess-blue text-slate-600 font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors">
                                                         <Icon name="send" className="h-3 w-3" /> App
                                                     </a>
-                                                    <a href={getWhatsappLink(routeData.paradas, driver?.name, routeData.link)} target="_blank" className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors">
-                                                        <Icon name="message-circle" className="h-4 w-4" /> WhatsApp
-                                                    </a>
+                                                    
+                                                    {/* WHATSAPP LOGIC START */}
+                                                    {routeData.paradas.length <= 9 ? (
+                                                        <a href={getWhatsappLink(routeData.paradas, driver?.name, routeData.link)} target="_blank" className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors">
+                                                            <Icon name="message-circle" className="h-4 w-4" /> WhatsApp
+                                                        </a>
+                                                    ) : (
+                                                        <div className="col-span-2 flex gap-1">
+                                                            {Array.from({ length: Math.ceil(routeData.paradas.length / 9) }).map((_, idx) => {
+                                                                const start = idx * 9;
+                                                                const end = start + 9;
+                                                                const chunk = routeData.paradas.slice(start, end);
+                                                                return (
+                                                                    <a 
+                                                                        key={idx} 
+                                                                        href={getWhatsappLink(chunk, driver?.name, null)} 
+                                                                        target="_blank" 
+                                                                        className="flex-1 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-1 shadow-sm transition-colors"
+                                                                        title={`Stops ${start + 1} - ${Math.min(end, routeData.paradas.length)}`}
+                                                                    >
+                                                                        <Icon name="message-circle" className="h-3 w-3" /> Part {idx + 1}
+                                                                    </a>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                    {/* WHATSAPP LOGIC END */}
+
                                                     <button 
                                                         onClick={() => {
                                                             setPrintData({ 
