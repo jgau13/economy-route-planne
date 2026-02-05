@@ -1359,9 +1359,12 @@
                 const driver = drivers.find(d => d.name === driverName);
                 if (driver && driver.phone) phone = driver.phone.replace(/\D/g, '');
                 
+                // Función auxiliar para codificar con + en lugar de %20
+                const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
+
                 // Use the provided routeLink if available, otherwise construct it
                 const link = routeLink ? routeLink : (stops && stops.length > 0 
-                    ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(baseAddress)}&destination=${encodeURIComponent(baseAddress)}&waypoints=${stops.map(s => encodeURIComponent(s.direccion || s.address)).join('%7C')}&travelmode=driving` 
+                    ? `https://www.google.com/maps/dir/?api=1&origin=${encode(baseAddress)}&destination=${encode(baseAddress)}&waypoints=${stops.map(s => encode(s.direccion || s.address)).join('%7C')}&travelmode=driving` 
                     : "");
                 
                 const text = encodeURIComponent(`Hello, here is your updated route:\n\n${link}\n\nDrive safely!`);
@@ -2012,11 +2015,18 @@
                                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm relative">
                                     <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
                                         <h3 className="font-bold text-sm text-slate-500 uppercase flex items-center gap-2"><Icon name="list" className="h-4 w-4" /> Reference List</h3>
-                                        {currentStops.length > 0 && (
-                                            <button onClick={clearAllStops} className="text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors">
-                                                <Icon name="trash-2" className="h-3 w-3" /> Clear All
-                                            </button>
-                                        )}
+                                        <div className="flex gap-2">
+                                            {currentStops.length > 0 && (
+                                                <>
+                                                    <button onClick={() => setShowSavePlanModal(true)} className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors" title="Save current stops and zones">
+                                                        <Icon name="save" className="h-3 w-3" /> Save
+                                                    </button>
+                                                    <button onClick={clearAllStops} className="text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors">
+                                                        <Icon name="trash-2" className="h-3 w-3" /> Clear All
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2">
                                         {currentStops.map((stop, idx) => (
