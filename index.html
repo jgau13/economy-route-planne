@@ -483,8 +483,8 @@
                         
                         {isPreview && (
                             <div className="no-print absolute top-4 right-4 flex gap-2">
-                                <button onClick={onClose} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow">Close</button>
-                                <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print</button>
+                                <button onClick={onClose} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow">Close Preview</button>
+                                <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-ess-blue hover:bg-sky-700 text-white px-8 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-5 w-5" /> Confirm & Print</button>
                             </div>
                         )}
 
@@ -553,68 +553,87 @@
             );
         };
         
-        const GlobalManifest = ({ routes, config, driverAssignments, drivers }) => {
-            const today = new Date();
-            const dateStr = today.toLocaleDateString('en-US');
-            const timeStr = today.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        const GlobalManifest = ({ routes, config, driverAssignments, drivers, onClose = null }) => {
+            const [dateVal, setDateVal] = useState(new Date().toLocaleDateString('en-US'));
+            const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+            const isPreview = !!onClose;
 
             return (
-                <div id="global-manifest" className="hidden print:block bg-white text-black p-8 font-sans">
-                    <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
-                        <img
-                          src="https://static.wixstatic.com/media/63d26f_c1a293a0b9cd4c379a17696a06d2a808~mv2.png"
-                          alt="Logo"
-                          className="h-10 w-auto object-contain print:h-[50px] print:max-w-[200px]"
-                        />
-                        <div className="text-right">
-                            <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
-                            <p className="text-lg font-bold">{dateStr} <span className="text-sm font-normal ml-2">{timeStr}</span></p>
-                        </div>
-                    </div>
-                    <div className="space-y-8">
-                        {Object.entries(routes).map(([zoneName, data], idx) => {
-                            const dur = data.duracion_estimada || 0;
-                            const h = Math.floor(dur / 60);
-                            const m = Math.round(dur % 60);
-                            
-                            const assignedId = driverAssignments[zoneName];
-                            const driver = drivers.find(d => d.id === assignedId);
-                            const driverName = driver ? driver.name : "Unassigned";
-
-                            return (
-                            <div key={idx} className="break-inside-avoid">
-                                <div className="bg-gray-100 border border-black p-2 font-bold text-lg mb-2 flex justify-between items-center">
-                                    <span>{zoneName} <span className="text-gray-600">({driverName})</span></span>
-                                    <div className="flex gap-4 text-sm">
-                                        <span>Est. Time: {h}h {m}m</span>
-                                        <span>•</span>
-                                        <span>{data.paradas.length} Stops</span>
-                                    </div>
-                                </div>
-                                <table className="w-full border-collapse border border-black text-xs">
-                                    <thead>
-                                        <tr>
-                                            <th className="border border-black p-1 w-8">#</th>
-                                            <th className="border border-black p-1 text-left">Customer / Address</th>
-                                            <th className="border border-black p-1 w-20">Invoices</th>
-                                            <th className="border border-black p-1 w-12">Pcs</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {data.paradas.map((stop, sIdx) => (
-                                            <tr key={sIdx}>
-                                                <td className="border border-black p-1 text-center">{sIdx + 1}</td>
-                                                <td className="border border-black p-1">
-                                                    <span className="font-bold">{stop.nombre || stop.name}</span> - {stop.direccion || stop.address}
-                                                </td>
-                                                <td className="border border-black p-1 text-center">{stop.invoices || '-'}</td>
-                                                <td className="border border-black p-1 text-center">{stop.pieces || '-'}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                <div id="global-manifest" className={`${isPreview ? "fixed inset-0 z-[200] overflow-auto flex items-start justify-center pt-10 pb-10 bg-gray-500/50" : "hidden"} print:block`}>
+                    <div className={`bg-white text-black p-8 font-sans ${isPreview ? "shadow-2xl max-w-4xl w-full min-h-[11in] relative" : "w-full"}`}>
+                        
+                        {isPreview && (
+                            <div className="no-print absolute top-4 right-4 flex gap-2">
+                                <button onClick={onClose} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow">Close Preview</button>
+                                <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print</button>
                             </div>
-                        )})}
+                        )}
+
+                        <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4 mt-8 print:mt-0">
+                            <img
+                              src="https://static.wixstatic.com/media/63d26f_c1a293a0b9cd4c379a17696a06d2a808~mv2.png"
+                              alt="Logo"
+                              className="h-10 w-auto object-contain print:h-[50px] print:max-w-[200px]"
+                            />
+                            <div className="text-right">
+                                <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
+                                <div className="text-lg font-bold flex items-center justify-end gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={dateVal} 
+                                        onChange={(e) => setDateVal(e.target.value)} 
+                                        className="bg-transparent border-b border-transparent hover:border-gray-400 focus:border-blue-500 outline-none text-right w-32"
+                                    />
+                                    <span className="text-sm font-normal">{timeStr}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="space-y-8">
+                            {Object.entries(routes).map(([zoneName, data], idx) => {
+                                const dur = data.duracion_estimada || 0;
+                                const h = Math.floor(dur / 60);
+                                const m = Math.round(dur % 60);
+                                
+                                const assignedId = driverAssignments[zoneName];
+                                const driver = drivers.find(d => d.id === assignedId);
+                                const driverName = driver ? driver.name : "Unassigned";
+
+                                return (
+                                <div key={idx} className="break-inside-avoid">
+                                    <div className="bg-gray-100 border border-black p-2 font-bold text-lg mb-2 flex justify-between items-center">
+                                        <span>{zoneName} <span className="text-gray-600">({driverName})</span></span>
+                                        <div className="flex gap-4 text-sm">
+                                            <span>Est. Time: {h}h {m}m</span>
+                                            <span>•</span>
+                                            <span>{data.paradas.length} Stops</span>
+                                        </div>
+                                    </div>
+                                    <table className="w-full border-collapse border border-black text-xs">
+                                        <thead>
+                                            <tr>
+                                                <th className="border border-black p-1 w-8">#</th>
+                                                <th className="border border-black p-1 text-left">Customer / Address</th>
+                                                <th className="border border-black p-1 w-20">Invoices</th>
+                                                <th className="border border-black p-1 w-12">Pcs</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {data.paradas.map((stop, sIdx) => (
+                                                <tr key={sIdx}>
+                                                    <td className="border border-black p-1 text-center">{sIdx + 1}</td>
+                                                    <td className="border border-black p-1">
+                                                        <span className="font-bold">{stop.nombre || stop.name}</span> - {stop.direccion || stop.address}
+                                                    </td>
+                                                    <td className="border border-black p-1 text-center">{stop.invoices || '-'}</td>
+                                                    <td className="border border-black p-1 text-center">{stop.pieces || '-'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )})}
+                        </div>
                     </div>
                 </div>
             );
@@ -1398,12 +1417,7 @@
             const handleGlobalPrint = () => {
                 setPrintData(null);
                 setShowBulkManifestPrint(false);
-                setShowGlobalPrint(true);
-                // Permite que React renderice el componente GlobalManifest antes de llamar a window.print()
-                setTimeout(() => {
-                    window.print();
-                    setShowGlobalPrint(false);
-                }, 700);
+                setShowGlobalPrint(true); // Just show it, let user control print/close
             };
 
             const handleBulkManifestPrint = () => {
@@ -1792,37 +1806,14 @@
                             </div>
                             <div className="flex items-center gap-3">
                                 <span className="text-xs text-slate-400 font-bold mr-2 hidden md:inline-block">User: {user.email}</span>
-                                {view === 'results' && (
-                                    <>
-                                        <button onClick={() => setShowAddRouteModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-slate-600 hover:bg-slate-800 transition-colors shadow-sm">
-                                            <Icon name="plus-circle" className="h-4 w-4" /> Add New Route
-                                        </button>
-                                        <button onClick={() => setShowSavePlanModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-green-600 hover:bg-green-700 transition-colors shadow-sm">
-                                            <Icon name="save" className="h-4 w-4" /> Save Plan
-                                        </button>
-                                        <button onClick={() => setViewingGlobalMap(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-slate-600 bg-white border border-slate-200 hover:text-ess-blue hover:bg-slate-50 transition-colors shadow-sm">
-                                            <Icon name="map" className="h-4 w-4" /> Global Map
-                                        </button>
-                                        <button onClick={handleGlobalPrint} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-slate-800 hover:bg-black transition-colors shadow-sm">
-                                            <Icon name="printer" className="h-4 w-4" /> Summary
-                                        </button>
-                                        <div className="h-6 w-px bg-slate-300 mx-1"></div>
-                                    </>
-                                )}
-                                
-                                {view !== 'results' && (
-                                    <>
-                                        <button onClick={() => setShowLoadPlanModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-slate-600 bg-white border border-slate-200 hover:text-ess-blue hover:bg-slate-50 transition-colors shadow-sm" title="Saved Plans">
-                                            <Icon name="folder-open" className="h-4 w-4" /> Saved Plans
-                                        </button>
-                                        <div className="h-6 w-px bg-slate-300 mx-1"></div>
-                                        <button onClick={() => setView('planning')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'planning' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
-                                        <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
-                                        <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Fleet</button>
-                                        <button onClick={() => setView('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Config</button>
-                                    </>
-                                )}
-                                
+                                <button onClick={() => setShowLoadPlanModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-slate-600 bg-white border border-slate-200 hover:text-ess-blue hover:bg-slate-50 transition-colors shadow-sm" title="Saved Plans">
+                                    <Icon name="folder-open" className="h-4 w-4" /> Saved Plans
+                                </button>
+                                <div className="h-6 w-px bg-slate-300 mx-1"></div>
+                                <button onClick={() => setView('planning')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'planning' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
+                                <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
+                                <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Fleet</button>
+                                <button onClick={() => setView('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Config</button>
                                 <div className="w-px h-6 bg-slate-300 mx-1"></div>
                                 <button onClick={handleLogout} className="text-sm font-medium text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 px-3 py-2 rounded-lg flex items-center gap-2 ml-2"><Icon name="log-out" className="h-4 w-4" /> Exit</button>
                             </div>
@@ -2034,11 +2025,18 @@
                                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm relative">
                                     <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
                                         <h3 className="font-bold text-sm text-slate-500 uppercase flex items-center gap-2"><Icon name="list" className="h-4 w-4" /> Reference List</h3>
-                                        {currentStops.length > 0 && (
-                                            <button onClick={clearAllStops} className="text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors">
-                                                <Icon name="trash-2" className="h-3 w-3" /> Clear All
-                                            </button>
-                                        )}
+                                        <div className="flex gap-2">
+                                            {currentStops.length > 0 && (
+                                                <>
+                                                    <button onClick={() => setShowSavePlanModal(true)} className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors" title="Save current stops and zones">
+                                                        <Icon name="save" className="h-3 w-3" /> Save
+                                                    </button>
+                                                    <button onClick={clearAllStops} className="text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors">
+                                                        <Icon name="trash-2" className="h-3 w-3" /> Clear All
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2">
                                         {currentStops.map((stop, idx) => (
@@ -2442,6 +2440,7 @@
                                 config={companyConfig} 
                                 driverAssignments={driverAssignments} 
                                 drivers={drivers} 
+                                onClose={() => setShowGlobalPrint(false)}
                             />
                         )}
 
