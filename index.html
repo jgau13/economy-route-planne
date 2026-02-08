@@ -470,64 +470,83 @@
             return <div className="w-full h-full rounded-xl" ref={mapRef}></div>;
         };
 
-        const PrintableSheet = ({ routeData, driverName, vehicle, config, duration, zoneName, hideId = false }) => {
-            const today = new Date();
+        const PrintableSheet = ({ routeData, driverName, vehicle, config, duration, zoneName, hideId = false, onClose = null }) => {
+            const [dateVal, setDateVal] = useState(new Date().toLocaleDateString('en-US'));
             const hours = Math.floor((duration || 0) / 60);
             const minutes = Math.round((duration || 0) % 60);
 
+            const isPreview = !!onClose;
+
             return (
-                <div id={hideId ? undefined : "printable-sheet"} className="hidden print:block bg-white text-black p-4 font-sans text-sm page-break">
-                    <div className="flex justify-between items-start mb-6 border-b-2 border-black pb-4">
-                        <div className="flex items-center gap-4">
-                            <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
-                            <div>
-                                <h1 className="text-xl font-bold uppercase tracking-wide">Route Manifest</h1>
-                                <p className="font-bold text-md">{today.toLocaleDateString()}</p>
-                                <p className="font-bold text-lg uppercase mt-1 bg-black text-white inline-block px-2 rounded-sm">{zoneName}</p>
+                <div id={hideId ? undefined : "printable-sheet"} className={`${isPreview ? "fixed inset-0 z-[200] overflow-auto flex items-start justify-center pt-10 pb-10 bg-gray-500/50" : "hidden"} print:block`}>
+                    <div className={`bg-white text-black p-8 font-sans text-sm page-break ${isPreview ? "shadow-2xl max-w-3xl w-full min-h-[11in] relative" : "w-full"}`}>
+                        
+                        {isPreview && (
+                            <div className="no-print absolute top-4 right-4 flex gap-2">
+                                <button onClick={onClose} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow">Close</button>
+                                <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print</button>
+                            </div>
+                        )}
+
+                        <div className="flex justify-between items-start mb-6 border-b-2 border-black pb-4 mt-8 print:mt-0">
+                            <div className="flex items-center gap-4">
+                                <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
+                                <div>
+                                    <h1 className="text-xl font-bold uppercase tracking-wide">Route Manifest</h1>
+                                    <div className="font-bold text-md">
+                                        <input 
+                                            type="text" 
+                                            value={dateVal} 
+                                            onChange={(e) => setDateVal(e.target.value)} 
+                                            className="bg-transparent border-b border-transparent hover:border-gray-400 focus:border-blue-500 outline-none w-40"
+                                        />
+                                    </div>
+                                    <p className="font-bold text-lg uppercase mt-1 bg-black text-white inline-block px-2 rounded-sm">{zoneName}</p>
+                                </div>
+                            </div>
+                            <div className="text-right space-y-1">
+                                <div className="text-base"><span className="font-bold">Driver:</span> {driverName}</div>
+                                <div className="text-base"><span className="font-bold">Truck:</span> {vehicle || "_______"}</div>
+                                <div className="text-base"><span className="font-bold">Est. Time:</span> {hours}h {minutes}m</div>
                             </div>
                         </div>
-                        <div className="text-right space-y-1">
-                            <div className="text-base"><span className="font-bold">Driver:</span> {driverName}</div>
-                            <div className="text-base"><span className="font-bold">Truck:</span> {vehicle || "_______"}</div>
-                            <div className="text-base"><span className="font-bold">Est. Time:</span> {hours}h {minutes}m</div>
-                        </div>
-                    </div>
-                    <table className="w-full border-collapse border border-black mb-4">
-                        <thead>
-                            <tr className="bg-white">
-                                <th className="border border-black p-1 w-8 text-center text-xs">#</th>
-                                <th className="border border-black p-2 text-left w-auto">Customer / Address</th>
-                                <th className="border border-black p-2 w-20 text-center text-xs">Invoices</th>
-                                <th className="border border-black p-2 w-10 text-center text-xs">Pcs</th>
-                                <th className="border border-black p-2 w-32 text-left text-xs">Print Name</th>
-                                <th className="border border-black p-2 w-16 text-left text-xs">Time</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {routeData.map((stop, index) => (
-                                <tr key={index} className="h-14">
-                                    <td className="border border-black p-1 text-center font-bold">{index + 1}</td>
-                                    <td className="border border-black p-2 align-top">
-                                        <div className="font-bold text-sm truncate">{stop.nombre || stop.name}</div>
-                                        <div className="text-[10px] text-gray-600 leading-tight">{stop.direccion || stop.address}</div>
-                                    </td>
-                                    <td className="border border-black p-1 text-center font-mono font-bold text-sm align-middle">{stop.invoices || '-'}</td>
-                                    <td className="border border-black p-1 text-center font-bold text-sm align-middle">{stop.pieces || '-'}</td>
-                                    <td className="border border-black p-1"></td>
-                                    <td className="border border-black p-1"></td>
+                        <table className="w-full border-collapse border border-black mb-4">
+                            <thead>
+                                <tr className="bg-white">
+                                    <th className="border border-black p-1 w-8 text-center text-xs">#</th>
+                                    <th className="border border-black p-2 text-left w-auto">Customer / Address</th>
+                                    <th className="border border-black p-2 w-20 text-center text-xs">Invoices</th>
+                                    <th className="border border-black p-2 w-10 text-center text-xs">Pcs</th>
+                                    <th className="border border-black p-2 w-32 text-left text-xs">Print Name</th>
+                                    <th className="border border-black p-2 w-16 text-left text-xs">Time</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    <div className="flex justify-between items-end mt-4 pt-4 border-t border-black">
-                        <div className="space-y-4">
-                            <div>Checked by: __________________________</div>
-                            <div>Time: __________________________</div>
-                        </div>
-                        <div className="text-right text-[10px]">
-                            <div className="font-bold text-xs">{config.companyName || "ECONOMY SIGN SUPPLY"}</div>
-                            <div>PHONE: {config.phone || "407-901-0900"}</div>
-                            <div>{config.address || "8350 PARKLINE BLVD, ORLANDO, FL"}</div>
+                            </thead>
+                            <tbody>
+                                {routeData.map((stop, index) => (
+                                    <tr key={index} className="h-14">
+                                        <td className="border border-black p-1 text-center font-bold">{index + 1}</td>
+                                        <td className="border border-black p-2 align-top">
+                                            <div className="font-bold text-sm truncate">{stop.nombre || stop.name}</div>
+                                            <div className="text-[10px] text-gray-600 leading-tight">{stop.direccion || stop.address}</div>
+                                        </td>
+                                        <td className="border border-black p-1 text-center font-mono font-bold text-sm align-middle">{stop.invoices || '-'}</td>
+                                        <td className="border border-black p-1 text-center font-bold text-sm align-middle">{stop.pieces || '-'}</td>
+                                        <td className="border border-black p-1"></td>
+                                        <td className="border border-black p-1"></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <div className="flex justify-between items-end mt-4 pt-4 border-t border-black">
+                            <div className="space-y-4">
+                                <div>Checked by: __________________________</div>
+                                <div>Time: __________________________</div>
+                            </div>
+                            <div className="text-right text-[10px]">
+                                <div className="font-bold text-xs">{config.companyName || "ECONOMY SIGN SUPPLY"}</div>
+                                <div>PHONE: {config.phone || "407-901-0900"}</div>
+                                <div>{config.address || "8350 PARKLINE BLVD, ORLANDO, FL"}</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1474,13 +1493,13 @@
             };
 
             const addVehicle = async () => { if(newVehicleName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles'), { name: newVehicleName }); setNewVehicleName(''); } };
-            const deleteVehicle = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles', id)); };
-            const updateVehicle = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles', id), data); setEditingVehicleId(null); };
-            const assignVehicleDriver = async (vehicleId, driverName) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles', vehicleId), { assignedDriver: driverName }); };
+            const deleteVehicle = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'vehicles', id)); };
+            const updateVehicle = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'vehicles', id), data); setEditingVehicleId(null); };
+            const assignVehicleDriver = async (vehicleId, driverName) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'vehicles', vehicleId), { assignedDriver: driverName }); };
             
             const addDriver = async () => { if(newDriverName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers'), { name: newDriverName, phone: newDriverPhone, active: true }); setNewDriverName(''); setNewDriverPhone(''); } };
-            const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers', id)); };
-            const updateDriver = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers', id), data); setEditingDriverId(null); };
+            const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'drivers', id)); };
+            const updateDriver = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'drivers', id), data); setEditingDriverId(null); };
             
             const saveClient = async () => { 
                 if(clientFormName && clientFormAddress) { 
@@ -1490,7 +1509,7 @@
                     setClientFormName(''); setClientFormAddress('');
                 } 
             };
-            const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients', id)); };
+            const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'clients', id)); };
             const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setEditingClientId(c.id); };
 
             const addZoneFromSettings = async () => { 
@@ -1499,7 +1518,7 @@
                     setNewZoneName(''); 
                 } 
             };
-            const deleteZoneFromSettings = async (id) => { if(confirm('Delete zone?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones', id)); };
+            const deleteZoneFromSettings = async (id) => { if(confirm('Delete zone?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'zones', id)); };
 
             const saveSettings = async () => {
                 if (window.fbDb) {
@@ -2015,18 +2034,11 @@
                                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm relative">
                                     <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
                                         <h3 className="font-bold text-sm text-slate-500 uppercase flex items-center gap-2"><Icon name="list" className="h-4 w-4" /> Reference List</h3>
-                                        <div className="flex gap-2">
-                                            {currentStops.length > 0 && (
-                                                <>
-                                                    <button onClick={() => setShowSavePlanModal(true)} className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors" title="Save current stops and zones">
-                                                        <Icon name="save" className="h-3 w-3" /> Save
-                                                    </button>
-                                                    <button onClick={clearAllStops} className="text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors">
-                                                        <Icon name="trash-2" className="h-3 w-3" /> Clear All
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
+                                        {currentStops.length > 0 && (
+                                            <button onClick={clearAllStops} className="text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors">
+                                                <Icon name="trash-2" className="h-3 w-3" /> Clear All
+                                            </button>
+                                        )}
                                     </div>
                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2">
                                         {currentStops.map((stop, idx) => (
@@ -2227,7 +2239,6 @@
                                                                 duration: routeData.duracion_estimada,
                                                                 zoneName: zoneName
                                                             });
-                                                            setTimeout(() => window.print(), 100);
                                                         }}
                                                         className="col-span-2 bg-slate-800 text-white hover:bg-black font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors"
                                                     >
@@ -2480,6 +2491,7 @@
                                 duration={printData.duration}
                                 zoneName={printData.zoneName}
                                 config={companyConfig}
+                                onClose={() => setPrintData(null)}
                             />
                         )}
                     </main>
