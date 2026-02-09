@@ -699,6 +699,25 @@
             const [editingGroupId, setEditingGroupId] = useState(null);
             const [newZoneName, setNewZoneName] = useState('');
             
+            // Helper para contar paradas seleccionadas
+            const selectedStopCount = useMemo(() => {
+                if (!stopSelectionInput.trim()) return 0;
+                const parts = stopSelectionInput.split(',').map(s => s.trim());
+                const indices = new Set();
+                parts.forEach(part => {
+                    if (part.includes('-')) {
+                        const [start, end] = part.split('-').map(Number);
+                        if (!isNaN(start) && !isNaN(end)) {
+                            for (let i = Math.min(start, end); i <= Math.max(start, end); i++) indices.add(i);
+                        }
+                    } else {
+                        const num = Number(part);
+                        if (!isNaN(num)) indices.add(num);
+                    }
+                });
+                return indices.size;
+            }, [stopSelectionInput]);
+            
             // SETTINGS
             const [companyConfig, setCompanyConfig] = useState({ companyName: "ECONOMY SIGN SUPPLY", phone: "407-901-0900", address: "8350 PARKLINE BLVD, ORLANDO, FL" });
             const [newPin, setNewPin] = useState('');
@@ -1926,7 +1945,12 @@
                                                         value={stopSelectionInput}
                                                         onChange={e => setStopSelectionInput(e.target.value)}
                                                     />
-                                                    <p className="text-[10px] text-slate-400 mt-1">Use commas for individual stops and dashes for ranges.</p>
+                                                    <div className="flex justify-between items-center mt-1">
+                                                        <p className="text-[10px] text-slate-400">Use commas for individual stops and dashes for ranges.</p>
+                                                        <span className="text-[10px] font-bold text-ess-blue bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                                                            # stops: {selectedStopCount}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                                 <div className="space-y-2">
                                                     <input 
