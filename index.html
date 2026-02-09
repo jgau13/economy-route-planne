@@ -479,7 +479,7 @@
 
             return (
                 <div id={hideId ? undefined : "printable-sheet"} className={`${isPreview ? "fixed inset-0 z-[200] overflow-auto flex items-start justify-center pt-10 pb-10 bg-gray-500/50" : "hidden"} print:block`}>
-                    <div className={`bg-white text-black p-8 font-sans text-sm page-break ${isPreview ? "shadow-2xl max-w-3xl w-full min-h-[11in] relative" : "w-full"}`}>
+                    <div className={`bg-white text-black p-8 font-sans text-sm page-break ${isPreview ? "max-w-3xl w-full min-h-[11in] relative" : "w-full"}`}>
                         
                         {isPreview && (
                             <div className="no-print absolute top-4 right-4 flex gap-2">
@@ -561,12 +561,12 @@
 
             return (
                 <div id="global-manifest" className={`${isPreview ? "fixed inset-0 z-[200] overflow-auto flex items-start justify-center pt-10 pb-10 bg-gray-500/50" : "hidden"} print:block`}>
-                    <div className={`bg-white text-black p-8 font-sans ${isPreview ? "shadow-2xl max-w-4xl w-full min-h-[11in] relative" : "w-full"}`}>
+                    <div className={`bg-white text-black p-8 font-sans ${isPreview ? "max-w-4xl w-full min-h-[11in] relative" : "w-full"}`}>
                         
                         {isPreview && (
                             <div className="no-print absolute top-4 right-4 flex gap-2">
                                 <button onClick={onClose} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow">Close Preview</button>
-                                <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print</button>
+                                <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-ess-blue hover:bg-sky-700 text-white px-4 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print</button>
                             </div>
                         )}
 
