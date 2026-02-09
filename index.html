@@ -478,8 +478,8 @@
             const isPreview = !!onClose;
 
             return (
-                <div id={hideId ? undefined : "printable-sheet"} className={`${isPreview ? "fixed inset-0 z-[200] overflow-auto flex items-start justify-center pt-10 pb-10 bg-gray-500/50" : "hidden"} print:block`}>
-                    <div className={`bg-white text-black p-8 font-sans text-sm page-break ${isPreview ? "max-w-3xl w-full min-h-[11in] relative" : "w-full"}`}>
+                <div id={hideId ? undefined : "printable-sheet"} className={`${isPreview ? "fixed inset-0 z-[200] overflow-auto flex items-start justify-center pt-10 pb-10 bg-gray-500/50" : "hidden"} print:block print:p-0 print:overflow-visible`}>
+                    <div className={`bg-white text-black p-8 font-sans text-sm page-break ${isPreview ? "max-w-3xl w-full min-h-[11in] relative print:min-h-0 print:h-auto print:shadow-none print:max-w-none print:w-full" : "w-full"}`}>
                         
                         {isPreview && (
                             <div className="no-print absolute top-4 right-4 flex gap-2">
@@ -560,8 +560,8 @@
             const isPreview = !!onClose;
 
             return (
-                <div id="global-manifest" className={`${isPreview ? "fixed inset-0 z-[200] overflow-auto flex items-start justify-center pt-10 pb-10 bg-gray-500/50" : "hidden"} print:block`}>
-                    <div className={`bg-white text-black p-8 font-sans ${isPreview ? "max-w-4xl w-full min-h-[11in] relative" : "w-full"}`}>
+                <div id="global-manifest" className={`${isPreview ? "fixed inset-0 z-[200] overflow-auto flex items-start justify-center pt-10 pb-10 bg-gray-500/50" : "hidden"} print:block print:p-0 print:overflow-visible`}>
+                    <div className={`bg-white text-black p-8 font-sans ${isPreview ? "max-w-4xl w-full min-h-[11in] relative print:min-h-0 print:h-auto print:shadow-none print:max-w-none print:w-full" : "w-full"}`}>
                         
                         {isPreview && (
                             <div className="no-print absolute top-4 right-4 flex gap-2">
