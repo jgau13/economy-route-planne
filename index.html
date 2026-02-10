@@ -1196,9 +1196,15 @@
             // Helper to re-attach IDs and other DB info to optimized results
             const enrichWithClientData = (stops) => {
                 return stops.map(s => {
-                    const match = currentStops.find(cs => 
-                        (cs.address || "").toLowerCase().trim() === (s.direccion || s.address || "").toLowerCase().trim()
-                    );
+                    // Robust lookup prioritize exact ID then normalized address
+                    let match = null;
+                    if (s.id) match = currentStops.find(cs => cs.id === s.id);
+                    if (!match) {
+                        match = currentStops.find(cs => 
+                            (cs.address || "").toLowerCase().trim() === (s.direccion || s.address || "").toLowerCase().trim()
+                        );
+                    }
+                    
                     if (match) {
                         return { 
                             ...s, 
@@ -1283,11 +1289,15 @@
                                     relatedRouteKeys.forEach(key => {
                                          newResults[key].color = g.color;
                                          newResults[key].paradas = newResults[key].paradas.map(p => {
-                                             const freshStop = stops.find(s => s.address === p.direccion);
+                                             // Robust ID preservation during refresh
+                                             let freshStop = null;
+                                             if (p.id) freshStop = stops.find(s => s.id === p.id);
+                                             if (!freshStop) freshStop = stops.find(s => (s.address || "").toLowerCase().trim() === (p.direccion || "").toLowerCase().trim());
+
                                              if (freshStop) {
                                                  return { 
                                                      ...p, 
-                                                     id: freshStop.id, // IMPORTANT: Preserve ID
+                                                     id: freshStop.id, 
                                                      invoices: freshStop.invoices, 
                                                      pieces: freshStop.pieces, 
                                                      nombre: freshStop.name 
@@ -1332,7 +1342,10 @@
                              currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
                               relatedRouteKeys.forEach(key => {
                                   newResults[key].paradas = newResults[key].paradas.map(p => {
-                                      const freshStop = ungroupedStops.find(s => s.address === p.direccion);
+                                      let freshStop = null;
+                                      if (p.id) freshStop = ungroupedStops.find(s => s.id === p.id);
+                                      if (!freshStop) freshStop = ungroupedStops.find(s => (s.address || "").toLowerCase().trim() === (p.direccion || "").toLowerCase().trim());
+                                      
                                       if (freshStop) return { 
                                           ...p, 
                                           id: freshStop.id,
@@ -1367,7 +1380,6 @@
                             
                             Object.keys(data).forEach((key, i) => {
                                  const routeKey = task.zoneName === "UNASSIGNED" ? `UNASSIGNED ${i+1}` : (task.body.num_vans > 1 ? `${task.zoneName} - Route ${i+1}` : task.zoneName);
-                                 // Enrich new stops with IDs immediately
                                  const enrichedStops = enrichWithClientData(data[key].paradas);
                                  newResults[routeKey] = { ...data[key], paradas: enrichedStops, color: task.color };
                             });
@@ -1503,10 +1515,7 @@
                 const driver = drivers.find(d => d.name === driverName);
                 if (driver && driver.phone) phone = driver.phone.replace(/\D/g, '');
                 
-                // Función auxiliar para codificar con + en lugar de %20
                 const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
-
-                // Use the provided routeLink if available, otherwise construct it
                 const link = routeLink ? routeLink : (stops && stops.length > 0 
                     ? `https://www.google.com/maps/dir/?api=1&origin=${encode(baseAddress)}&destination=${encode(baseAddress)}&waypoints=${stops.map(s => encode(s.direccion || s.address)).join('%7C')}&travelmode=driving` 
                     : "");
@@ -1515,7 +1524,6 @@
                 return phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
             };
 
-            // ADDED THIS FUNCTION
             const openDriverMap = (name, data) => {
                 setViewingDriver({ name, data });
             };
@@ -1523,14 +1531,13 @@
             const handleGlobalPrint = () => {
                 setPrintData(null);
                 setShowBulkManifestPrint(false);
-                setShowGlobalPrint(true); // Just show it, let user control print/close
+                setShowGlobalPrint(true); 
             };
 
             const handleBulkManifestPrint = () => {
                 setPrintData(null);
                 setShowGlobalPrint(false);
                 setShowBulkManifestPrint(true);
-                // Dar tiempo para renderizar todas las hojas
                 setTimeout(() => {
                     window.print();
                     setShowBulkManifestPrint(false);
@@ -1555,10 +1562,7 @@
                 const newRoutes = JSON.parse(JSON.stringify(optimizedRoutes));
                 const [movedStop] = newRoutes[sourceZone].paradas.splice(sourceIndex, 1);
                 
-                // Ensure ID presence
-                if (!movedStop.id) {
-                    movedStop.id = findStopId(movedStop);
-                }
+                if (!movedStop.id) movedStop.id = findStopId(movedStop);
                 
                 if (targetIndex !== null) {
                     let adjustedTarget = targetIndex;
@@ -1573,12 +1577,9 @@
                 setOptimizedRoutes(newRoutes);
                 setSelectedResultStops(new Set());
 
-                // Sincronizar cambios de movimiento de paradas con los grupos del Planner
                 if (movedStop.id) {
                     setStopGroups(gs => gs.map(g => {
-                        // Remove from source (implicitly handled by filtering)
                         let newStops = g.stops.filter(id => id !== movedStop.id);
-                        
                         const targetBase = targetZoneName.split(' - Route')[0];
                         if (g.name === targetBase) {
                              if (!newStops.includes(movedStop.id)) newStops.push(movedStop.id);
@@ -1697,7 +1698,6 @@
                 const newRoutes = JSON.parse(JSON.stringify(optimizedRoutes));
                 const itemsToMove = [];
                 
-                // 1. Identify items and sort by index descending to safely splice
                 const selectionList = Array.from(selectedResultStops).map(k => {
                     const [z, i] = k.split('|');
                     return { zone: z, index: parseInt(i) };
@@ -1714,14 +1714,12 @@
                     grouped[zone].forEach(idx => {
                         if (newRoutes[zone] && newRoutes[zone].paradas[idx]) {
                             const [stop] = newRoutes[zone].paradas.splice(idx, 1);
-                            // Ensure ID present
                             if (!stop.id) stop.id = findStopId(stop);
                             itemsToMove.push(stop);
                         }
                     });
                 });
 
-                // 2. Add to target
                 if (newRoutes[bulkMoveTargetZone]) {
                     newRoutes[bulkMoveTargetZone].paradas.push(...itemsToMove.reverse());
                 } else {
@@ -1731,15 +1729,9 @@
 
                 setOptimizedRoutes(newRoutes);
                 
-                // 3. Sync StopGroups
                 setStopGroups(gs => gs.map(g => {
-                    // IDs to move
                     const moveIds = new Set(itemsToMove.map(m => m.id).filter(Boolean));
-                    
-                    // Remove from current group
                     let newStops = g.stops.filter(id => !moveIds.has(id));
-                    
-                    // Add to target group if name matches base zone name
                     const targetBase = bulkMoveTargetZone.split(' - Route')[0];
                     
                     if (g.name === targetBase) {
