@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -733,6 +734,8 @@
             const [viewingDriver, setViewingDriver] = useState(null);
             const [showGlobalPrint, setShowGlobalPrint] = useState(false);
             const [viewingGlobalMap, setViewingGlobalMap] = useState(false);
+            const [selectedResultStops, setSelectedResultStops] = useState(new Set());
+            const [bulkMoveTargetZone, setBulkMoveTargetZone] = useState('');
             
             // SAVED PLANS
             const [showSavePlanModal, setShowSavePlanModal] = useState(false);
@@ -845,6 +848,7 @@
                     newRoutes[zoneName].paradas.splice(index, 1);
                     return newRoutes;
                 });
+                setSelectedResultStops(new Set());
             };
             
             const handleDeleteRoute = (zoneName) => {
@@ -864,6 +868,7 @@
                     
                     return newRoutes;
                 });
+                setSelectedResultStops(new Set());
             };
 
             const confirmAddStop = async () => {
@@ -1296,6 +1301,7 @@
                     }
                     
                     setOptimizedRoutes(newResults);
+                    setSelectedResultStops(new Set());
                     setView('results');
                 } catch (e) { setError("Error generating routes: " + e.message); } finally { setLoading(false); }
             };
@@ -1364,7 +1370,7 @@
                         [zoneName]: { ...prev[zoneName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas }
                     }));
                 } catch(e) { console.error(e); alert("Error recalculating: "+e.message); }
-                finally { setRecalculating(p => ({...p, [zoneName]: false})); }
+                finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
             };
 
             const recalculateRoute = async (zoneName, stops) => {
@@ -1383,7 +1389,7 @@
                         [zoneName]: { ...prev[zoneName], ...d[firstKey] }
                     }));
                 } catch(e) { console.error(e); alert("Error re-optimizing: "+e.message); }
-                finally { setRecalculating(p => ({...p, [zoneName]: false})); }
+                finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
             };
 
             const handleOptimizeRemaining = async (zoneName) => {
@@ -1402,7 +1408,7 @@
                         [zoneName]: { ...prev[zoneName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas }
                     }));
                 } catch(e) { console.error(e); alert("Error optimizing remaining: "+e.message); }
-                finally { setRecalculating(p => ({...p, [zoneName]: false})); }
+                finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
             };
 
             const reverseRoute = (zoneName) => {
@@ -1479,6 +1485,7 @@
                 }
                 
                 setOptimizedRoutes(newRoutes);
+                setSelectedResultStops(new Set());
 
                 // Sincronizar cambios de movimiento de paradas con los grupos del Planner
                 setStopGroups(gs => gs.map(g => {
@@ -1585,6 +1592,84 @@
             const overrideVehicle = (zoneName, vehicleName) => { setManualVehicleAssignments(prev => ({ ...prev, [zoneName]: vehicleName })); };
             
             const handleLogout = () => { if(window.fbSignOut && window.fbAuth) window.fbSignOut(window.fbAuth); else window.location.reload(); };
+
+            const handleStopSelectionChange = (zoneName, index) => {
+                const key = `${zoneName}|${index}`;
+                const newSet = new Set(selectedResultStops);
+                if (newSet.has(key)) newSet.delete(key);
+                else newSet.add(key);
+                setSelectedResultStops(newSet);
+            };
+
+            const executeBulkMove = () => {
+                if (!bulkMoveTargetZone) return alert("Select a target route");
+                
+                const newRoutes = JSON.parse(JSON.stringify(optimizedRoutes));
+                const itemsToMove = [];
+                
+                // 1. Identify items and sort by index descending to safely splice
+                const selectionList = Array.from(selectedResultStops).map(k => {
+                    const [z, i] = k.split('|');
+                    return { zone: z, index: parseInt(i) };
+                });
+
+                const grouped = {};
+                selectionList.forEach(item => {
+                    if(!grouped[item.zone]) grouped[item.zone] = [];
+                    grouped[item.zone].push(item.index);
+                });
+
+                Object.keys(grouped).forEach(zone => {
+                    grouped[zone].sort((a, b) => b - a); // Descending
+                    grouped[zone].forEach(idx => {
+                        if (newRoutes[zone] && newRoutes[zone].paradas[idx]) {
+                            const [stop] = newRoutes[zone].paradas.splice(idx, 1);
+                            // Add source info to track where it came from if needed, 
+                            // but for now just push to list
+                            itemsToMove.push(stop);
+                        }
+                    });
+                });
+
+                // 2. Add to target
+                // itemsToMove are currently in reverse order of removal (last index first).
+                // If we want to maintain some logical order, we might want to reverse them back.
+                // But since they come from multiple zones, order is arbitrary.
+                // Let's just reverse to keep intra-zone order somewhat consistent if selected top-down.
+                if (newRoutes[bulkMoveTargetZone]) {
+                    newRoutes[bulkMoveTargetZone].paradas.push(...itemsToMove.reverse());
+                } else {
+                     alert("Target route not found.");
+                     return;
+                }
+
+                setOptimizedRoutes(newRoutes);
+                
+                // 3. Sync StopGroups
+                setStopGroups(gs => gs.map(g => {
+                    // IDs to move
+                    const moveIds = new Set(itemsToMove.map(m => m.id).filter(Boolean));
+                    
+                    // Remove from current group
+                    let newStops = g.stops.filter(id => !moveIds.has(id));
+                    
+                    // Add to target group if name matches base zone name
+                    // (Assuming targetZone matches a group name or we just put them in the specific route container)
+                    // Note: stopGroups maps to "Zone Names" (e.g. MIAMI), but optimizedRoutes keys might be "MIAMI - Route 1".
+                    // We need to extract base name.
+                    const targetBase = bulkMoveTargetZone.split(' - Route')[0];
+                    
+                    if (g.name === targetBase) {
+                         itemsToMove.forEach(m => {
+                             if(m.id && !newStops.includes(m.id)) newStops.push(m.id);
+                         });
+                    }
+                    return { ...g, stops: newStops };
+                }));
+
+                setSelectedResultStops(new Set());
+                setBulkMoveTargetZone('');
+            };
 
             if (!user) return <LoginScreen />;
 
@@ -2197,6 +2282,15 @@
                                                             onDrop={(e) => { e.stopPropagation(); handleResultDrop(e, zoneName, i); }}
                                                             onDragOver={(e) => e.preventDefault()}
                                                         >
+                                                            <div className="flex items-center justify-center mr-2">
+                                                               <input 
+                                                                   type="checkbox" 
+                                                                   className="w-4 h-4 text-ess-blue rounded border-gray-300 focus:ring-ess-blue cursor-pointer"
+                                                                   checked={selectedResultStops.has(`${zoneName}|${i}`)}
+                                                                   onChange={() => handleStopSelectionChange(zoneName, i)}
+                                                                   onClick={(e) => e.stopPropagation()}
+                                                               />
+                                                            </div>
                                                             <span className="font-bold text-slate-400 text-xs mt-0.5 w-5 text-right">{i+1}.</span>
                                                             <div className="flex-1 leading-tight">
                                                                 <div className="font-bold text-slate-700">{stop.nombre || stop.name}</div>
@@ -2277,6 +2371,39 @@
                                         <Icon name="printer" className="h-6 w-6" /> PRINT ALL MANIFESTS (2 Sheets Each)
                                     </button>
                                 </div>
+                                
+                                {selectedResultStops.size > 0 && (
+                                    <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white rounded-full shadow-2xl border border-slate-200 p-2 px-6 flex items-center gap-4 z-[50] animate-fade-in">
+                                        <span className="font-bold text-slate-700 whitespace-nowrap">{selectedResultStops.size} selected</span>
+                                        
+                                        <select 
+                                            className="bg-slate-100 border-none rounded-lg text-sm p-2 w-48 outline-none font-bold text-slate-600"
+                                            value={bulkMoveTargetZone}
+                                            onChange={e => setBulkMoveTargetZone(e.target.value)}
+                                        >
+                                            <option value="">Move to...</option>
+                                            {Object.keys(optimizedRoutes).map(r => (
+                                                <option key={r} value={r}>{r}</option>
+                                            ))}
+                                        </select>
+                                        
+                                        <button 
+                                            onClick={executeBulkMove}
+                                            disabled={!bulkMoveTargetZone}
+                                            className="bg-ess-blue text-white rounded-full p-2 px-4 font-bold text-sm hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                        >
+                                            <Icon name="arrow-right" className="h-4 w-4" /> Move
+                                        </button>
+                                        
+                                        <button 
+                                            onClick={() => setSelectedResultStops(new Set())}
+                                            className="text-slate-400 hover:text-red-500 p-1"
+                                            title="Clear selection"
+                                        >
+                                            <Icon name="x" className="h-5 w-5" />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
 
