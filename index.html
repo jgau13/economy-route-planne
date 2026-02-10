@@ -566,7 +566,7 @@
                         {isPreview && (
                             <div className="no-print absolute top-4 right-4 flex gap-2">
                                 <button onClick={onClose} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow">Close Preview</button>
-                                <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-ess-blue hover:bg-sky-700 text-white px-4 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print</button>
+                                <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-ess-blue hover:bg-sky-700 text-white px-8 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print</button>
                             </div>
                         )}
 
@@ -910,7 +910,7 @@
                         return newRoutes;
                     });
 
-                    // Sincronizar cambios con la base de datos para que se vean en el Planner
+                    // Sincronizar cambios con la base de datos para que se vean en el Planner y no se borren al generar
                     if (stopId && window.fbDb && user) {
                         try {
                             await window.fbUpdateDoc(
@@ -1193,7 +1193,7 @@
                 return mapData;
             }, [currentStops, stopGroups]);
 
-            // Helper to re-attach IDs and other DB info to optimized results
+            // Helper to re-attach IDs and latest DB info to optimized results
             const enrichWithClientData = (stops) => {
                 return stops.map(s => {
                     // Robust lookup prioritize exact ID then normalized address
@@ -1209,8 +1209,8 @@
                         return { 
                             ...s, 
                             id: match.id, 
-                            invoices: match.invoices, 
-                            pieces: match.pieces, 
+                            invoices: match.invoices || s.invoices || "", 
+                            pieces: match.pieces || s.pieces || "", 
                             nombre: match.name,
                             direccion: s.direccion || match.address
                         };
@@ -1281,6 +1281,7 @@
                                 const currentAddresses = stops.map(s => s.address).sort();
                                 const existingAddressesSorted = existingStops.sort();
                                 
+                                // Loose check for matching set of addresses
                                 if (currentAddresses.length > 0 && 
                                     currentAddresses.length === existingAddressesSorted.length &&
                                     currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
@@ -1342,6 +1343,7 @@
                              currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
                               relatedRouteKeys.forEach(key => {
                                   newResults[key].paradas = newResults[key].paradas.map(p => {
+                                      // Robust matching for ungrouped too
                                       let freshStop = null;
                                       if (p.id) freshStop = ungroupedStops.find(s => s.id === p.id);
                                       if (!freshStop) freshStop = ungroupedStops.find(s => (s.address || "").toLowerCase().trim() === (p.direccion || "").toLowerCase().trim());
@@ -1380,6 +1382,7 @@
                             
                             Object.keys(data).forEach((key, i) => {
                                  const routeKey = task.zoneName === "UNASSIGNED" ? `UNASSIGNED ${i+1}` : (task.body.num_vans > 1 ? `${task.zoneName} - Route ${i+1}` : task.zoneName);
+                                 // Enrich new stops with IDs immediately using robust helper
                                  const enrichedStops = enrichWithClientData(data[key].paradas);
                                  newResults[routeKey] = { ...data[key], paradas: enrichedStops, color: task.color };
                             });
