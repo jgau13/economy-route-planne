@@ -899,13 +899,27 @@
 
             const confirmAddStop = async () => {
                 if (editingResultStop) {
+                    let stopId = null;
                     setOptimizedRoutes(prev => {
                         const newRoutes = JSON.parse(JSON.stringify(prev));
                         const stop = newRoutes[editingResultStop.zoneName].paradas[editingResultStop.index];
                         stop.invoices = tempInvoices;
                         stop.pieces = tempPieces;
+                        // Intentar obtener el ID para sincronizar
+                        stopId = stop.id || findStopId(stop);
                         return newRoutes;
                     });
+
+                    // Sincronizar cambios con la base de datos para que se vean en el Planner
+                    if (stopId && window.fbDb && user) {
+                        try {
+                            await window.fbUpdateDoc(
+                                window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops', stopId), 
+                                { invoices: tempInvoices, pieces: tempPieces }
+                            );
+                        } catch(e) { console.error("Error syncing edit:", e); }
+                    }
+
                     setEditingResultStop(null);
                     setShowAddDetailsModal(false);
                     return;
