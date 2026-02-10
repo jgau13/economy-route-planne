@@ -840,13 +840,37 @@
                 setShowAddDetailsModal(true);
             };
             
+            // Helper to find ID by address if missing
+            const findStopId = (stop) => {
+                if (stop.id) return stop.id;
+                const found = currentStops.find(s => 
+                    (s.address || "").toLowerCase().trim() === (stop.direccion || stop.address || "").toLowerCase().trim()
+                );
+                return found ? found.id : null;
+            };
+
             const deleteResultStop = (zoneName, index) => {
                 if(!confirm("Remove this stop from route?")) return;
+                
+                let stopIdToDelete = null;
+                
                 setOptimizedRoutes(prev => {
                     const newRoutes = JSON.parse(JSON.stringify(prev));
-                    newRoutes[zoneName].paradas.splice(index, 1);
+                    const [removed] = newRoutes[zoneName].paradas.splice(index, 1);
+                    stopIdToDelete = findStopId(removed);
                     return newRoutes;
                 });
+                
+                if (stopIdToDelete) {
+                    setStopGroups(prev => prev.map(g => {
+                        const targetBase = zoneName.split(' - Route')[0];
+                        if(g.name === targetBase) {
+                            return { ...g, stops: g.stops.filter(id => id !== stopIdToDelete) };
+                        }
+                        return g;
+                    }));
+                }
+                
                 setSelectedResultStops(new Set());
             };
             
@@ -867,6 +891,9 @@
                     
                     return newRoutes;
                 });
+                
+                // Also remove the group from Planning
+                setStopGroups(prev => prev.filter(g => g.name !== zoneName));
                 setSelectedResultStops(new Set());
             };
 
@@ -1152,6 +1179,26 @@
                 return mapData;
             }, [currentStops, stopGroups]);
 
+            // Helper to re-attach IDs and other DB info to optimized results
+            const enrichWithClientData = (stops) => {
+                return stops.map(s => {
+                    const match = currentStops.find(cs => 
+                        (cs.address || "").toLowerCase().trim() === (s.direccion || s.address || "").toLowerCase().trim()
+                    );
+                    if (match) {
+                        return { 
+                            ...s, 
+                            id: match.id, 
+                            invoices: match.invoices, 
+                            pieces: match.pieces, 
+                            nombre: match.name,
+                            direccion: s.direccion || match.address
+                        };
+                    }
+                    return s;
+                });
+            };
+
             const generateRoutes = async () => {
                 if (stopGroups.length === 0 && currentStops.length === 0) return;
                 setLoading(true); setError('');
@@ -1224,7 +1271,13 @@
                                          newResults[key].paradas = newResults[key].paradas.map(p => {
                                              const freshStop = stops.find(s => s.address === p.direccion);
                                              if (freshStop) {
-                                                 return { ...p, invoices: freshStop.invoices, pieces: freshStop.pieces, nombre: freshStop.name };
+                                                 return { 
+                                                     ...p, 
+                                                     id: freshStop.id, // IMPORTANT: Preserve ID
+                                                     invoices: freshStop.invoices, 
+                                                     pieces: freshStop.pieces, 
+                                                     nombre: freshStop.name 
+                                                 };
                                              }
                                              return p;
                                          });
@@ -1266,7 +1319,13 @@
                               relatedRouteKeys.forEach(key => {
                                   newResults[key].paradas = newResults[key].paradas.map(p => {
                                       const freshStop = ungroupedStops.find(s => s.address === p.direccion);
-                                      if (freshStop) return { ...p, invoices: freshStop.invoices, pieces: freshStop.pieces, nombre: freshStop.name };
+                                      if (freshStop) return { 
+                                          ...p, 
+                                          id: freshStop.id,
+                                          invoices: freshStop.invoices, 
+                                          pieces: freshStop.pieces, 
+                                          nombre: freshStop.name 
+                                      };
                                       return p;
                                   });
                               });
@@ -1294,7 +1353,9 @@
                             
                             Object.keys(data).forEach((key, i) => {
                                  const routeKey = task.zoneName === "UNASSIGNED" ? `UNASSIGNED ${i+1}` : (task.body.num_vans > 1 ? `${task.zoneName} - Route ${i+1}` : task.zoneName);
-                                 newResults[routeKey] = { ...data[key], color: task.color };
+                                 // Enrich new stops with IDs immediately
+                                 const enrichedStops = enrichWithClientData(data[key].paradas);
+                                 newResults[routeKey] = { ...data[key], paradas: enrichedStops, color: task.color };
                             });
                         }));
                     }
@@ -1364,9 +1425,11 @@
                     const d = await res.json();
                     if (!res.ok) throw new Error(d.error);
                     
+                    const enrichedStops = enrichWithClientData(d.paradas);
+                    
                     setOptimizedRoutes(prev => ({
                         ...prev,
-                        [zoneName]: { ...prev[zoneName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas }
+                        [zoneName]: { ...prev[zoneName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: enrichedStops }
                     }));
                 } catch(e) { console.error(e); alert("Error recalculating: "+e.message); }
                 finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
@@ -1383,9 +1446,11 @@
                     const d = await res.json();
                     if (!res.ok) throw new Error(d.error);
                     const firstKey = Object.keys(d)[0];
+                    const enrichedStops = enrichWithClientData(d[firstKey].paradas);
+                    
                     setOptimizedRoutes(prev => ({
                         ...prev,
-                        [zoneName]: { ...prev[zoneName], ...d[firstKey] }
+                        [zoneName]: { ...prev[zoneName], ...d[firstKey], paradas: enrichedStops }
                     }));
                 } catch(e) { console.error(e); alert("Error re-optimizing: "+e.message); }
                 finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
@@ -1402,9 +1467,12 @@
                     });
                     const d = await res.json();
                     if (!res.ok) throw new Error(d.error);
+                    
+                    const enrichedStops = enrichWithClientData(d.paradas);
+                    
                     setOptimizedRoutes(prev => ({
                         ...prev,
-                        [zoneName]: { ...prev[zoneName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: d.paradas }
+                        [zoneName]: { ...prev[zoneName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: enrichedStops }
                     }));
                 } catch(e) { console.error(e); alert("Error optimizing remaining: "+e.message); }
                 finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
@@ -1473,6 +1541,11 @@
                 const newRoutes = JSON.parse(JSON.stringify(optimizedRoutes));
                 const [movedStop] = newRoutes[sourceZone].paradas.splice(sourceIndex, 1);
                 
+                // Ensure ID presence
+                if (!movedStop.id) {
+                    movedStop.id = findStopId(movedStop);
+                }
+                
                 if (targetIndex !== null) {
                     let adjustedTarget = targetIndex;
                     if (sourceZone === targetZoneName && sourceIndex < targetIndex) {
@@ -1487,14 +1560,18 @@
                 setSelectedResultStops(new Set());
 
                 // Sincronizar cambios de movimiento de paradas con los grupos del Planner
-                setStopGroups(gs => gs.map(g => {
-                    let newStops = g.stops.filter(id => id !== movedStop.id);
-                    const targetBase = targetZoneName.split(' - Route')[0];
-                    if (g.name === targetBase) {
-                         if (!newStops.includes(movedStop.id)) newStops.push(movedStop.id);
-                    }
-                    return { ...g, stops: newStops };
-                }));
+                if (movedStop.id) {
+                    setStopGroups(gs => gs.map(g => {
+                        // Remove from source (implicitly handled by filtering)
+                        let newStops = g.stops.filter(id => id !== movedStop.id);
+                        
+                        const targetBase = targetZoneName.split(' - Route')[0];
+                        if (g.name === targetBase) {
+                             if (!newStops.includes(movedStop.id)) newStops.push(movedStop.id);
+                        }
+                        return { ...g, stops: newStops };
+                    }));
+                }
             };
 
             const handleSavePlan = async () => {
@@ -1623,18 +1700,14 @@
                     grouped[zone].forEach(idx => {
                         if (newRoutes[zone] && newRoutes[zone].paradas[idx]) {
                             const [stop] = newRoutes[zone].paradas.splice(idx, 1);
-                            // Add source info to track where it came from if needed, 
-                            // but for now just push to list
+                            // Ensure ID present
+                            if (!stop.id) stop.id = findStopId(stop);
                             itemsToMove.push(stop);
                         }
                     });
                 });
 
                 // 2. Add to target
-                // itemsToMove are currently in reverse order of removal (last index first).
-                // If we want to maintain some logical order, we might want to reverse them back.
-                // But since they come from multiple zones, order is arbitrary.
-                // Let's just reverse to keep intra-zone order somewhat consistent if selected top-down.
                 if (newRoutes[bulkMoveTargetZone]) {
                     newRoutes[bulkMoveTargetZone].paradas.push(...itemsToMove.reverse());
                 } else {
@@ -1653,9 +1726,6 @@
                     let newStops = g.stops.filter(id => !moveIds.has(id));
                     
                     // Add to target group if name matches base zone name
-                    // (Assuming targetZone matches a group name or we just put them in the specific route container)
-                    // Note: stopGroups maps to "Zone Names" (e.g. MIAMI), but optimizedRoutes keys might be "MIAMI - Route 1".
-                    // We need to extract base name.
                     const targetBase = bulkMoveTargetZone.split(' - Route')[0];
                     
                     if (g.name === targetBase) {
