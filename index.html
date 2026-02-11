@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Economy Sign Supply Route Planner</title>
     
+    <!-- Favicon and Apple Touch Icon -->
+    <link rel="icon" type="image/png" href="https://static.wixstatic.com/media/63d26f_b22ddda42d0f4dcc8619b741d794ea92~mv2.png">
+    <link rel="apple-touch-icon" href="https://static.wixstatic.com/media/63d26f_b22ddda42d0f4dcc8619b741d794ea92~mv2.png">
+    
     <!-- React and ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -907,7 +911,7 @@
                 const isUnassignedZone = zoneName === "UNASSIGNED" || zoneName.startsWith("UNASSIGNED") || zoneName === "Ungrouped";
 
                 if (isUnassignedZone) {
-                    if (!confirm("Remove these stops from today's plan?\n\n(They will remain saved in your Client Database)")) return;
+                    if (!confirm("Remove these stops from today's plan?")) return;
                     
                     const stopsToDelete = optimizedRoutes[zoneName].paradas || [];
                     const idsToDelete = stopsToDelete.map(s => s.id || findStopId(s)).filter(id => id);
