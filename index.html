@@ -21,7 +21,7 @@
     <!-- FIREBASE SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, getDocs, setDoc, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         window.initializeFirebaseGlobally = (config) => {
@@ -37,6 +37,7 @@
                 window.fbAuth = auth;
                 window.fbDb = db;
                 window.fbSignIn = signInWithEmailAndPassword;
+                window.fbSignInAnonymously = signInAnonymously;
                 window.fbSignOut = signOut;
                 window.fbOnAuthStateChanged = onAuthStateChanged;
                 window.fbSendPasswordResetEmail = sendPasswordResetEmail;
@@ -138,6 +139,15 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
+        // --- EXTENDED PALETTE FOR UNIQUE ZONES (40 Custom Colors) ---
+        const EXTENDED_PALETTE = [
+            "#E53935", "#F4511E", "#FB8C00", "#FDD835", "#C0CA33", "#7CB342", "#43A047", "#00C853",
+            "#00BFA5", "#00ACC1", "#039BE5", "#1E88E5", "#3949AB", "#5E35B1", "#8E24AA", "#D81B60",
+            "#EC407A", "#F06292", "#AD1457", "#6A1B9A", "#651FFF", "#3D5AFE", "#2979FF", "#00E5FF",
+            "#1DE9B6", "#76FF03", "#C6FF00", "#FFEA00", "#FFC400", "#FF9100", "#FF1744", "#FF6D00",
+            "#AEEA00", "#00E676", "#00B0FF", "#304FFE", "#7C4DFF", "#E040FB", "#F50057", "#FF4081"
+        ];
+        
         // --- DETERMINISTIC COLOR GENERATOR ---
         const getZoneColor = (name) => {
             if (!name) return "#000000";
@@ -1568,27 +1578,27 @@
 
             const handleDeletePlan = async (id) => {
                 if(!confirm("Delete this saved plan?")) return;
-                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', 'saved_plans', id));
+                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans', id));
             };
 
             const addVehicle = async () => { if(newVehicleName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles'), { name: newVehicleName }); setNewVehicleName(''); } };
-            const deleteVehicle = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', 'vehicles', id)); };
+            const deleteVehicle = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', id)); };
             const updateVehicle = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', id), data); setEditingVehicleId(null); };
             const assignVehicleDriver = async (vehicleId, driverName) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', vehicleId), { assignedDriver: driverName }); };
             
             const addDriver = async () => { if(newDriverName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers'), { name: newDriverName, phone: newDriverPhone, active: true }); setNewDriverName(''); setNewDriverPhone(''); } };
-            const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', 'drivers', id)); };
+            const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers', id)); };
             const updateDriver = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers', id), data); setEditingDriverId(null); };
             
             const saveClient = async () => { 
                 if(clientFormName && clientFormAddress) { 
                     const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients');
-                    if(editingClientId) { await window.fbUpdateDoc(doc(col, editingClientId), { name: clientFormName, address: clientFormAddress }); setEditingClientId(null); }
+                    if(editingClientId) { await window.fbUpdateDoc(window.fbDoc(col, editingClientId), { name: clientFormName, address: clientFormAddress }); setEditingClientId(null); }
                     else { await window.fbAddDoc(col, { name: clientFormName, address: clientFormAddress }); }
                     setClientFormName(''); setClientFormAddress('');
                 } 
             };
-            const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', 'clients', id)); };
+            const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', id)); };
             const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setEditingClientId(c.id); };
 
             const addZoneFromSettings = async () => { 
@@ -1597,7 +1607,7 @@
                     setNewZoneName(''); 
                 } 
             };
-            const deleteZoneFromSettings = async (id) => { if(confirm('Delete zone?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', 'zones', id)); };
+            const deleteZoneFromSettings = async (id) => { if(confirm('Delete zone?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'zones', id)); };
 
             const saveSettings = async () => {
                 if (window.fbDb) {
@@ -1618,8 +1628,8 @@
                 reader.onload = async (event) => {
                     try {
                         const data = JSON.parse(event.target.result);
-                        if (data.clients) for (const c of data.clients) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients'), c.id), c);
-                        if (data.drivers) for (const d of data.drivers) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers'), d.id), d);
+                        if (data.clients) for (const c of data.clients) await window.fbSetDoc(window.fbDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients'), c.id), c);
+                        if (data.drivers) for (const d of data.drivers) await window.fbSetDoc(window.fbDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers'), d.id), d);
                         alert("Data restored!"); window.location.reload();
                     } catch(err) { alert("Error restoring: "+err.message); }
                 };
