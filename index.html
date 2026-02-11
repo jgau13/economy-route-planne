@@ -138,15 +138,6 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- EXTENDED PALETTE FOR UNIQUE ZONES (40 Custom Colors) ---
-        const EXTENDED_PALETTE = [
-            "#E53935", "#F4511E", "#FB8C00", "#FDD835", "#C0CA33", "#7CB342", "#43A047", "#00C853",
-            "#00BFA5", "#00ACC1", "#039BE5", "#1E88E5", "#3949AB", "#5E35B1", "#8E24AA", "#D81B60",
-            "#EC407A", "#F06292", "#AD1457", "#6A1B9A", "#651FFF", "#3D5AFE", "#2979FF", "#00E5FF",
-            "#1DE9B6", "#76FF03", "#C6FF00", "#FFEA00", "#FFC400", "#FF9100", "#FF1744", "#FF6D00",
-            "#AEEA00", "#00E676", "#00B0FF", "#304FFE", "#7C4DFF", "#E040FB", "#F50057", "#FF4081"
-        ];
-        
         // --- DETERMINISTIC COLOR GENERATOR ---
         const getZoneColor = (name) => {
             if (!name) return "#000000";
@@ -566,7 +557,7 @@
                         {isPreview && (
                             <div className="no-print absolute top-4 right-4 flex gap-2">
                                 <button onClick={onClose} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow">Close Preview</button>
-                                <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-ess-blue hover:bg-sky-700 text-white px-8 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print</button>
+                                <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-ess-blue hover:bg-sky-700 text-white px-4 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print</button>
                             </div>
                         )}
 
@@ -648,6 +639,9 @@
             const [googleApiKey, setGoogleApiKey] = useState(null);
             const [scriptLoaded, setScriptLoaded] = useState(false);
             
+            // Constantes Globales
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
             // APP STATES
             const [view, setView] = useState('planning'); 
             const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, USA');
@@ -787,7 +781,6 @@
             useEffect(() => {
                 if (!user || !window.fbDb) return;
                 const uid = user.uid;
-                const appId = 'default-app-id';
                 const userRef = (c) => window.fbCollection(window.fbDb, 'artifacts', appId, 'users', uid, c);
                 
                 window.fbOnSnapshot(window.fbQuery(userRef('clients')), s => setClientDB(s.docs.map(d => ({id: d.id, ...d.data()}))));
@@ -900,24 +893,33 @@
             const confirmAddStop = async () => {
                 if (editingResultStop) {
                     let stopId = null;
+                    const zone = editingResultStop.zoneName;
+                    const idx = editingResultStop.index;
+
+                    // Identificar el ID antes de la actualización de estado para asegurar persistencia
+                    const currentRouteStop = optimizedRoutes[zone].paradas[idx];
+                    stopId = currentRouteStop.id || findStopId(currentRouteStop);
+
+                    // 1. Actualizar estado visual local
                     setOptimizedRoutes(prev => {
                         const newRoutes = JSON.parse(JSON.stringify(prev));
-                        const stop = newRoutes[editingResultStop.zoneName].paradas[editingResultStop.index];
+                        const stop = newRoutes[zone].paradas[idx];
                         stop.invoices = tempInvoices;
                         stop.pieces = tempPieces;
-                        // Intentar obtener el ID para sincronizar
-                        stopId = stop.id || findStopId(stop);
                         return newRoutes;
                     });
 
-                    // Sincronizar cambios con la base de datos para que se vean en el Planner y no se borren al generar
+                    // 2. Persistir permanentemente en la base de datos (draft_stops)
                     if (stopId && window.fbDb && user) {
                         try {
-                            await window.fbUpdateDoc(
-                                window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops', stopId), 
-                                { invoices: tempInvoices, pieces: tempPieces }
-                            );
-                        } catch(e) { console.error("Error syncing edit:", e); }
+                            const stopRef = window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', stopId);
+                            await window.fbUpdateDoc(stopRef, { 
+                                invoices: tempInvoices, 
+                                pieces: tempPieces 
+                            });
+                        } catch(e) { 
+                            console.error("Error al sincronizar datos de parada con Firebase:", e); 
+                        }
                     }
 
                     setEditingResultStop(null);
@@ -934,14 +936,14 @@
                     pieces: tempPieces,
                 };
 
-                const col = window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops');
+                const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops');
 
                 const normalize = s => s ? s.toLowerCase().trim() : "";
                 const addressExists = clientDB.some(c => normalize(c.address) === normalize(tempStopData.address));
                 
                 if (!addressExists && window.fbDb && user) {
                     try {
-                        await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients'), {
+                        await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients'), {
                             name: tempStopData.name,
                             address: tempStopData.address
                         });
@@ -971,7 +973,7 @@
                     });
                     setTargetZoneForManualAdd(null);
                 } else if (editingDraftId) {
-                    await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops', editingDraftId), data);
+                    await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', editingDraftId), data);
                     setEditingDraftId(null);
                 } else {
                     data.createdAt = Date.now();
@@ -991,7 +993,7 @@
             };
 
             const removeStop = async (id) => {
-                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops', id));
+                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', id));
             };
 
             const addClientToRoute = async (client) => {
@@ -1002,7 +1004,7 @@
                 if (existingStop) {
                     await removeStop(existingStop.id);
                 } else {
-                    await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops'), {
+                    await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops'), {
                         name: client.name,
                         address: client.address,
                         createdAt: Date.now()
@@ -1012,7 +1014,7 @@
 
             const clearAllStops = async () => {
                 if (!confirm("Are you sure you want to remove ALL stops?")) return;
-                const q = window.fbQuery(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'draft_stops'));
+                const q = window.fbQuery(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops'));
                 const snapshot = await window.fbGetDocs(q);
                 const batch = window.fbWriteBatch(window.fbDb);
                 snapshot.docs.forEach(doc => batch.delete(doc.ref));
@@ -1087,7 +1089,7 @@
                 if (nameExists) return alert("A zone with this name already exists.");
 
                 if (window.fbDb && user && !zones.find(z => z.name === cleanName)) {
-                     window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones'), { name: cleanName })
+                     window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'zones'), { name: cleanName })
                      .catch(e => console.error("Failed to save zone", e));
                 }
                 
@@ -1193,10 +1195,9 @@
                 return mapData;
             }, [currentStops, stopGroups]);
 
-            // Helper to re-attach IDs and latest DB info to optimized results
+            // Helper para re-vincular IDs y datos de facturación frescos desde la base de datos de origen
             const enrichWithClientData = (stops) => {
                 return stops.map(s => {
-                    // Robust lookup prioritize exact ID then normalized address
                     let match = null;
                     if (s.id) match = currentStops.find(cs => cs.id === s.id);
                     if (!match) {
@@ -1209,8 +1210,8 @@
                         return { 
                             ...s, 
                             id: match.id, 
-                            invoices: match.invoices || s.invoices || "", 
-                            pieces: match.pieces || s.pieces || "", 
+                            invoices: match.invoices || "", 
+                            pieces: match.pieces || "", 
                             nombre: match.name,
                             direccion: s.direccion || match.address
                         };
@@ -1228,38 +1229,22 @@
 
                     const usedIds = new Set();
 
-                    // --- CLEANUP SWEEP ---
+                    // Limpieza previa de paradas movidas
                     const stopOwnership = new Map();
                     stopGroups.forEach(g => g.stops.forEach(id => stopOwnership.set(id, g.name)));
                     const activeZoneNames = new Set(stopGroups.map(g => g.name));
 
                     Object.keys(newResults).forEach(key => {
                         if (key.startsWith("UNASSIGNED")) return;
-
                         const route = newResults[key];
                         const keyBase = key.split(' - Route')[0];
-
                         if ((!route.paradas || route.paradas.length === 0) && !activeZoneNames.has(keyBase)) {
                             delete newResults[key];
                             return;
                         }
-
-                        if (route.paradas && route.paradas.length > 0) {
-                            const firstAddr = route.paradas[0].direccion || route.paradas[0].address;
-                            const stopObj = currentStops.find(s => s.address === firstAddr);
-                            
-                            if (stopObj) {
-                                const currentOwner = stopOwnership.get(stopObj.id);
-                                if (currentOwner && keyBase !== currentOwner) {
-                                    delete newResults[key];
-                                } else if (!currentOwner && !activeZoneNames.has(keyBase)) {
-                                    delete newResults[key];
-                                }
-                            }
-                        }
                     });
 
-                    // 1. Process Defined Zones
+                    // 1. Procesar Zonas Definidas
                     stopGroups.forEach(g => {
                         const stops = g.stops.map(id => {
                             usedIds.add(id);
@@ -1268,33 +1253,28 @@
 
                         if (stops.length > 0) {
                             let needsRecalc = true;
-                            const existingStops = [];
                             const relatedRouteKeys = Object.keys(newResults || {}).filter(key => 
                                 key === g.name || key.startsWith(g.name + " - Route")
                             );
 
                             if (relatedRouteKeys.length > 0) {
-                                relatedRouteKeys.forEach(key => {
-                                    newResults[key].paradas.forEach(p => existingStops.push(p.direccion));
-                                });
-                                
                                 const currentAddresses = stops.map(s => s.address).sort();
+                                const existingStops = [];
+                                relatedRouteKeys.forEach(key => newResults[key].paradas.forEach(p => existingStops.push(p.direccion)));
                                 const existingAddressesSorted = existingStops.sort();
                                 
-                                // Loose check for matching set of addresses
                                 if (currentAddresses.length > 0 && 
                                     currentAddresses.length === existingAddressesSorted.length &&
                                     currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
                                     needsRecalc = false;
                                     
+                                    // Sincronizar datos de facturación frescos incluso si no se recalcula ruta
                                     relatedRouteKeys.forEach(key => {
                                          newResults[key].color = g.color;
                                          newResults[key].paradas = newResults[key].paradas.map(p => {
-                                             // Robust ID preservation during refresh
                                              let freshStop = null;
                                              if (p.id) freshStop = stops.find(s => s.id === p.id);
                                              if (!freshStop) freshStop = stops.find(s => (s.address || "").toLowerCase().trim() === (p.direccion || "").toLowerCase().trim());
-
                                              if (freshStop) {
                                                  return { 
                                                      ...p, 
@@ -1326,53 +1306,19 @@
                         }
                     });
 
+                    // 2. Procesar Paradas sin asignar
                     const ungroupedStops = currentStops.filter(s => !usedIds.has(s.id));
                     if (ungroupedStops.length > 0) {
-                         const existingStops = [];
-                         const relatedRouteKeys = Object.keys(newResults || {}).filter(key => key.startsWith("UNASSIGNED"));
-                         
-                         relatedRouteKeys.forEach(key => {
-                            newResults[key].paradas.forEach(p => existingStops.push(p.direccion));
+                         tasks.push({ 
+                             zoneName: "UNASSIGNED", 
+                             color: "#000000", 
+                             body: { 
+                                 direcciones: ungroupedStops, 
+                                 num_vans: 1, 
+                                 base_address: baseAddress, 
+                                 dwell_time: 10 
+                             } 
                          });
-                         
-                         const currentAddresses = ungroupedStops.map(s => s.address).sort();
-                         const existingAddressesSorted = existingStops.sort();
-                         
-                         if (currentAddresses.length > 0 && 
-                             currentAddresses.length === existingAddressesSorted.length &&
-                             currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
-                              relatedRouteKeys.forEach(key => {
-                                  newResults[key].paradas = newResults[key].paradas.map(p => {
-                                      // Robust matching for ungrouped too
-                                      let freshStop = null;
-                                      if (p.id) freshStop = ungroupedStops.find(s => s.id === p.id);
-                                      if (!freshStop) freshStop = ungroupedStops.find(s => (s.address || "").toLowerCase().trim() === (p.direccion || "").toLowerCase().trim());
-                                      
-                                      if (freshStop) return { 
-                                          ...p, 
-                                          id: freshStop.id,
-                                          invoices: freshStop.invoices, 
-                                          pieces: freshStop.pieces, 
-                                          nombre: freshStop.name 
-                                      };
-                                      return p;
-                                  });
-                              });
-                         } else {
-                             relatedRouteKeys.forEach(key => delete newResults[key]);
-                             tasks.push({ 
-                                 zoneName: "UNASSIGNED", 
-                                 color: "#000000", 
-                                 body: { 
-                                     direcciones: ungroupedStops, 
-                                     num_vans: 1, 
-                                     base_address: baseAddress, 
-                                     dwell_time: 10 
-                                 } 
-                             });
-                         }
-                    } else {
-                         Object.keys(newResults).forEach(key => { if (key.startsWith("UNASSIGNED")) delete newResults[key]; });
                     }
                     
                     if (tasks.length > 0) {
@@ -1382,7 +1328,6 @@
                             
                             Object.keys(data).forEach((key, i) => {
                                  const routeKey = task.zoneName === "UNASSIGNED" ? `UNASSIGNED ${i+1}` : (task.body.num_vans > 1 ? `${task.zoneName} - Route ${i+1}` : task.zoneName);
-                                 // Enrich new stops with IDs immediately using robust helper
                                  const enrichedStops = enrichWithClientData(data[key].paradas);
                                  newResults[routeKey] = { ...data[key], paradas: enrichedStops, color: task.color };
                             });
@@ -1605,7 +1550,7 @@
                     zoneCount: Object.keys(optimizedRoutes || {}).length,
                     stopCount: currentStops.length
                 };
-                await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'saved_plans'), planData);
+                await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans'), planData);
                 setPlanName('');
                 setShowSavePlanModal(false);
             };
@@ -1623,40 +1568,40 @@
 
             const handleDeletePlan = async (id) => {
                 if(!confirm("Delete this saved plan?")) return;
-                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'saved_plans', id));
+                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', 'saved_plans', id));
             };
 
-            const addVehicle = async () => { if(newVehicleName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'vehicles'), { name: newVehicleName }); setNewVehicleName(''); } };
-            const deleteVehicle = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'vehicles', id)); };
-            const updateVehicle = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'vehicles', id), data); setEditingVehicleId(null); };
-            const assignVehicleDriver = async (vehicleId, driverName) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'vehicles', vehicleId), { assignedDriver: driverName }); };
+            const addVehicle = async () => { if(newVehicleName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles'), { name: newVehicleName }); setNewVehicleName(''); } };
+            const deleteVehicle = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', 'vehicles', id)); };
+            const updateVehicle = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', id), data); setEditingVehicleId(null); };
+            const assignVehicleDriver = async (vehicleId, driverName) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', vehicleId), { assignedDriver: driverName }); };
             
-            const addDriver = async () => { if(newDriverName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers'), { name: newDriverName, phone: newDriverPhone, active: true }); setNewDriverName(''); setNewDriverPhone(''); } };
-            const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'drivers', id)); };
-            const updateDriver = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'drivers', id), data); setEditingDriverId(null); };
+            const addDriver = async () => { if(newDriverName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers'), { name: newDriverName, phone: newDriverPhone, active: true }); setNewDriverName(''); setNewDriverPhone(''); } };
+            const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', 'drivers', id)); };
+            const updateDriver = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers', id), data); setEditingDriverId(null); };
             
             const saveClient = async () => { 
                 if(clientFormName && clientFormAddress) { 
-                    const col = window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients');
+                    const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients');
                     if(editingClientId) { await window.fbUpdateDoc(doc(col, editingClientId), { name: clientFormName, address: clientFormAddress }); setEditingClientId(null); }
                     else { await window.fbAddDoc(col, { name: clientFormName, address: clientFormAddress }); }
                     setClientFormName(''); setClientFormAddress('');
                 } 
             };
-            const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'clients', id)); };
+            const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', 'clients', id)); };
             const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setEditingClientId(c.id); };
 
             const addZoneFromSettings = async () => { 
                 if(newZoneName.trim()){ 
-                    await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'zones'), { name: newZoneName.toUpperCase() }); 
+                    await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'zones'), { name: newZoneName.toUpperCase() }); 
                     setNewZoneName(''); 
                 } 
             };
-            const deleteZoneFromSettings = async (id) => { if(confirm('Delete zone?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', 'zones', id)); };
+            const deleteZoneFromSettings = async (id) => { if(confirm('Delete zone?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', 'zones', id)); };
 
             const saveSettings = async () => {
                 if (window.fbDb) {
-                    await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'settings', 'config'), { companyConfig, baseAddress }, { merge: true });
+                    await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'settings', 'config'), { companyConfig, baseAddress }, { merge: true });
                     alert("Settings saved!");
                 }
             };
@@ -1673,8 +1618,8 @@
                 reader.onload = async (event) => {
                     try {
                         const data = JSON.parse(event.target.result);
-                        if (data.clients) for (const c of data.clients) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'clients'), c.id), c);
-                        if (data.drivers) for (const d of data.drivers) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'users', user.uid, 'drivers'), d.id), d);
+                        if (data.clients) for (const c of data.clients) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients'), c.id), c);
+                        if (data.drivers) for (const d of data.drivers) await window.fbSetDoc(doc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers'), d.id), d);
                         alert("Data restored!"); window.location.reload();
                     } catch(err) { alert("Error restoring: "+err.message); }
                 };
