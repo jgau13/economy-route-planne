@@ -122,7 +122,7 @@
                 left: 0; 
                 top: 0; 
                 width: 100%; 
-                background: white;
+                background: white; 
                 z-index: 9999;
             }
             .page-break {
@@ -259,6 +259,30 @@
                 onMarkerClickRef.current = onMarkerClick;
             }, [onMarkerClick]);
             
+            // Shortcusts Listener
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (!enableDrawing || !drawingManagerRef.current || !mapReady) return;
+                    
+                    if (e.shiftKey) {
+                        switch(e.key.toLowerCase()) {
+                            case 'h': // Hand/Pan
+                                drawingManagerRef.current.setDrawingMode(null);
+                                break;
+                            case 'p': // Polygon
+                                drawingManagerRef.current.setDrawingMode(window.google.maps.drawing.OverlayType.POLYGON);
+                                break;
+                            case 'r': // Rectangle
+                                drawingManagerRef.current.setDrawingMode(window.google.maps.drawing.OverlayType.RECTANGLE);
+                                break;
+                        }
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [enableDrawing, mapReady]);
+
             useEffect(() => {
                 if (!window.google || !googleMapRef.current || !mapReady) return;
                 
@@ -406,7 +430,7 @@
                             bounds.extend(baseLoc);
                             map.fitBounds(bounds);
                         }
-                     });
+                      });
                 }
 
                 const routeEntries = Object.entries(routes);
@@ -781,7 +805,8 @@
             useEffect(() => {
                 if (!googleApiKey) return;
                 const script = document.createElement("script");
-                script.src = `https://maps.googleapis.com/maps/api/js?key=${googleApiKey}&libraries=places,drawing,geometry&loading=async`;
+                // Added language=en to force English UI/Tooltips
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${googleApiKey}&libraries=places,drawing,geometry&loading=async&language=en`;
                 script.async = true; script.defer = true;
                 script.onload = () => setScriptLoaded(true);
                 document.head.appendChild(script);
@@ -877,17 +902,55 @@
                 setSelectedResultStops(new Set());
             };
             
-            const handleDeleteRoute = (zoneName) => {
-                if(!confirm("Delete this route? Stops will be unassigned.")) return;
+            const handleDeleteRoute = async (zoneName) => {
+                // Check if it's an UNASSIGNED zone to trigger deletion
+                const isUnassignedZone = zoneName === "UNASSIGNED" || zoneName.startsWith("UNASSIGNED") || zoneName === "Ungrouped";
+
+                if (isUnassignedZone) {
+                    if (!confirm("Remove these stops from today's plan?\n\n(They will remain saved in your Client Database)")) return;
+                    
+                    const stopsToDelete = optimizedRoutes[zoneName].paradas || [];
+                    const idsToDelete = stopsToDelete.map(s => s.id || findStopId(s)).filter(id => id);
+
+                    // 1. Delete from Firestore
+                    if (window.fbDb && user && idsToDelete.length > 0) {
+                        try {
+                            const batch = window.fbWriteBatch(window.fbDb);
+                            idsToDelete.forEach(id => {
+                                const ref = window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', id);
+                                batch.delete(ref);
+                            });
+                            await batch.commit();
+                        } catch (e) {
+                            console.error("Error deleting stops:", e);
+                            alert("Error deleting some stops.");
+                        }
+                    }
+
+                    // 2. Remove from Local State
+                    setOptimizedRoutes(prev => {
+                        const newRoutes = { ...prev };
+                        delete newRoutes[zoneName];
+                        return newRoutes;
+                    });
+                    
+                    setSelectedResultStops(new Set());
+                    return;
+                }
+
+                // Standard logic for assigned routes
+                if(!confirm("Delete this route? Stops will be moved to UNASSIGNED.")) return;
+                
                 setOptimizedRoutes(prev => {
                     const newRoutes = {...prev};
+                    const deletedRouteStops = newRoutes[zoneName].paradas;
+                    
                     delete newRoutes[zoneName];
                     
                     if (!newRoutes["UNASSIGNED"]) {
                          newRoutes["UNASSIGNED"] = { paradas: [], color: "#000000", duracion_estimada: 0, link: '' };
                     }
                     
-                    const deletedRouteStops = prev[zoneName].paradas;
                     if(deletedRouteStops && deletedRouteStops.length > 0) {
                         newRoutes["UNASSIGNED"].paradas = [...newRoutes["UNASSIGNED"].paradas, ...deletedRouteStops];
                     }
@@ -1328,7 +1391,7 @@
                                  base_address: baseAddress, 
                                  dwell_time: 10 
                              } 
-                         });
+                          });
                     }
                     
                     if (tasks.length > 0) {
@@ -1994,7 +2057,7 @@
                                                                     setNewStopAddress(c.address); 
                                                                     setTempStopData({name: c.name, address: c.address}); 
                                                                     setShowSuggestions(false); 
-                                                                    if(ghostInputRef.current) ghostInputRef.current.focus();
+                                                                    if(addressInputRef.current) addressInputRef.current.focus();
                                                                 }}
                                                             >
                                                                 <div className="font-bold">{c.name}</div>
