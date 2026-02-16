@@ -911,7 +911,7 @@
                 const isUnassignedZone = zoneName === "UNASSIGNED" || zoneName.startsWith("UNASSIGNED") || zoneName === "Ungrouped";
 
                 if (isUnassignedZone) {
-                    if (!confirm("Remove these stops from today's plan?")) return;
+                    if (!confirm("Remove these stops from today's plan?\n\n(They will remain saved in your Client Database)")) return;
                     
                     const stopsToDelete = optimizedRoutes[zoneName].paradas || [];
                     const idsToDelete = stopsToDelete.map(s => s.id || findStopId(s)).filter(id => id);
@@ -1775,6 +1775,7 @@
 
             return (
                 <div className="min-h-screen bg-slate-50 text-slate-800 pb-20">
+                    {/* ... (Existing modals remain here) ... */}
                     {showSavePlanModal && (
                         <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
@@ -1796,6 +1797,7 @@
                         </div>
                     )}
 
+                    {/* ... (Other modals) ... */}
                     {showLoadPlanModal && (
                         <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md h-[500px] flex flex-col">
@@ -1876,7 +1878,13 @@
                                     <button onClick={() => setViewingGlobalMap(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-6 w-6" /></button>
                                 </div>
                                 <div className="flex-1 relative w-full h-full">
-                                    <GlobalMapView routes={optimizedRoutes} baseAddress={baseAddress} />
+                                    <GlobalMapView 
+                                        routes={optimizedRoutes} 
+                                        baseAddress={baseAddress} 
+                                        enableDrawing={true} 
+                                        onStopsSelected={handleMapSelection}
+                                        onMarkerClick={handleMarkerClick}
+                                    />
                                 </div>
                                 <div className="p-4 bg-white border-t flex flex-wrap gap-4 text-xs">
                                     {Object.entries(optimizedRoutes).map(([name, data]) => {
@@ -1903,7 +1911,6 @@
                                     <button onClick={() => setViewingDriver(null)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-6 w-6" /></button>
                                 </div>
                                 <div className="flex-1 relative w-full h-full">
-                                    {/* Added key prop to force re-render when driver changes, fixing map display issue */}
                                     <GlobalMapView 
                                         key={viewingDriver ? viewingDriver.name : 'driver-map'}
                                         routes={{ [viewingDriver.name]: viewingDriver.data }} 
@@ -2027,8 +2034,10 @@
                     <main className="max-w-7xl mx-auto p-4 space-y-4">
                         
                         {view === 'planning' && (
+                            /* ... (Planning View) ... */
                             <div className="animate-fade-in space-y-4">
                                 <div className="col-span-12 bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                                    {/* ... Add Stop section ... */}
                                     <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
                                         <div className="bg-green-100 p-1.5 rounded-full text-green-700"><Icon name="plus" className="h-5 w-5" /></div>
                                         Add Stop
@@ -2276,6 +2285,7 @@
                         )}
 
                         {view === 'results' && optimizedRoutes && (
+                            /* ... (Results View) ... */
                             <div className="animate-fade-in space-y-6">
                                 <div className="flex justify-between items-center mb-4">
                                     <button onClick={() => setView('planning')} className="px-4 py-2 border bg-white rounded-lg font-bold hover:bg-slate-50 text-sm flex items-center gap-2 shadow-sm">
@@ -2508,6 +2518,7 @@
                         )}
 
                         {view === 'clients' && (
+                            /* ... (Clients View) ... */
                             <div className="animate-fade-in bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="database" className="h-6 w-6 text-ess-blue" /> Clients Database</h2>
                                 <div className="flex gap-4 mb-6">
@@ -2538,6 +2549,7 @@
                         )}
 
                         {view === 'vehicles' && (
+                            /* ... (Vehicles View) ... */
                             <div className="grid md:grid-cols-2 gap-6 animate-fade-in">
                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="truck" className="h-6 w-6 text-ess-blue" /> Vehicles</h2>
@@ -2610,6 +2622,18 @@
 
                         {view === 'settings' && (
                             <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+                                
+                                {/* NUEVO BOTON PARA HISTORIAL DE FACTURAS */}
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex justify-between items-center">
+                                    <div>
+                                        <h2 className="text-lg font-bold text-slate-800">Invoice History / Historial de Facturas</h2>
+                                        <p className="text-xs text-slate-500">Search past orders and drivers (Last 6 weeks).</p>
+                                    </div>
+                                    <a href="InvoiceSearch.html" target="_blank" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors">
+                                        <Icon name="search" className="h-4 w-4" /> Open Search
+                                    </a>
+                                </div>
+
                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 border-b pb-2">Manifest Header Info</h2>
                                     <div className="space-y-4">
