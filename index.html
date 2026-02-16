@@ -209,7 +209,7 @@
         const Icon = ({ name, className = "" }) => {
             const [svgHtml, setSvgHtml] = useState(null);
             useEffect(() => {
-                if (typeof lucide === 'undefined') return;
+                if (typeof lucide === 'undefined' || !lucide.icons) return;
                 const iconName = name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
                 const iconData = lucide.icons[iconName] || lucide.icons[name];
                 if (iconData) { const el = lucide.createElement(iconData); el.setAttribute('class', className); setSvgHtml(el.outerHTML); }
@@ -422,19 +422,22 @@
                 };
 
                 if (baseAddress) {
-                      geocoderRef.current.geocode({ address: baseAddress }, (results, status) => {
-                        if (status === 'OK' && results[0]) {
-                            const baseLoc = results[0].geometry.location;
-                            const m = new window.google.maps.Marker({
-                                position: baseLoc, map: map,
-                                icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: "#000", fillOpacity: 1, strokeWeight: 2, strokeColor: "white" },
-                                title: "Warehouse", zIndex: 999
-                            });
-                            markersRef.current.push(m);
-                            bounds.extend(baseLoc);
-                            map.fitBounds(bounds);
-                        }
-                      });
+                      // Safety check for geocoder
+                      if (geocoderRef.current) {
+                          geocoderRef.current.geocode({ address: baseAddress }, (results, status) => {
+                            if (status === 'OK' && results[0]) {
+                                const baseLoc = results[0].geometry.location;
+                                const m = new window.google.maps.Marker({
+                                    position: baseLoc, map: map,
+                                    icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: "#000", fillOpacity: 1, strokeWeight: 2, strokeColor: "white" },
+                                    title: "Warehouse", zIndex: 999
+                                });
+                                markersRef.current.push(m);
+                                bounds.extend(baseLoc);
+                                map.fitBounds(bounds);
+                            }
+                          });
+                      }
                 }
 
                 const routeEntries = Object.entries(routes);
@@ -484,11 +487,13 @@
                             if (pos) {
                                 addMarker(pos, clientName, label, color, content, stop.originalIndex);
                             } else {
-                                geocoderRef.current.geocode({ address: address }, (results, status) => {
-                                    if (status === 'OK' && results[0]) {
-                                        addMarker(results[0].geometry.location, clientName, label, color, content, stop.originalIndex);
-                                    }
-                                });
+                                if (geocoderRef.current) {
+                                    geocoderRef.current.geocode({ address: address }, (results, status) => {
+                                        if (status === 'OK' && results[0]) {
+                                            addMarker(results[0].geometry.location, clientName, label, color, content, stop.originalIndex);
+                                        }
+                                    });
+                                }
                             }
                         });
                     }
@@ -1604,7 +1609,7 @@
 
                 if (movedStop.id) {
                     setStopGroups(gs => gs.map(g => {
-                        let newStops = g.stops.filter(id => id !== movedStop.id);
+                        let newStops = g.stops.filter(id => !moveIds.has(id));
                         const targetBase = targetZoneName.split(' - Route')[0];
                         if (g.name === targetBase) {
                              if (!newStops.includes(movedStop.id)) newStops.push(movedStop.id);
