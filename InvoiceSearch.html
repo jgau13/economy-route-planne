@@ -57,7 +57,7 @@
         const Icon = ({ name, className = "" }) => {
             const [svgHtml, setSvgHtml] = useState(null);
             useEffect(() => {
-                if (typeof lucide === 'undefined') return;
+                if (typeof lucide === 'undefined' || !lucide.icons) return;
                 const iconName = name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
                 const iconData = lucide.icons[iconName] || lucide.icons[name];
                 if (iconData) { const el = lucide.createElement(iconData); el.setAttribute('class', className); setSvgHtml(el.outerHTML); }
