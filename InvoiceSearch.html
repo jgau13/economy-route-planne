@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice History - ESS</title>
+    
+    <!-- Favicon and Apple Touch Icon -->
+    <link rel="icon" type="image/png" href="https://static.wixstatic.com/media/63d26f_b22ddda42d0f4dcc8619b741d794ea92~mv2.png">
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- FIREBASE SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        window.initializeFirebaseGlobally = (config) => {
+            try {
+                const app = initializeApp(config);
+                window.fbAuth = getAuth(app);
+                window.fbDb = getFirestore(app);
+                window.fbSignIn = signInWithEmailAndPassword;
+                window.fbSignOut = signOut;
+                window.fbOnAuthStateChanged = onAuthStateChanged;
+                window.fbCollection = collection;
+                window.fbQuery = query;
+                window.fbWhere = where;
+                window.fbGetDocs = getDocs;
+                window.fbOrderBy = orderBy;
+                return true;
+            } catch (e) {
+                console.error(e);
+                return false;
+            }
+        };
+    </script>
+
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { ess: { blue: '#1b6e9b', green: '#6bbf5d' } } } }
+        }
+    </script>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        const Icon = ({ name, className = "" }) => {
+            const [svgHtml, setSvgHtml] = useState(null);
+            useEffect(() => {
+                if (typeof lucide === 'undefined') return;
+                const iconName = name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+                const iconData = lucide.icons[iconName] || lucide.icons[name];
+                if (iconData) { const el = lucide.createElement(iconData); el.setAttribute('class', className); setSvgHtml(el.outerHTML); }
+            }, [name, className]);
+            if (!svgHtml) return <span className={className}></span>;
+            return <span dangerouslySetInnerHTML={{ __html: svgHtml }} style={{ display: 'contents' }} />;
+        };
+
+        const LoginScreen = () => {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleLogin = async (e) => {
+                e.preventDefault(); setLoading(true); setError('');
+                try { await window.fbSignIn(window.fbAuth, email, password); } 
+                catch (err) { console.error(err); setError("Access Denied."); setLoading(false); }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center p-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-200">
+                        <div className="text-center mb-8">
+                            <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-16 mx-auto mb-4"/>
+                            <h1 className="text-2xl font-bold text-ess-blue">Invoice Search</h1>
+                        </div>
+                        <form onSubmit={handleLogin} className="space-y-4">
+                            <input type="email" required className="w-full p-3 border rounded-lg" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+                            <input type="password" required className="w-full p-3 border rounded-lg" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
+                            {error && <div className="text-red-600 text-sm font-bold">{error}</div>}
+                            <button type="submit" disabled={loading} className="w-full bg-ess-blue text-white py-3 rounded-lg font-bold hover:bg-sky-700">{loading ? "..." : "Sign In"}</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const InvoiceSearchApp = () => {
+            const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [results, setResults] = useState([]);
+            const [plans, setPlans] = useState([]);
+            const [drivers, setDrivers] = useState({});
+            
+            // Initial Config Load
+            useEffect(() => {
+                const init = async () => {
+                    const response = await fetch('/config');
+                    const data = await response.json();
+                    if (data.firebaseConfig) window.initializeFirebaseGlobally(data.firebaseConfig);
+                    
+                    window.fbOnAuthStateChanged(window.fbAuth, u => {
+                        setUser(u);
+                        if(u) loadData(u.uid);
+                    });
+                };
+                init();
+            }, []);
+
+            const loadData = async (uid) => {
+                setLoading(true);
+                const sixWeeksAgo = Date.now() - (6 * 7 * 24 * 60 * 60 * 1000);
+                
+                try {
+                    // 1. Fetch Drivers map for name resolution
+                    const driversSnap = await window.fbGetDocs(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', uid, 'drivers'));
+                    const driverMap = {};
+                    driversSnap.forEach(doc => driverMap[doc.id] = doc.data().name);
+                    setDrivers(driverMap);
+
+                    // 2. Fetch Plans from last 6 weeks
+                    const plansRef = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', uid, 'saved_plans');
+                    const q = window.fbQuery(plansRef, window.fbWhere("createdAt", ">", sixWeeksAgo), window.fbOrderBy("createdAt", "desc"));
+                    const querySnapshot = await window.fbGetDocs(q);
+                    
+                    const loadedPlans = [];
+                    querySnapshot.forEach(doc => loadedPlans.push({id: doc.id, ...doc.data()}));
+                    setPlans(loadedPlans);
+                } catch(e) {
+                    console.error("Error loading history:", e);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleSearch = () => {
+                if(!searchTerm.trim()) return;
+                const term = searchTerm.toLowerCase();
+                const hits = [];
+
+                plans.forEach(plan => {
+                    const dateStr = new Date(plan.createdAt).toLocaleDateString();
+                    const assignments = plan.driverAssignments || {};
+                    
+                    if (plan.optimizedRoutes) {
+                        Object.entries(plan.optimizedRoutes).forEach(([zoneName, routeData]) => {
+                            if (routeData.paradas) {
+                                routeData.paradas.forEach(stop => {
+                                    const invoices = (stop.invoices || "").toLowerCase();
+                                    const clientName = (stop.nombre || stop.name || "").toLowerCase();
+                                    const address = (stop.direccion || stop.address || "").toLowerCase();
+                                    
+                                    // Search logic: check invoices OR client name
+                                    if (invoices.includes(term) || clientName.includes(term)) {
+                                        const driverId = assignments[zoneName];
+                                        const driverName = drivers[driverId] || "Unassigned";
+                                        
+                                        hits.push({
+                                            date: dateStr,
+                                            planName: plan.name,
+                                            driver: driverName,
+                                            client: stop.nombre || stop.name,
+                                            address: stop.direccion || stop.address,
+                                            invoices: stop.invoices,
+                                            zone: zoneName
+                                        });
+                                    }
+                                });
+                            }
+                        });
+                    }
+                });
+                setResults(hits);
+            };
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter') handleSearch();
+            };
+
+            if (!user) return <LoginScreen />;
+
+            return (
+                <div className="max-w-4xl mx-auto p-6">
+                    <div className="flex justify-between items-center mb-8">
+                        <div className="flex items-center gap-3">
+                            <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-10" />
+                            <h1 className="text-2xl font-bold text-slate-800">Invoice History Search</h1>
+                        </div>
+                        <div className="text-sm text-slate-500 font-bold">
+                            Searching last 6 weeks ({plans.length} plans loaded)
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
+                        <div className="flex gap-4">
+                            <div className="relative flex-1">
+                                <Icon name="search" className="absolute left-3 top-3.5 text-slate-400 h-5 w-5" />
+                                <input 
+                                    type="text" 
+                                    className="w-full pl-10 p-3 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue text-lg" 
+                                    placeholder="Enter Invoice # or Client Name..." 
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    autoFocus
+                                />
+                            </div>
+                            <button onClick={handleSearch} className="bg-ess-blue text-white px-8 py-3 rounded-lg font-bold hover:bg-sky-700 transition-colors shadow-lg">
+                                Search
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        {results.length > 0 ? (
+                            results.map((hit, idx) => (
+                                <div key={idx} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow animate-fade-in">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div>
+                                            <h3 className="font-bold text-lg text-slate-800">{hit.client}</h3>
+                                            <p className="text-sm text-slate-500">{hit.address}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-mono font-bold text-lg bg-yellow-100 text-yellow-800 px-2 py-1 rounded inline-block">
+                                                {hit.invoices || "No Inv #"}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-100 text-sm">
+                                        <div>
+                                            <span className="block text-slate-400 text-xs font-bold uppercase">Date Delivered</span>
+                                            <span className="font-bold text-slate-700 flex items-center gap-1"><Icon name="calendar" className="h-3 w-3" /> {hit.date}</span>
+                                        </div>
+                                        <div>
+                                            <span className="block text-slate-400 text-xs font-bold uppercase">Driver</span>
+                                            <span className={`font-bold flex items-center gap-1 ${hit.driver === 'Unassigned' ? 'text-red-500' : 'text-green-600'}`}>
+                                                <Icon name="truck" className="h-3 w-3" /> {hit.driver}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <span className="block text-slate-400 text-xs font-bold uppercase">Plan / Zone</span>
+                                            <span className="font-bold text-slate-700">{hit.planName} / {hit.zone}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            searchTerm && <div className="text-center py-10 text-slate-400">No results found for "{searchTerm}" in the last 6 weeks.</div>
+                        )}
+                        
+                        {!searchTerm && (
+                            <div className="text-center py-20 text-slate-300 flex flex-col items-center">
+                                <Icon name="search" className="h-16 w-16 mb-4 opacity-20" />
+                                <p>Enter an invoice number to find out who delivered it.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<InvoiceSearchApp />);
+    </script>
+</body>
+</html>
