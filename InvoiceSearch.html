@@ -18,7 +18,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, query, where, getDocs, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         window.initializeFirebaseGlobally = (config) => {
             try {
@@ -33,6 +33,7 @@
                 window.fbWhere = where;
                 window.fbGetDocs = getDocs;
                 window.fbOrderBy = orderBy;
+                window.fbLimit = limit;
                 return true;
             } catch (e) {
                 console.error(e);
@@ -98,13 +99,14 @@
 
         const InvoiceSearchApp = () => {
             const [user, setUser] = useState(null);
+            const [initializing, setInitializing] = useState(true);
             const [loading, setLoading] = useState(false);
             const [searchTerm, setSearchTerm] = useState('');
             const [results, setResults] = useState([]);
             const [plans, setPlans] = useState([]);
             const [drivers, setDrivers] = useState({});
             
-            // Initial Config Load
+            // Initial Config Load & Auth Check
             useEffect(() => {
                 const init = async () => {
                     const response = await fetch('/config');
@@ -113,6 +115,7 @@
                     
                     window.fbOnAuthStateChanged(window.fbAuth, u => {
                         setUser(u);
+                        setInitializing(false); // Auth check done
                         if(u) loadData(u.uid);
                     });
                 };
@@ -130,13 +133,21 @@
                     driversSnap.forEach(doc => driverMap[doc.id] = doc.data().name);
                     setDrivers(driverMap);
 
-                    // 2. Fetch Plans from last 6 weeks
+                    // 2. Fetch Last 100 Plans (Simple fetch to avoid index errors, then filter in memory)
                     const plansRef = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', uid, 'saved_plans');
-                    const q = window.fbQuery(plansRef, window.fbWhere("createdAt", ">", sixWeeksAgo), window.fbOrderBy("createdAt", "desc"));
+                    // Use simple orderBy without where to avoid complex index requirements
+                    const q = window.fbQuery(plansRef, window.fbOrderBy("createdAt", "desc"), window.fbLimit(100));
+                    
                     const querySnapshot = await window.fbGetDocs(q);
                     
                     const loadedPlans = [];
-                    querySnapshot.forEach(doc => loadedPlans.push({id: doc.id, ...doc.data()}));
+                    querySnapshot.forEach(doc => {
+                        const d = doc.data();
+                        // Manual filtering for last 6 weeks
+                        if (d.createdAt > sixWeeksAgo) {
+                            loadedPlans.push({id: doc.id, ...d});
+                        }
+                    });
                     setPlans(loadedPlans);
                 } catch(e) {
                     console.error("Error loading history:", e);
@@ -147,7 +158,7 @@
 
             const handleSearch = () => {
                 if(!searchTerm.trim()) return;
-                const term = searchTerm.toLowerCase();
+                const term = searchTerm.toLowerCase().trim();
                 const hits = [];
 
                 plans.forEach(plan => {
@@ -158,12 +169,27 @@
                         Object.entries(plan.optimizedRoutes).forEach(([zoneName, routeData]) => {
                             if (routeData.paradas) {
                                 routeData.paradas.forEach(stop => {
-                                    const invoices = (stop.invoices || "").toLowerCase();
+                                    const rawInvoices = (stop.invoices || "").toLowerCase();
                                     const clientName = (stop.nombre || stop.name || "").toLowerCase();
                                     const address = (stop.direccion || stop.address || "").toLowerCase();
                                     
-                                    // Search logic: check invoices OR client name
-                                    if (invoices.includes(term) || clientName.includes(term)) {
+                                    // Smart Search Logic
+                                    let match = false;
+
+                                    // 1. Check client/address match (standard substring)
+                                    if (clientName.includes(term) || address.includes(term)) {
+                                        match = true;
+                                    } else {
+                                        // 2. Check Invoice Tokens
+                                        // Split invoice string by non-alphanumeric chars (space, comma, dot, dash, etc.)
+                                        const invoiceTokens = rawInvoices.split(/[^a-z0-9]+/).filter(Boolean);
+                                        
+                                        // If user typed a number, check for exact token match or substring if partial
+                                        // Assuming user wants robust find:
+                                        if (rawInvoices.includes(term)) match = true;
+                                    }
+                                    
+                                    if (match) {
                                         const driverId = assignments[zoneName];
                                         const driverName = drivers[driverId] || "Unassigned";
                                         
@@ -188,6 +214,14 @@
             const handleKeyDown = (e) => {
                 if (e.key === 'Enter') handleSearch();
             };
+
+            if (initializing) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4">
+                        <div className="loader border-4 border-slate-200 border-t-ess-blue rounded-full w-12 h-12 animate-spin"></div>
+                    </div>
+                );
+            }
 
             if (!user) return <LoginScreen />;
 
