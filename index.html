@@ -830,25 +830,9 @@
                 window.fbOnSnapshot(window.fbQuery(userRef('clients')), s => setClientDB(s.docs.map(d => ({id: d.id, ...d.data()}))));
                 window.fbOnSnapshot(window.fbQuery(userRef('drivers')), s => setDrivers(s.docs.map(d => ({id: d.id, ...d.data()}))));
                 window.fbOnSnapshot(window.fbQuery(userRef('vehicles')), s => setVehicles(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                
-                // Manual Sort (Avoid orderBy indexes)
-                window.fbOnSnapshot(window.fbQuery(userRef('draft_stops')), s => {
-                    const stops = s.docs.map(d => ({id: d.id, ...d.data()}));
-                    stops.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-                    setCurrentStops(stops);
-                });
-                
-                window.fbOnSnapshot(window.fbQuery(userRef('zones')), s => {
-                    const z = s.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    z.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-                    setZones(z);
-                });
-                
-                window.fbOnSnapshot(window.fbQuery(userRef('saved_plans')), s => {
-                    const p = s.docs.map(d => ({id: d.id, ...d.data()}));
-                    p.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-                    setSavedPlans(p);
-                });
+                window.fbOnSnapshot(window.fbQuery(userRef('draft_stops'), window.fbOrderBy('createdAt')), s => setCurrentStops(s.docs.map(d => ({id: d.id, ...d.data()}))));
+                window.fbOnSnapshot(window.fbQuery(userRef('zones'), window.fbOrderBy("name")), (s) => setZones(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+                window.fbOnSnapshot(window.fbQuery(userRef('saved_plans'), window.fbOrderBy('createdAt', 'desc')), s => setSavedPlans(s.docs.map(d => ({id: d.id, ...d.data()}))));
                 
                 window.fbOnSnapshot(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config'), (docSnap) => {
                     if (docSnap.exists()) {
@@ -860,46 +844,6 @@
             }, [user, dbReady]);
 
             // --- LOGIC ---
-            
-            const autoSavePlan = async () => {
-                if (!optimizedRoutes || Object.keys(optimizedRoutes).length === 0) return;
-
-                const now = Date.now();
-                const ONE_HOUR = 60 * 60 * 1000;
-                
-                // Filter specifically for auto-saves
-                const autoSavedPlans = savedPlans.filter(p => p.isAutoSave).sort((a, b) => b.createdAt - a.createdAt);
-                const latestAutoSave = autoSavedPlans[0];
-
-                const planData = {
-                    optimizedRoutes,
-                    driverAssignments,
-                    manualVehicleAssignments,
-                    stopGroups,
-                    currentStops,
-                    zoneCount: Object.keys(optimizedRoutes).length,
-                    stopCount: currentStops.length,
-                    updatedAt: now,
-                    isAutoSave: true // Mark clearly
-                };
-
-                try {
-                    // If latest auto-save is recent (< 1 hr), update it
-                    if (latestAutoSave && (now - latestAutoSave.createdAt < ONE_HOUR)) {
-                        console.log("Auto-saving: Updating existing auto-save", latestAutoSave.name);
-                        await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans', latestAutoSave.id), planData);
-                    } else {
-                        // Else create new one
-                        const dateStr = new Date().toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: 'numeric' });
-                        planData.name = `Auto-Save (${dateStr})`;
-                        planData.createdAt = now;
-                        console.log("Auto-saving: Creating new auto-save", planData.name);
-                        await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans'), planData);
-                    }
-                } catch (e) {
-                    console.error("Auto-save failed:", e);
-                }
-            };
 
             const initiateAddStop = () => {
                 if (!newStopAddress.trim()) return;
@@ -1614,15 +1558,13 @@
                 setViewingDriver({ name, data });
             };
 
-            const handleGlobalPrint = async () => {
-                await autoSavePlan();
+            const handleGlobalPrint = () => {
                 setPrintData(null);
                 setShowBulkManifestPrint(false);
                 setShowGlobalPrint(true); 
             };
 
-            const handleBulkManifestPrint = async () => {
-                await autoSavePlan();
+            const handleBulkManifestPrint = () => {
                 setPrintData(null);
                 setShowGlobalPrint(false);
                 setShowBulkManifestPrint(true);
@@ -1667,7 +1609,7 @@
 
                 if (movedStop.id) {
                     setStopGroups(gs => gs.map(g => {
-                        let newStops = g.stops.filter(id => id !== movedStop.id);
+                        let newStops = g.stops.filter(id => !moveIds.has(id));
                         const targetBase = targetZoneName.split(' - Route')[0];
                         if (g.name === targetBase) {
                              if (!newStops.includes(movedStop.id)) newStops.push(movedStop.id);
@@ -1688,8 +1630,7 @@
                     stopGroups,
                     currentStops,
                     zoneCount: Object.keys(optimizedRoutes || {}).length,
-                    stopCount: currentStops.length,
-                    isAutoSave: false // Explicit manual save
+                    stopCount: currentStops.length
                 };
                 await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans'), planData);
                 setPlanName('');
@@ -1839,6 +1780,7 @@
 
             return (
                 <div className="min-h-screen bg-slate-50 text-slate-800 pb-20">
+                    {/* ... (Existing modals remain here) ... */}
                     {showSavePlanModal && (
                         <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
@@ -1860,6 +1802,7 @@
                         </div>
                     )}
 
+                    {/* ... (Other modals) ... */}
                     {showLoadPlanModal && (
                         <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md h-[500px] flex flex-col">
@@ -1977,7 +1920,6 @@
                                         key={viewingDriver ? viewingDriver.name : 'driver-map'}
                                         routes={{ [viewingDriver.name]: viewingDriver.data }} 
                                         baseAddress={baseAddress} 
-                                        enableDrawing={true}
                                     />
                                 </div>
                             </div>
@@ -2112,7 +2054,7 @@
                                                 <input 
                                                     ref={inputRef}
                                                     type="text" 
-                                                    className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue" 
+                                                    className="w-full p-3 border rounded-lg outline-none focus:border-ess-blue" 
                                                     placeholder="Name" 
                                                     value={newStopName} 
                                                     onChange={e => {
@@ -2457,11 +2399,11 @@
                                                         >
                                                             <div className="flex items-center justify-center mr-2">
                                                                <input 
-                                                                    type="checkbox" 
-                                                                    className="w-4 h-4 text-ess-blue rounded border-gray-300 focus:ring-ess-blue cursor-pointer"
-                                                                    checked={selectedResultStops.has(`${zoneName}|${i}`)}
-                                                                    onChange={() => handleStopSelectionChange(zoneName, i)}
-                                                                    onClick={(e) => e.stopPropagation()}
+                                                                   type="checkbox" 
+                                                                   className="w-4 h-4 text-ess-blue rounded border-gray-300 focus:ring-ess-blue cursor-pointer"
+                                                                   checked={selectedResultStops.has(`${zoneName}|${i}`)}
+                                                                   onChange={() => handleStopSelectionChange(zoneName, i)}
+                                                                   onClick={(e) => e.stopPropagation()}
                                                                />
                                                             </div>
                                                             <span className="font-bold text-slate-400 text-xs mt-0.5 w-5 text-right">{i+1}.</span>
@@ -2520,7 +2462,6 @@
 
                                                     <button 
                                                         onClick={() => {
-                                                            autoSavePlan(); // AUTO-SAVE ON PRINT SHEET
                                                             setPrintData({ 
                                                                 stops: routeData.paradas, 
                                                                 driverName: driver ? driver.name : "Unassigned",
@@ -2578,109 +2519,6 @@
                                         </button>
                                     </div>
                                 )}
-                            </div>
-                        )}
-
-                        {view === 'clients' && (
-                            /* ... (Clients View) ... */
-                            <div className="animate-fade-in bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="database" className="h-6 w-6 text-ess-blue" /> Clients Database</h2>
-                                <div className="flex gap-4 mb-6">
-                                    <input type="text" placeholder="Client Name" className="flex-1 p-2 border rounded" value={clientFormName} onChange={e=>setClientFormName(e.target.value)} />
-                                    <div className="flex-[2]"><GoogleAddressInput placeholder="Address" value={clientFormAddress} onChange={e=>setClientFormAddress(e.target.value)} className="w-full p-2 border rounded" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div>
-                                    <button onClick={saveClient} className="bg-green-600 text-white px-4 py-2 rounded font-bold">
-                                        {editingClientId ? 'Update' : 'Add'}
-                                    </button>
-                                </div>
-                                <div className="overflow-y-auto max-h-[500px]">
-                                    {clientDB.sort((a,b) => (a.name || "").localeCompare(b.name || "")).map(c => {
-                                        const isInRoute = currentStops.some(s => s.address === c.address);
-                                        return (
-                                            <div key={c.id} className="flex justify-between items-center p-3 border-b hover:bg-slate-50">
-                                                <div><div className="font-bold">{c.name}</div><div className="text-xs text-slate-500">{c.address}</div></div>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => addClientToRoute(c)} className={`p-1.5 rounded-full transition-colors ${isInRoute ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400 hover:bg-green-50 hover:text-green-600'}`}>
-                                                        <Icon name={isInRoute ? 'check' : 'plus'} className="h-4 w-4" />
-                                                    </button>
-                                                    <button onClick={()=>startEditingClient(c)} className="text-blue-500 hover:bg-blue-50 p-2 rounded"><Icon name="pencil" className="h-4 w-4" /></button>
-                                                    <button onClick={()=>deleteClient(c.id)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Icon name="trash-2" className="h-4 w-4" /></button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-
-                        {view === 'vehicles' && (
-                            /* ... (Vehicles View) ... */
-                            <div className="grid md:grid-cols-2 gap-6 animate-fade-in">
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                                    <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="truck" className="h-6 w-6 text-ess-blue" /> Vehicles</h2>
-                                    <div className="flex gap-2 mb-4">
-                                        <input type="text" placeholder="Name/Plate" className="flex-1 p-2 border rounded" value={newVehicleName} onChange={e=>setNewVehicleName(e.target.value)} />
-                                        <button onClick={addVehicle} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add</button>
-                                    </div>
-                                    <div className="space-y-2">
-                                        {vehicles.map(v => (
-                                            <div key={v.id} className="p-3 border rounded hover:bg-slate-50">
-                                                <div className="flex justify-between items-center mb-2">
-                                                    {editingVehicleId === v.id ? (
-                                                        <input 
-                                                            type="text" 
-                                                            defaultValue={v.name} 
-                                                            className="border p-1 rounded text-sm w-full mr-2"
-                                                            onBlur={(e) => updateVehicle(v.id, { name: e.target.value })}
-                                                            onKeyDown={(e) => handleEnter(e, () => e.target.blur())}
-                                                            autoFocus
-                                                        />
-                                                    ) : (
-                                                        <div className="font-bold flex items-center gap-2">{v.name} <button onClick={() => setEditingVehicleId(v.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
-                                                    )}
-                                                    <button onClick={()=>deleteVehicle(v.id)} className="text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
-                                                </div>
-                                                <div className="flex items-center gap-2 text-xs">
-                                                    <span className="text-slate-500">Default driver:</span>
-                                                    <select 
-                                                        className="border rounded p-1 bg-white outline-none"
-                                                        value={v.assignedDriver || ""}
-                                                        onChange={(e) => assignVehicleDriver(v.id, e.target.value)}
-                                                    >
-                                                        <option value="">-- None --</option>
-                                                        {drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                                                    </select>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                                    <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="users" className="h-6 w-6 text-ess-blue" /> Drivers</h2>
-                                    <div className="flex gap-2 mb-4">
-                                        <input type="text" placeholder="Name" className="flex-1 p-2 border rounded" value={newDriverName} onChange={e=>setNewDriverName(e.target.value)} />
-                                        <input type="text" placeholder="Phone" className="flex-1 p-2 border rounded" value={newDriverPhone} onChange={e=>setNewDriverPhone(e.target.value)} />
-                                        <button onClick={addDriver} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add</button>
-                                    </div>
-                                    <div className="space-y-2">
-                                        {drivers.map(d => (
-                                            <div key={d.id} className="flex justify-between items-center p-3 border rounded hover:bg-slate-50">
-                                                {editingDriverId === d.id ? (
-                                                    <div className="flex-1 mr-2 space-y-1">
-                                                        <input type="text" defaultValue={d.name} className="border p-1 rounded text-sm w-full" placeholder="Name" onBlur={(e) => updateDriver(d.id, { name: e.target.value })} />
-                                                        <input type="text" defaultValue={d.phone} className="border p-1 rounded text-sm w-full" placeholder="Phone" onBlur={(e) => updateDriver(d.id, { phone: e.target.value })} />
-                                                        <button onClick={() => setEditingDriverId(null)} className="text-xs text-blue-500">Done</button>
-                                                    </div>
-                                                ) : (
-                                                    <div>
-                                                        <div className="font-bold flex items-center gap-2">{d.name} <button onClick={() => setEditingDriverId(d.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
-                                                        <div className="text-xs text-slate-500">{d.phone}</div>
-                                                    </div>
-                                                )}
-                                                <button onClick={()=>deleteDriver(d.id)} className="text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
                             </div>
                         )}
 
