@@ -1585,12 +1585,33 @@
                 if (driver && driver.phone) phone = driver.phone.replace(/\D/g, '');
                 
                 const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
-                const link = routeLink ? routeLink : (stops && stops.length > 0 
+                
+                // 1. Google Maps Link
+                // Uses the server link if available (for full routes), or constructs one (for chunks)
+                const googleLink = routeLink ? routeLink : (stops && stops.length > 0 
                     ? `https://www.google.com/maps/dir/?api=1&origin=${encode(baseAddress)}&destination=${encode(baseAddress)}&waypoints=${stops.map(s => encode(s.direccion || s.address)).join('%7C')}&travelmode=driving` 
                     : "");
+
+                // 2. Apple Maps Link
+                // Constructs a multi-stop link format: saddr=Base -> daddr=Stop1+to:Stop2+to:Base
+                let appleLink = "";
+                if (stops && stops.length > 0) {
+                    const stopsString = stops.map(s => encode(s.direccion || s.address)).join('+to:');
+                    appleLink = `https://maps.apple.com/?saddr=${encode(baseAddress)}&daddr=${stopsString}+to:${encode(baseAddress)}&dirflg=d`;
+                }
                 
-                const text = encodeURIComponent(`Hello, here is your updated route:\n\n${link}\n\nDrive safely!`);
-                return phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
+                const message = `Hello, here is your updated route:
+
+📍 *Google Maps:*
+${googleLink}
+
+🍎 *Apple Maps:*
+${appleLink}
+
+Drive safely!`;
+
+                const encodedText = encodeURIComponent(message);
+                return phone ? `https://wa.me/${phone}?text=${encodedText}` : `https://wa.me/?text=${encodedText}`;
             };
 
             const openDriverMap = (name, data) => {
@@ -2407,6 +2428,7 @@
                                                                 onChange={(e) => overrideVehicle(zoneName, e.target.value)}
                                                             >
                                                                 <option value="">No Truck</option>
+                                                                <option value="">No Truck</option>
                                                                 {vehicles.map(v => <option key={v.id} value={v.name}>{v.name} {v.assignedDriver === driver.name ? '(Default)' : ''}</option>)}
                                                             </select>
                                                         </div>
@@ -2438,11 +2460,11 @@
                                                         >
                                                             <div className="flex items-center justify-center mr-2">
                                                                <input 
-                                                                   type="checkbox" 
-                                                                   className="w-4 h-4 text-ess-blue rounded border-gray-300 focus:ring-ess-blue cursor-pointer"
-                                                                   checked={selectedResultStops.has(`${zoneName}|${i}`)}
-                                                                   onChange={() => handleStopSelectionChange(zoneName, i)}
-                                                                   onClick={(e) => e.stopPropagation()}
+                                                                    type="checkbox" 
+                                                                    className="w-4 h-4 text-ess-blue rounded border-gray-300 focus:ring-ess-blue cursor-pointer"
+                                                                    checked={selectedResultStops.has(`${zoneName}|${i}`)}
+                                                                    onChange={() => handleStopSelectionChange(zoneName, i)}
+                                                                    onClick={(e) => e.stopPropagation()}
                                                                />
                                                             </div>
                                                             <span className="font-bold text-slate-400 text-xs mt-0.5 w-5 text-right">{i+1}.</span>
