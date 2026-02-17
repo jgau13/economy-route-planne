@@ -830,9 +830,18 @@
                 window.fbOnSnapshot(window.fbQuery(userRef('clients')), s => setClientDB(s.docs.map(d => ({id: d.id, ...d.data()}))));
                 window.fbOnSnapshot(window.fbQuery(userRef('drivers')), s => setDrivers(s.docs.map(d => ({id: d.id, ...d.data()}))));
                 window.fbOnSnapshot(window.fbQuery(userRef('vehicles')), s => setVehicles(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                window.fbOnSnapshot(window.fbQuery(userRef('draft_stops'), window.fbOrderBy('createdAt')), s => setCurrentStops(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                window.fbOnSnapshot(window.fbQuery(userRef('zones'), window.fbOrderBy("name")), (s) => setZones(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-                window.fbOnSnapshot(window.fbQuery(userRef('saved_plans'), window.fbOrderBy('createdAt', 'desc')), s => setSavedPlans(s.docs.map(d => ({id: d.id, ...d.data()}))));
+                window.fbOnSnapshot(window.fbQuery(userRef('draft_stops')), s => {
+                    const sorted = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+                    setCurrentStops(sorted);
+                });
+                window.fbOnSnapshot(window.fbQuery(userRef('zones')), s => {
+                    const sorted = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+                    setZones(sorted);
+                });
+                window.fbOnSnapshot(window.fbQuery(userRef('saved_plans')), s => {
+                    const sorted = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                    setSavedPlans(sorted);
+                });
                 
                 window.fbOnSnapshot(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config'), (docSnap) => {
                     if (docSnap.exists()) {
@@ -846,14 +855,17 @@
             // --- LOGIC ---
             
             const autoSavePlan = async () => {
-                if (!optimizedRoutes || Object.keys(optimizedRoutes).length === 0) return; // Don't save empty state
+                if (!optimizedRoutes || Object.keys(optimizedRoutes).length === 0) return;
 
                 const now = Date.now();
                 const ONE_HOUR = 60 * 60 * 1000;
                 
-                // Sort plans to ensure we get the absolute latest created one
-                const sortedPlans = [...savedPlans].sort((a, b) => b.createdAt - a.createdAt);
-                const latestPlan = sortedPlans[0];
+                // Filtrar solo los planes que son autoguardados
+                const autoSavedPlansList = savedPlans
+                    .filter(p => p.isAutoSave === true)
+                    .sort((a, b) => b.createdAt - a.createdAt);
+                
+                const latestPlan = autoSavedPlansList[0];
 
                 const planData = {
                     optimizedRoutes,
@@ -863,20 +875,21 @@
                     currentStops,
                     zoneCount: Object.keys(optimizedRoutes).length,
                     stopCount: currentStops.length,
-                    updatedAt: now // Track update time
+                    updatedAt: now,
+                    isAutoSave: true // Flag importante para identificar autoguardados
                 };
 
                 try {
+                    // Si existe un autoguardado reciente (menos de 1 hora), lo actualizamos
                     if (latestPlan && (now - latestPlan.createdAt < ONE_HOUR)) {
-                        // Overwrite existing
-                        console.log("Auto-saving: Overwriting plan", latestPlan.name);
+                        console.log("Auto-saving: Updating existing auto-save", latestPlan.name);
                         await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans', latestPlan.id), planData);
                     } else {
-                        // Create new
+                        // Si no hay autoguardado o es antiguo, creamos uno nuevo
                         const dateStr = new Date().toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: 'numeric' });
                         planData.name = `Auto-Save (${dateStr})`;
                         planData.createdAt = now;
-                        console.log("Auto-saving: Creating new plan", planData.name);
+                        console.log("Auto-saving: Creating new auto-save", planData.name);
                         await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans'), planData);
                     }
                 } catch (e) {
@@ -951,7 +964,6 @@
             };
             
             const handleDeleteRoute = async (zoneName) => {
-                // Check if it's an UNASSIGNED zone to trigger deletion
                 const isUnassignedZone = zoneName === "UNASSIGNED" || zoneName.startsWith("UNASSIGNED") || zoneName === "Ungrouped";
 
                 if (isUnassignedZone) {
@@ -960,7 +972,6 @@
                     const stopsToDelete = optimizedRoutes[zoneName].paradas || [];
                     const idsToDelete = stopsToDelete.map(s => s.id || findStopId(s)).filter(id => id);
 
-                    // 1. Delete from Firestore
                     if (window.fbDb && user && idsToDelete.length > 0) {
                         try {
                             const batch = window.fbWriteBatch(window.fbDb);
@@ -975,7 +986,6 @@
                         }
                     }
 
-                    // 2. Remove from Local State
                     setOptimizedRoutes(prev => {
                         const newRoutes = { ...prev };
                         delete newRoutes[zoneName];
@@ -986,7 +996,6 @@
                     return;
                 }
 
-                // Standard logic for assigned routes
                 if(!confirm("Delete this route? Stops will be moved to UNASSIGNED.")) return;
                 
                 setOptimizedRoutes(prev => {
@@ -1006,7 +1015,6 @@
                     return newRoutes;
                 });
                 
-                // Also remove the group from Planning
                 setStopGroups(prev => prev.filter(g => g.name !== zoneName));
                 setSelectedResultStops(new Set());
             };
@@ -1017,11 +1025,9 @@
                     const zone = editingResultStop.zoneName;
                     const idx = editingResultStop.index;
 
-                    // Identificar el ID antes de la actualización de estado para asegurar persistencia
                     const currentRouteStop = optimizedRoutes[zone].paradas[idx];
                     stopId = currentRouteStop.id || findStopId(currentRouteStop);
 
-                    // 1. Actualizar estado visual local
                     setOptimizedRoutes(prev => {
                         const newRoutes = JSON.parse(JSON.stringify(prev));
                         const stop = newRoutes[zone].paradas[idx];
@@ -1030,7 +1036,6 @@
                         return newRoutes;
                     });
 
-                    // 2. Persistir permanentemente en la base de datos (draft_stops)
                     if (stopId && window.fbDb && user) {
                         try {
                             const stopRef = window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', stopId);
@@ -1039,7 +1044,7 @@
                                 pieces: tempPieces 
                             });
                         } catch(e) { 
-                            console.error("Error al sincronizar datos de parada con Firebase:", e); 
+                            console.error("Error syncing stop with Firebase:", e); 
                         }
                     }
 
@@ -1072,15 +1077,12 @@
                 }
 
                 if (targetZoneForManualAdd) {
-                    // 1. Save to DB so it persists
                     const newStopData = { ...data, createdAt: Date.now() };
                     const docRef = await window.fbAddDoc(col, newStopData);
                     const newId = docRef.id;
 
-                    // 2. Update STOP GROUPS so generateRoutes sees it as assigned
                     setStopGroups(prev => prev.map(g => g.name === targetZoneForManualAdd ? { ...g, stops: [...g.stops, newId] } : g));
 
-                    // 3. Update Optimized Routes visual state
                     const newStop = { ...newStopData, id: newId, nombre: data.name, direccion: data.address };
                     setOptimizedRoutes(prev => {
                         const route = prev[targetZoneForManualAdd];
@@ -1135,7 +1137,7 @@
 
             const clearAllStops = async () => {
                 if (!confirm("Are you sure you want to remove ALL stops?")) return;
-                const q = window.fbQuery(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops'));
+                const q = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops');
                 const snapshot = await window.fbGetDocs(q);
                 const batch = window.fbWriteBatch(window.fbDb);
                 snapshot.docs.forEach(doc => batch.delete(doc.ref));
@@ -1185,7 +1187,7 @@
                 
                 const parts = stopSelectionInput.split(',').map(s => s.trim());
                 const selectedIndices = new Set();
-                const totalStops = currentStops.length;
+                const totalStopsCount = currentStops.length;
                 parts.forEach(part => {
                     if (part.includes('-')) {
                         const [start, end] = part.split('-').map(Number);
@@ -1193,18 +1195,18 @@
                             const min = Math.min(start, end);
                             const max = Math.max(start, end);
                             for (let i = min; i <= max; i++) {
-                                if (i > 0 && i <= totalStops) selectedIndices.add(i - 1);
+                                if (i > 0 && i <= totalStopsCount) selectedIndices.add(i - 1);
                             }
                         }
                     } else {
                         const num = Number(part);
-                        if (!isNaN(num) && num > 0 && num <= totalStops) selectedIndices.add(num - 1);
+                        if (!isNaN(num) && num > 0 && num <= totalStopsCount) selectedIndices.add(num - 1);
                     }
                 });
                 if (selectedIndices.size === 0) return alert("Invalid stop selection.");
                 
                 const cleanName = groupNameInput.toUpperCase().trim();
-                const numRoutes = parseInt(numRoutesInput) || 1;
+                const numRoutesValue = parseInt(numRoutesInput) || 1;
                 
                 const nameExists = stopGroups.some(g => g.name === cleanName && g.id !== editingGroupId);
                 if (nameExists) return alert("A zone with this name already exists.");
@@ -1229,13 +1231,13 @@
                     setStopGroups(stopGroups.map(g => g.id === editingGroupId ? { 
                         ...g, 
                         name: cleanName, 
-                        numRoutes, 
+                        numRoutes: numRoutesValue, 
                         color: candidateColor, 
                         stops: selectedIds 
                     } : g));
                     setEditingGroupId(null);
                 } else {
-                    const newGroup = { id: Date.now(), name: cleanName, numRoutes, stops: selectedIds, color: candidateColor };
+                    const newGroup = { id: Date.now(), name: cleanName, numRoutes: numRoutesValue, stops: selectedIds, color: candidateColor };
                     setStopGroups([...stopGroups, newGroup]);
                 }
                 setStopSelectionInput('');
@@ -1266,7 +1268,6 @@
                     }
                 }));
 
-                // Sincronizar con el Planner creando un nuevo grupo
                 setStopGroups(prev => [...prev, { id: Date.now(), name: zoneName, numRoutes: 1, stops: [], color: color }]);
                 
                 if (newRouteConfig.driverId) {
@@ -1316,7 +1317,6 @@
                 return mapData;
             }, [currentStops, stopGroups]);
 
-            // Helper para re-vincular IDs y datos de facturación frescos desde la base de datos de origen
             const enrichWithClientData = (stops) => {
                 return stops.map(s => {
                     let match = null;
@@ -1347,12 +1347,8 @@
                 try {
                     const tasks = [];
                     const newResults = { ...optimizedRoutes }; 
-
                     const usedIds = new Set();
 
-                    // Limpieza previa de paradas movidas
-                    const stopOwnership = new Map();
-                    stopGroups.forEach(g => g.stops.forEach(id => stopOwnership.set(id, g.name)));
                     const activeZoneNames = new Set(stopGroups.map(g => g.name));
 
                     Object.keys(newResults).forEach(key => {
@@ -1361,11 +1357,9 @@
                         const keyBase = key.split(' - Route')[0];
                         if ((!route.paradas || route.paradas.length === 0) && !activeZoneNames.has(keyBase)) {
                             delete newResults[key];
-                            return;
                         }
                     });
 
-                    // 1. Procesar Zonas Definidas
                     stopGroups.forEach(g => {
                         const stops = g.stops.map(id => {
                             usedIds.add(id);
@@ -1389,7 +1383,6 @@
                                     currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
                                     needsRecalc = false;
                                     
-                                    // Sincronizar datos de facturación frescos incluso si no se recalcula ruta
                                     relatedRouteKeys.forEach(key => {
                                          newResults[key].color = g.color;
                                          newResults[key].paradas = newResults[key].paradas.map(p => {
@@ -1427,14 +1420,13 @@
                         }
                     });
 
-                    // 2. Procesar Paradas sin asignar
-                    const ungroupedStops = currentStops.filter(s => !usedIds.has(s.id));
-                    if (ungroupedStops.length > 0) {
+                    const ungroupedStopsList = currentStops.filter(s => !usedIds.has(s.id));
+                    if (ungroupedStopsList.length > 0) {
                          tasks.push({ 
                              zoneName: "UNASSIGNED", 
                              color: "#000000", 
                              body: { 
-                                 direcciones: ungroupedStops, 
+                                 direcciones: ungroupedStopsList, 
                                  num_vans: 1, 
                                  base_address: baseAddress, 
                                  dwell_time: 10 
@@ -1598,14 +1590,14 @@
             };
 
             const handleGlobalPrint = async () => {
-                await autoSavePlan();
+                await autoSavePlan(); // TRIGGER AUTO-SAVE
                 setPrintData(null);
                 setShowBulkManifestPrint(false);
                 setShowGlobalPrint(true); 
             };
 
             const handleBulkManifestPrint = async () => {
-                await autoSavePlan();
+                await autoSavePlan(); // TRIGGER AUTO-SAVE
                 setPrintData(null);
                 setShowGlobalPrint(false);
                 setShowBulkManifestPrint(true);
@@ -1671,7 +1663,8 @@
                     stopGroups,
                     currentStops,
                     zoneCount: Object.keys(optimizedRoutes || {}).length,
-                    stopCount: currentStops.length
+                    stopCount: currentStops.length,
+                    isAutoSave: false
                 };
                 await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans'), planData);
                 setPlanName('');
@@ -1959,6 +1952,7 @@
                                         key={viewingDriver ? viewingDriver.name : 'driver-map'}
                                         routes={{ [viewingDriver.name]: viewingDriver.data }} 
                                         baseAddress={baseAddress} 
+                                        enableDrawing={true}
                                     />
                                 </div>
                             </div>
@@ -2093,7 +2087,7 @@
                                                 <input 
                                                     ref={inputRef}
                                                     type="text" 
-                                                    className="w-full p-3 border rounded-lg outline-none focus:border-ess-blue" 
+                                                    className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue" 
                                                     placeholder="Name" 
                                                     value={newStopName} 
                                                     onChange={e => {
@@ -2438,11 +2432,11 @@
                                                         >
                                                             <div className="flex items-center justify-center mr-2">
                                                                <input 
-                                                                   type="checkbox" 
-                                                                   className="w-4 h-4 text-ess-blue rounded border-gray-300 focus:ring-ess-blue cursor-pointer"
-                                                                   checked={selectedResultStops.has(`${zoneName}|${i}`)}
-                                                                   onChange={() => handleStopSelectionChange(zoneName, i)}
-                                                                   onClick={(e) => e.stopPropagation()}
+                                                                    type="checkbox" 
+                                                                    className="w-4 h-4 text-ess-blue rounded border-gray-300 focus:ring-ess-blue cursor-pointer"
+                                                                    checked={selectedResultStops.has(`${zoneName}|${i}`)}
+                                                                    onChange={() => handleStopSelectionChange(zoneName, i)}
+                                                                    onClick={(e) => e.stopPropagation()}
                                                                />
                                                             </div>
                                                             <span className="font-bold text-slate-400 text-xs mt-0.5 w-5 text-right">{i+1}.</span>
@@ -2501,7 +2495,7 @@
 
                                                     <button 
                                                         onClick={() => {
-                                                            autoSavePlan(); // AUTO-SAVE ON PRINT SHEET
+                                                            autoSavePlan(); // AUTO-SAVE ON INDIVIDUAL PRINT SHEET
                                                             setPrintData({ 
                                                                 stops: routeData.paradas, 
                                                                 driverName: driver ? driver.name : "Unassigned",
