@@ -266,6 +266,7 @@
             const infoWindowRef = useRef(null); 
             const geocoderRef = useRef(null);
             const drawingManagerRef = useRef(null);
+            const baseLocCache = useRef(null); // CACHÉ PERSISTENTE PARA LA BASE
             const [mapReady, setMapReady] = useState(false);
             const onMarkerClickRef = useRef(onMarkerClick);
 
@@ -425,8 +426,8 @@
                     if (typeof coordData === 'string') {
                         const [lat, lng] = coordData.split(',').map(Number);
                         if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
-                    } else if (typeof coordData === 'object' && coordData.lat) {
-                        return coordData;
+                    } else if (typeof coordData === 'object' && coordData.lat !== undefined && coordData.lng !== undefined) {
+                        return { lat: Number(coordData.lat), lng: Number(coordData.lng) };
                     }
                     return null;
                 };
@@ -443,11 +444,14 @@
                             if (status === 'OK' && results[0]) {
                                 window.geocodeCache[address] = results[0].geometry.location;
                                 callback(results[0].geometry.location);
+                            } else {
+                                console.warn("No se pudo resolver la dirección:", address, status);
                             }
                         });
                     }
                 };
 
+                // DIBUJAR ALMACÉN CON CACHÉ GLOBAL (SOLUCIONA EL PROBLEMA DEL CAMBIO DE PESTAÑA)
                 if (baseAddress) {
                     geocodeAddressCached(baseAddress, (location) => {
                         const m = new window.google.maps.Marker({
@@ -464,7 +468,7 @@
                 if (!routes) return;
                 const routeEntries = Object.entries(routes);
                 
-                routeEntries.forEach(([groupName, routeData], index) => {
+                routeEntries.forEach(([groupName, routeData]) => {
                     if (!routeData || !routeData.paradas) return;
                     
                     let color = routeData.color || '#000000'; 
@@ -491,6 +495,7 @@
                                         if (i < legs.length) {
                                             const clientName = stop.nombre || stop.name || 'Client';
                                             const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${i+1}. ${clientName}</strong><br><span style="color:#666">${address}</span></div>`;
+                                            // DirectionsService provee las coordenadas exactas de las paradas
                                             addMarker(legs[i].end_location, clientName, (i+1).toString(), color, content, null);
                                         }
                                     });
@@ -498,20 +503,21 @@
                             });
                         }
                     } else {
+                        // MODO PLANIFICACIÓN: NO USAR GEOCODER AUTOMÁTICO, SOLO DIBUJAR SI TIENE LAT/LNG
                         routeData.paradas.forEach((stop, i) => {
                             const address = stop.direccion || stop.address;
                             if (!address) return;
+                            
+                            // INTENTA LEER LAS COORDENADAS GUARDADAS DIRECTAMENTE
                             const pos = parseCoord(stop.coord || stop.latlng);
+                            
                             const label = (stop.originalIndex || i + 1).toString();
                             const clientName = stop.nombre || stop.name || 'Client';
                             const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${label}. ${clientName}</strong><br><span style="color:#666">${address}</span><br><span style="color:${color}; font-weight:bold;">${groupName}</span></div>`;
 
+                            // SI TIENE COORDENADAS SE DIBUJA, SINO NO SE LLAMA A LA API PARA AHORRAR DINERO
                             if (pos) {
                                 addMarker(pos, clientName, label, color, content, stop.originalIndex);
-                            } else {
-                                geocodeAddressCached(address, (location) => {
-                                    addMarker(location, clientName, label, color, content, stop.originalIndex);
-                                });
                             }
                         });
                     }
@@ -716,7 +722,7 @@
             // INPUTS
             const [newStopName, setNewStopName] = useState('');
             const [newStopAddress, setNewStopAddress] = useState('');
-            const [newStopLatLng, setNewStopLatLng] = useState(null); // NUEVO ESTADO
+            const [newStopLatLng, setNewStopLatLng] = useState(null); // NUEVO ESTADO PARA COORDENADAS
 
             const [showSuggestions, setShowSuggestions] = useState(false);
             const [activeSuggestion, setActiveSuggestion] = useState(-1);
@@ -750,6 +756,7 @@
             // CLIENTS
             const [clientFormName, setClientFormName] = useState('');
             const [clientFormAddress, setClientFormAddress] = useState('');
+            const [clientFormLatLng, setClientFormLatLng] = useState(null); // PARA LA PESTAÑA CLIENTS
             const [editingClientId, setEditingClientId] = useState(null);
 
             // ZONES
@@ -882,6 +889,38 @@
                 });
             }, [user, dbReady]);
 
+            // --- FUNCIÓN DE UTILIDAD PARA OBTENER COORDENADAS UNA SOLA VEZ AL GUARDAR ---
+            const getLatLngForAddress = async (address) => {
+                if (!window.google || !window.google.maps) return null;
+                return new Promise((resolve) => {
+                    const geocoder = new window.google.maps.Geocoder();
+                    geocoder.geocode({ address }, (results, status) => {
+                        if (status === 'OK' && results && results[0]) {
+                            resolve({
+                                lat: results[0].geometry.location.lat(),
+                                lng: results[0].geometry.location.lng()
+                            });
+                        } else {
+                            resolve(null);
+                        }
+                    });
+                });
+            };
+
+            // --- HELPER PARA EVITAR ERRORES EN EL BACKEND PYTHON ---
+            const formatStopForBackend = (stop) => {
+                if (!stop) return stop;
+                const s = { ...stop };
+                // Si el backend de Python hace .split(',') necesita que sea un string, no un objeto
+                if (s.latlng && typeof s.latlng === 'object') {
+                    s.latlng = `${s.latlng.lat},${s.latlng.lng}`;
+                }
+                if (s.coord && typeof s.coord === 'object') {
+                    s.coord = `${s.coord.lat},${s.coord.lng}`;
+                }
+                return s;
+            };
+
             // --- LOGIC ---
             
             const autoSavePlan = async () => {
@@ -908,13 +947,11 @@
 
                 try {
                     if (latestPlan && (now - latestPlan.createdAt < ONE_HOUR)) {
-                        console.log("Auto-saving: Updating existing auto-save", latestPlan.name);
                         await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans', latestPlan.id), planData);
                     } else {
                         const dateStr = new Date().toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: 'numeric' });
                         planData.name = `Auto-Save (${dateStr})`;
                         planData.createdAt = now;
-                        console.log("Auto-saving: Creating new auto-save", planData.name);
                         await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans'), planData);
                     }
                 } catch (e) {
@@ -1090,12 +1127,19 @@
 
                 if (!tempStopData) return;
                 
+                // REPARACIÓN EN TIEMPO REAL SI FALTA LAT/LNG
+                let finalLatLng = tempStopData.latlng || null;
+                if (!finalLatLng) {
+                    finalLatLng = await getLatLngForAddress(tempStopData.address);
+                }
+
+                // GUARDAR ESTRICTAMENTE LAS COORDENADAS OBTENIDAS
                 const data = {
                     name: tempStopData.name,
                     address: tempStopData.address,
                     invoices: tempInvoices,
                     pieces: tempPieces,
-                    latlng: tempStopData.latlng || null
+                    latlng: finalLatLng
                 };
 
                 const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops');
@@ -1105,9 +1149,11 @@
                 
                 if (!addressExists && window.fbDb && user) {
                     try {
+                        // Guardar en la BBDD de clientes TAMBIÉN con sus coordenadas
                         await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients'), {
                             name: tempStopData.name,
-                            address: tempStopData.address
+                            address: tempStopData.address,
+                            latlng: finalLatLng
                         });
                     } catch (e) {}
                 }
@@ -1158,6 +1204,7 @@
                 await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', id));
             };
 
+            // REPARACIÓN EN TIEMPO REAL: SI VIENE DE LA DB SIN LATLNG, BUSCARLO UNA VEZ Y GUARDAR
             const addClientToRoute = async (client) => {
                 const normalize = s => s ? s.toLowerCase().trim() : "";
                 const clientAddr = normalize(client.address);
@@ -1166,9 +1213,19 @@
                 if (existingStop) {
                     await removeStop(existingStop.id);
                 } else {
+                    let finalLatLng = client.latlng || null;
+                    if (!finalLatLng) {
+                        finalLatLng = await getLatLngForAddress(client.address);
+                        // Repara silenciosamente el cliente en la BBDD para que la proxima vez sea instantaneo
+                        if (finalLatLng && client.id && window.fbDb && user) {
+                            window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', client.id), { latlng: finalLatLng }).catch(()=>{});
+                        }
+                    }
+
                     await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops'), {
                         name: client.name,
                         address: client.address,
+                        latlng: finalLatLng, 
                         createdAt: Date.now()
                     });
                 }
@@ -1181,7 +1238,11 @@
                 const batch = window.fbWriteBatch(window.fbDb);
                 snapshot.docs.forEach(doc => batch.delete(doc.ref));
                 await batch.commit();
+                
+                // LIMPIAR TAMBIÉN EL ESTADO INTERNO PARA EVITAR RESIDUOS
                 setStopGroups([]);
+                setOptimizedRoutes(null);
+                setSelectedResultStops(new Set());
             };
 
             const clearAllGroups = () => {
@@ -1191,6 +1252,10 @@
                     setGroupNameInput('');
                     setStopSelectionInput('');
                     setNumRoutesInput(1);
+                    
+                    // LIMPIAR RESULTADOS PARA EVITAR RESIDUOS
+                    setOptimizedRoutes(null);
+                    setSelectedResultStops(new Set());
                 }
             };
 
@@ -1396,13 +1461,16 @@
                     (stopGroups || []).forEach(g => (g.stops || []).forEach(id => stopOwnership.set(id, g.name)));
                     const activeZoneNames = new Set((stopGroups || []).map(g => g.name));
 
+                    // ELIMINAR RUTAS VIEJAS Y FANTASMAS
                     Object.keys(newResults).forEach(key => {
-                        if (key.startsWith("UNASSIGNED")) return;
-                        const route = newResults[key];
-                        const keyBase = key.split(' - Route')[0];
-                        if ((!route.paradas || route.paradas.length === 0) && !activeZoneNames.has(keyBase)) {
-                            delete newResults[key];
+                        if (key.startsWith("UNASSIGNED")) {
+                            delete newResults[key]; // Siempre regenerar UNASSIGNED
                             return;
+                        }
+                        const keyBase = key.split(' - Route')[0];
+                        // Si la zona base ya no existe, borrar la ruta entera para evitar fantasmas
+                        if (!activeZoneNames.has(keyBase)) {
+                            delete newResults[key];
                         }
                     });
 
@@ -1422,7 +1490,7 @@
                             if (relatedRouteKeys.length > 0) {
                                 const currentAddresses = stops.map(s => s.address).sort();
                                 const existingStops = [];
-                                relatedRouteKeys.forEach(key => newResults[key].paradas.forEach(p => existingStops.push(p.direccion)));
+                                relatedRouteKeys.forEach(key => newResults[key].paradas.forEach(p => existingStops.push(p.direccion || p.address)));
                                 const existingAddressesSorted = existingStops.sort();
                                 
                                 if (currentAddresses.length > 0 && 
@@ -1436,14 +1504,15 @@
                                          newResults[key].paradas = newResults[key].paradas.map(p => {
                                              let freshStop = null;
                                              if (p.id) freshStop = stops.find(s => s.id === p.id);
-                                             if (!freshStop) freshStop = stops.find(s => (s.address || "").toLowerCase().trim() === (p.direccion || "").toLowerCase().trim());
+                                             if (!freshStop) freshStop = stops.find(s => (s.address || "").toLowerCase().trim() === (p.direccion || p.address || "").toLowerCase().trim());
                                              if (freshStop) {
                                                  return { 
                                                      ...p, 
                                                      id: freshStop.id, 
                                                      invoices: freshStop.invoices, 
                                                      pieces: freshStop.pieces, 
-                                                     nombre: freshStop.name 
+                                                     nombre: freshStop.name,
+                                                     direccion: freshStop.address
                                                  };
                                              }
                                              return p;
@@ -1458,7 +1527,7 @@
                                     zoneName: g.name, 
                                     color: g.color, 
                                     body: { 
-                                        direcciones: stops, 
+                                        direcciones: stops.map(formatStopForBackend), 
                                         num_vans: g.numRoutes || 1, 
                                         base_address: baseAddress, 
                                         dwell_time: 10 
@@ -1475,7 +1544,7 @@
                              zoneName: "UNASSIGNED", 
                              color: "#000000", 
                              body: { 
-                                 direcciones: ungroupedStops, 
+                                 direcciones: ungroupedStops.map(formatStopForBackend), 
                                  num_vans: 1, 
                                  base_address: baseAddress, 
                                  dwell_time: 10 
@@ -1488,10 +1557,21 @@
                             const res = await fetch('/optimizar', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(task.body) });
                             const data = await res.json();
                             
+                            if (!res.ok) {
+                                throw new Error(data.error || data.message || `Error ${res.status}: Fallo de servidor`);
+                            }
+                            
                             Object.keys(data).forEach((key, i) => {
                                  const routeKey = task.zoneName === "UNASSIGNED" ? `UNASSIGNED ${i+1}` : (task.body.num_vans > 1 ? `${task.zoneName} - Route ${i+1}` : task.zoneName);
-                                 const enrichedStops = enrichWithClientData(data[key].paradas);
-                                 newResults[routeKey] = { ...data[key], paradas: enrichedStops, color: task.color };
+                                 
+                                 const routeResponse = data[key];
+                                 const isArray = Array.isArray(routeResponse);
+                                 const paradasList = isArray ? routeResponse : (routeResponse.paradas || []);
+                                 const duracion = isArray ? 0 : (routeResponse.duracion_estimada || 0);
+                                 const link = isArray ? '' : (routeResponse.link || '');
+
+                                 const enrichedStops = enrichWithClientData(paradasList);
+                                 newResults[routeKey] = { paradas: enrichedStops, duracion_estimada: duracion, link: link, color: task.color };
                             });
                         }));
                     }
@@ -1499,7 +1579,12 @@
                     setOptimizedRoutes(newResults);
                     setSelectedResultStops(new Set());
                     setView('results');
-                } catch (e) { setError("Error generating routes: " + e.message); } finally { setLoading(false); }
+                } catch (e) { 
+                    alert("Error generando rutas: " + e.message); 
+                    setError("Error generating routes: " + e.message); 
+                } finally { 
+                    setLoading(false); 
+                }
             };
 
             const handleClientKeyDown = (e) => {
@@ -1510,7 +1595,8 @@
                         const selection = filtered[activeSuggestion];
                         setNewStopName(selection.name);
                         setNewStopAddress(selection.address);
-                        setTempStopData({name: selection.name, address: selection.address});
+                        setNewStopLatLng(selection.latlng || null);
+                        setTempStopData({name: selection.name, address: selection.address, latlng: selection.latlng || null});
                         setShowSuggestions(false);
                         if (addressInputRef.current) addressInputRef.current.focus();
                     } else if (e.key === 'Enter') {
@@ -1534,7 +1620,8 @@
                         const selection = filtered[activeSuggestion];
                         setNewStopName(selection.name);
                         setNewStopAddress(selection.address);
-                        setTempStopData({name: selection.name, address: selection.address});
+                        setNewStopLatLng(selection.latlng || null);
+                        setTempStopData({name: selection.name, address: selection.address, latlng: selection.latlng || null});
                         setShowSuggestions(false);
                         if(addressInputRef.current) addressInputRef.current.focus();
                     } else if (e.key === 'Enter') {
@@ -1556,16 +1643,21 @@
                     const res = await fetch('/recalcular', { 
                         method: 'POST', 
                         headers: {'Content-Type':'application/json'}, 
-                        body: JSON.stringify({ paradas: stops, base_address: baseAddress, dwell_time: 10 }) 
+                        body: JSON.stringify({ paradas: stops.map(formatStopForBackend), base_address: baseAddress, dwell_time: 10 }) 
                     });
                     const d = await res.json();
-                    if (!res.ok) throw new Error(d.error);
+                    if (!res.ok) throw new Error(d.error || `Error ${res.status}`);
                     
-                    const enrichedStops = enrichWithClientData(d.paradas);
+                    const isArray = Array.isArray(d);
+                    const paradasList = isArray ? d : (d.paradas || []);
+                    const duracion = isArray ? 0 : (d.duracion_estimada || 0);
+                    const link = isArray ? '' : (d.link || '');
+
+                    const enrichedStops = enrichWithClientData(paradasList);
                     
                     setOptimizedRoutes(prev => ({
                         ...prev,
-                        [zoneName]: { ...prev[zoneName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: enrichedStops }
+                        [zoneName]: { ...prev[zoneName], duracion_estimada: duracion, link: link, paradas: enrichedStops }
                     }));
                 } catch(e) { console.error(e); alert("Error recalculating: "+e.message); }
                 finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
@@ -1577,16 +1669,23 @@
                     const res = await fetch('/optimizar', { 
                         method: 'POST', 
                         headers: {'Content-Type':'application/json'}, 
-                        body: JSON.stringify({ direcciones: stops, num_vans: 1, base_address: baseAddress, dwell_time: 10 }) 
+                        body: JSON.stringify({ direcciones: stops.map(formatStopForBackend), num_vans: 1, base_address: baseAddress, dwell_time: 10 }) 
                     });
                     const d = await res.json();
-                    if (!res.ok) throw new Error(d.error);
+                    if (!res.ok) throw new Error(d.error || `Error ${res.status}`);
+                    
                     const firstKey = Object.keys(d)[0];
-                    const enrichedStops = enrichWithClientData(d[firstKey].paradas);
+                    const routeResponse = d[firstKey];
+                    const isArray = Array.isArray(routeResponse);
+                    const paradasList = isArray ? routeResponse : (routeResponse.paradas || []);
+                    const duracion = isArray ? 0 : (routeResponse.duracion_estimada || 0);
+                    const link = isArray ? '' : (routeResponse.link || '');
+
+                    const enrichedStops = enrichWithClientData(paradasList);
                     
                     setOptimizedRoutes(prev => ({
                         ...prev,
-                        [zoneName]: { ...prev[zoneName], ...d[firstKey], paradas: enrichedStops }
+                        [zoneName]: { ...prev[zoneName], paradas: enrichedStops, duracion_estimada: duracion, link: link }
                     }));
                 } catch(e) { console.error(e); alert("Error re-optimizing: "+e.message); }
                 finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
@@ -1599,16 +1698,21 @@
                     const res = await fetch('/optimizar_restantes', { 
                         method: 'POST', 
                         headers: {'Content-Type':'application/json'}, 
-                        body: JSON.stringify({ paradas: currentRoute, base_address: baseAddress, dwell_time: 10 }) 
+                        body: JSON.stringify({ paradas: currentRoute.map(formatStopForBackend), base_address: baseAddress, dwell_time: 10 }) 
                     });
                     const d = await res.json();
-                    if (!res.ok) throw new Error(d.error);
+                    if (!res.ok) throw new Error(d.error || `Error ${res.status}`);
                     
-                    const enrichedStops = enrichWithClientData(d.paradas);
+                    const isArray = Array.isArray(d);
+                    const paradasList = isArray ? d : (d.paradas || []);
+                    const duracion = isArray ? 0 : (d.duracion_estimada || 0);
+                    const link = isArray ? '' : (d.link || '');
+
+                    const enrichedStops = enrichWithClientData(paradasList);
                     
                     setOptimizedRoutes(prev => ({
                         ...prev,
-                        [zoneName]: { ...prev[zoneName], duracion_estimada: d.duracion_estimada, link: d.link, paradas: enrichedStops }
+                        [zoneName]: { ...prev[zoneName], duracion_estimada: duracion, link: link, paradas: enrichedStops }
                     }));
                 } catch(e) { console.error(e); alert("Error optimizing remaining: "+e.message); }
                 finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
@@ -1626,12 +1730,26 @@
                 if (driver && driver.phone) phone = driver.phone.replace(/\D/g, '');
                 
                 const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
-                const link = routeLink ? routeLink : (stops && stops.length > 0 
+                
+                // 1. Google Maps Link
+                // Usa el enlace generado por el servidor si está disponible (para rutas completas optimizadas), 
+                // o lo construye si es un chunk o el servidor no devolvió enlace.
+                const googleLink = routeLink ? routeLink : (stops && stops.length > 0 
                     ? `https://www.google.com/maps/dir/?api=1&origin=${encode(baseAddress)}&destination=${encode(baseAddress)}&waypoints=${stops.map(s => encode(s.direccion || s.address)).join('%7C')}&travelmode=driving` 
                     : "");
+
+                // 2. Apple Maps Link
+                // Construye el enlace multi-parada nativo de Apple: saddr=Base -> daddr=Stop1+to:Stop2+to:Base
+                let appleLink = "";
+                if (stops && stops.length > 0) {
+                    const stopsString = stops.map(s => encode(s.direccion || s.address)).join('+to:');
+                    appleLink = `https://maps.apple.com/?saddr=${encode(baseAddress)}&daddr=${stopsString}+to:${encode(baseAddress)}&dirflg=d`;
+                }
                 
-                const text = encodeURIComponent(`Hello, here is your updated route:\n\n${link}\n\nDrive safely!`);
-                return phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
+                const message = `Hello, here is your updated route:\n\n📍 *Google Maps:*\n${googleLink}\n\n🍎 *Apple Maps:*\n${appleLink}\n\nDrive safely!`;
+                
+                const encodedText = encodeURIComponent(message);
+                return phone ? `https://wa.me/${phone}?text=${encodedText}` : `https://wa.me/?text=${encodedText}`;
             };
 
             const openDriverMap = (name, data) => {
@@ -1747,14 +1865,20 @@
             
             const saveClient = async () => { 
                 if(clientFormName && clientFormAddress) { 
+                    let finalLatLng = clientFormLatLng;
+                    if (!finalLatLng) {
+                        finalLatLng = await getLatLngForAddress(clientFormAddress);
+                    }
                     const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients');
-                    if(editingClientId) { await window.fbUpdateDoc(window.fbDoc(col, editingClientId), { name: clientFormName, address: clientFormAddress }); setEditingClientId(null); }
-                    else { await window.fbAddDoc(col, { name: clientFormName, address: clientFormAddress }); }
-                    setClientFormName(''); setClientFormAddress('');
+                    const data = { name: clientFormName, address: clientFormAddress, latlng: finalLatLng };
+
+                    if(editingClientId) { await window.fbUpdateDoc(window.fbDoc(col, editingClientId), data); setEditingClientId(null); }
+                    else { await window.fbAddDoc(col, data); }
+                    setClientFormName(''); setClientFormAddress(''); setClientFormLatLng(null);
                 } 
             };
             const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', id)); };
-            const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setEditingClientId(c.id); };
+            const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setClientFormLatLng(c.latlng || null); setEditingClientId(c.id); };
 
             const addZoneFromSettings = async () => { 
                 if(newZoneName.trim()){ 
@@ -2042,7 +2166,8 @@
                                                             onClick={()=>{
                                                                 setNewStopName(c.name); 
                                                                 setNewStopAddress(c.address); 
-                                                                setTempStopData({name: c.name, address: c.address}); 
+                                                                setNewStopLatLng(c.latlng || null);
+                                                                setTempStopData({name: c.name, address: c.address, latlng: c.latlng || null}); 
                                                                 setShowSuggestions(false); 
                                                                 if(addressInputRef.current) addressInputRef.current.focus();
                                                             }}
@@ -2159,7 +2284,8 @@
                                                                 onClick={()=>{
                                                                     setNewStopName(c.name); 
                                                                     setNewStopAddress(c.address); 
-                                                                    setTempStopData({name: c.name, address: c.address}); 
+                                                                    setNewStopLatLng(c.latlng || null);
+                                                                    setTempStopData({name: c.name, address: c.address, latlng: c.latlng || null}); 
                                                                     setShowSuggestions(false); 
                                                                     if(addressInputRef.current) addressInputRef.current.focus();
                                                                 }}
@@ -2522,9 +2648,15 @@
                                                     
                                                     {/* WHATSAPP LOGIC START */}
                                                     {(routeData.paradas || []).length <= 9 ? (
-                                                        <a href={getWhatsappLink(routeData.paradas, driver?.name, routeData.link)} target="_blank" className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors">
+                                                        <button 
+                                                            onClick={() => {
+                                                                const link = getWhatsappLink(routeData.paradas, driver?.name, routeData.link);
+                                                                window.open(link, '_blank');
+                                                            }} 
+                                                            className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                        >
                                                             <Icon name="message-circle" className="h-4 w-4" /> WhatsApp
-                                                        </a>
+                                                        </button>
                                                     ) : (
                                                         <div className="col-span-2 flex gap-1">
                                                             {Array.from({ length: Math.ceil((routeData.paradas || []).length / 9) }).map((_, idx) => {
@@ -2532,15 +2664,17 @@
                                                                 const end = start + 9;
                                                                 const chunk = (routeData.paradas || []).slice(start, end);
                                                                 return (
-                                                                    <a 
+                                                                    <button 
                                                                         key={idx} 
-                                                                        href={getWhatsappLink(chunk, driver?.name, null)} 
-                                                                        target="_blank" 
+                                                                        onClick={() => {
+                                                                            const link = getWhatsappLink(chunk, driver?.name, null);
+                                                                            window.open(link, '_blank');
+                                                                        }} 
                                                                         className="flex-1 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-1 shadow-sm transition-colors"
                                                                         title={`Stops ${start + 1} - ${Math.min(end, (routeData.paradas || []).length)}`}
                                                                     >
                                                                         <Icon name="message-circle" className="h-3 w-3" /> Part {idx + 1}
-                                                                    </a>
+                                                                    </button>
                                                                 );
                                                             })}
                                                         </div>
@@ -2616,7 +2750,7 @@
                                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="database" className="h-6 w-6 text-ess-blue" /> Clients Database</h2>
                                 <div className="flex gap-4 mb-6">
                                     <input type="text" placeholder="Client Name" className="flex-1 p-2 border rounded" value={clientFormName} onChange={e=>setClientFormName(e.target.value)} />
-                                    <div className="flex-[2]"><GoogleAddressInput placeholder="Address" value={clientFormAddress} onChange={e=>setClientFormAddress(e.target.value)} className="w-full p-2 border rounded" disabled={!scriptLoaded} isLoaded={scriptLoaded} /></div>
+                                    <div className="flex-[2]"><GoogleAddressInput placeholder="Address" value={clientFormAddress} onChange={e=>setClientFormAddress(e.target.value)} className="w-full p-2 border rounded" disabled={!scriptLoaded} isLoaded={scriptLoaded} onSelection={(ll)=>setClientFormLatLng(ll)} /></div>
                                     <button onClick={saveClient} className="bg-green-600 text-white px-4 py-2 rounded font-bold">
                                         {editingClientId ? 'Update' : 'Add'}
                                     </button>
