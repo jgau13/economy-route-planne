@@ -7,9 +7,9 @@ import random
 import math
 import traceback 
 import time
-import re # IMPORTANTE: Para validar Zip Codes con Regex
-# IMPORTANTE: Asegúrate de que requirements.txt tenga: requests, python-dotenv, googlemaps
+import re
 import requests 
+import gc  # IMPORTANTE: Garbage Collector
 from requests.exceptions import Timeout, ConnectionError 
 import concurrent.futures
 from flask import Flask, request, jsonify, send_from_directory
@@ -47,7 +47,7 @@ def handle_exception(e):
 # CONFIGURACIÓN
 # =============================================================================
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
-DISTANCEMATRIX_AI_KEY = os.environ.get("DISTANCEMATRIX_AI_KEY")
+MAPBOX_ACCESS_TOKEN = os.environ.get("MAPBOX_ACCESS_TOKEN")
 
 FIREBASE_CONFIG = {
     "apiKey": os.environ.get("FIREBASE_API_KEY"),
@@ -63,8 +63,8 @@ ALMACEN_COORD = "28.450324,-81.405368"
 if not GOOGLE_MAPS_API_KEY:
     print("⚠️ ADVERTENCIA: GOOGLE_MAPS_API_KEY no detectada.", file=sys.stderr)
 
-if not DISTANCEMATRIX_AI_KEY:
-    print("⚠️ ADVERTENCIA: DISTANCEMATRIX_AI_KEY no detectada.", file=sys.stderr)
+if not MAPBOX_ACCESS_TOKEN:
+    print("⚠️ ADVERTENCIA: MAPBOX_ACCESS_TOKEN no detectada.", file=sys.stderr)
 
 gmaps = None
 try:
@@ -95,33 +95,42 @@ init_db()
 # FUNCIONES LÓGICAS
 # =============================================================================
 
-def obtener_datos_geo(direccion):
+def obtener_datos_geo(direccion, db_connection=None):
     """
     Obtiene Lat/Lng. 
-    ESTRICTO: Retorna None si no hay Zip Code en la dirección o resultado.
+    OPTIMIZADO: Acepta una conexión DB existente para no abrir/cerrar repetidamente.
     """
     if not direccion: return None, None, None
     direccion_clean = direccion.strip().lower()
     
     db_path = os.path.join(basedir, 'economy_routes.db')
-    conn = None
+    should_close = False
+    
+    # Gestión de conexión optimizada
+    if db_connection:
+        conn = db_connection
+    else:
+        try:
+            conn = sqlite3.connect(db_path, timeout=30)
+            should_close = True
+        except:
+            return None, None, None
+
     try:
-        # Timeout para evitar bloqueos en SQLite
-        conn = sqlite3.connect(db_path, timeout=30)
         c = conn.cursor()
         c.execute("SELECT latlng, formatted_address, place_id FROM direcciones_v3 WHERE direccion=?", (direccion_clean,))
         res_db = c.fetchone()
         
         if res_db:
-            # VALIDACIÓN ESTRICTA EN CACHÉ
-            # Si lo que tenemos guardado no tiene un número de 5 dígitos, lo consideramos inválido
             formatted_addr = res_db[1]
+            # Validación simple de zip code
             if not re.search(r'\b\d{5}\b', formatted_addr):
-                print(f"⚠️ Dirección en caché rechazada (Falta Zip): {formatted_addr}", file=sys.stderr)
-                return None, None, None
-            
-            return res_db[0], res_db[1], res_db[2]
+                # print(f"⚠️ Dirección en caché rechazada (Falta Zip): {formatted_addr}", file=sys.stderr)
+                pass
+            else:
+                return res_db[0], res_db[1], res_db[2]
         
+        # Si no está en DB, consultamos API (Solo si tenemos gmaps)
         if not gmaps: return None, None, None
         
         try:
@@ -132,9 +141,6 @@ def obtener_datos_geo(direccion):
 
         if geocode_result and len(geocode_result) > 0:
             res = geocode_result[0]
-            
-            # VALIDACIÓN ESTRICTA EN API
-            # Debe tener un componente 'postal_code'
             has_zip = False
             for component in res.get('address_components', []):
                 if 'postal_code' in component.get('types', []):
@@ -144,13 +150,14 @@ def obtener_datos_geo(direccion):
             formatted_addr = res.get('formatted_address', direccion)
             
             if not has_zip:
-                 print(f"⚠️ Dirección API rechazada (Falta Zip): {formatted_addr}", file=sys.stderr)
+                 # print(f"⚠️ Dirección API rechazada (Falta Zip): {formatted_addr}", file=sys.stderr)
                  return None, None, None
 
             loc = res['geometry']['location']
             latlng_str = f"{loc['lat']},{loc['lng']}"
             place_id = res.get('place_id', '')
             
+            # Guardamos en DB para la próxima
             c.execute("INSERT OR REPLACE INTO direcciones_v3 VALUES (?, ?, ?, ?)", (direccion_clean, latlng_str, place_id, formatted_addr))
             conn.commit()
             return latlng_str, formatted_addr, place_id
@@ -158,7 +165,8 @@ def obtener_datos_geo(direccion):
     except Exception as e:
         print(f"Error Geocoding General: {e}", file=sys.stderr)
     finally:
-        if conn: conn.close()
+        if should_close and conn:
+            conn.close()
         
     return None, None, None
 
@@ -171,18 +179,15 @@ def parse_latlng(latlng_str):
         return 0.0, 0.0
 
 def simple_kmeans_plus(points, k, max_iter=100):
-    """
-    K-Means con inicialización inteligente (K-Means++) pero SIN forzar balanceo.
-    Esto agrupa de forma natural por cercanía geográfica.
-    """
     if not points: return []
     if k <= 0: return [points]
-    if k > len(points): k = len(points) # Ajuste si hay más vans que paradas
+    if k > len(points): k = len(points)
 
-    # 1. Elegir primer centroide al azar
+    # Intento de liberar memoria antes de cálculo pesado
+    gc.collect()
+
     centroids = [random.choice([p['coords'] for p in points])]
     
-    # 2. Elegir el resto de centroides basados en la distancia (K-Means++ Init)
     for _ in range(k - 1):
         dists = []
         for p in points:
@@ -204,7 +209,6 @@ def simple_kmeans_plus(points, k, max_iter=100):
                     centroids.append(points[i]['coords'])
                     break
     
-    # 3. Iterar
     clusters = [[] for _ in range(len(centroids))]
     for _ in range(max_iter):
         clusters = [[] for _ in range(len(centroids))]
@@ -237,60 +241,90 @@ def simple_kmeans_plus(points, k, max_iter=100):
         
     return clusters
 
-def obtener_matriz_dm_ai(puntos):
+def obtener_matriz_mapbox(puntos):
     """
-    Consulta a DistanceMatrix.ai con PAGINACIÓN (Chunking) para evitar el límite de 100 elementos.
+    Consulta a Mapbox Matrix API con PAGINACIÓN (Chunking).
+    Mapbox límite estándar: 25 coordenadas por petición.
     """
     if not puntos or len(puntos) < 2: return [[0]]
-    if not DISTANCEMATRIX_AI_KEY: raise Exception("Falta configurar DISTANCEMATRIX_AI_KEY")
+    if not MAPBOX_ACCESS_TOKEN: raise Exception("Falta configurar MAPBOX_ACCESS_TOKEN")
 
     n = len(puntos)
     full_matrix = [[0] * n for _ in range(n)]
-    clean_points = [p.replace(" ", "") for p in puntos]
     
-    # Límite seguro para la API "Fast" (10x10 = 100 elementos)
-    BATCH_SIZE = 10
+    # Mapbox acepta lat,lng string, pero su API Matrix prefiere lon,lat en path.
+    # Vamos a usar BATCH_SIZE = 12 para que 12 origenes + 12 destinos = 24 coords (menos de 25).
+    BATCH_SIZE = 12
     
-    print(f"🌍 Consultando DM.ai paginado para {n} puntos (Total: {n*n} elementos)...", file=sys.stdout)
+    print(f"🌍 Consultando Mapbox Matrix paginado para {n} puntos...", file=sys.stdout)
 
+    # Definimos la tarea de fetch para ejecutar en paralelo
+    def fetch_mapbox_chunk(args):
+        i_start, j_start, chunk_origins, chunk_dests = args
+        
+        def to_mb(latlng):
+            parts = latlng.split(',')
+            return f"{parts[1].strip()},{parts[0].strip()}" # lon,lat
+
+        origins_mb = [to_mb(p) for p in chunk_origins]
+        dests_mb = [to_mb(p) for p in chunk_dests]
+        
+        coords_list = origins_mb + dests_mb
+        coords_str = ";".join(coords_list)
+        
+        n_src = len(origins_mb)
+        n_dst = len(dests_mb)
+        
+        # Indices relativos a la lista de coordenadas enviada
+        src_indices = ";".join(map(str, range(n_src)))
+        dst_indices = ";".join(map(str, range(n_src, n_src + n_dst)))
+        
+        url = f"https://api.mapbox.com/directions-matrix/v1/mapbox/driving/{coords_str}"
+        params = {
+            "access_token": MAPBOX_ACCESS_TOKEN,
+            "sources": src_indices,
+            "destinations": dst_indices,
+            "annotations": "duration"
+        }
+        
+        try:
+            r = requests.get(url, params=params, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                return (i_start, j_start, data.get("durations", []))
+            else:
+                print(f"⚠️ HTTP Error Mapbox {r.status_code}: {r.text}", file=sys.stderr)
+                return None
+        except Exception as e:
+            print(f"⚠️ Excepción Mapbox en lote {i_start},{j_start}: {str(e)}", file=sys.stderr)
+            return None
+
+    # Preparamos los lotes
+    tasks = []
     for i in range(0, n, BATCH_SIZE):
-        chunk_origins = clean_points[i : i + BATCH_SIZE]
+        chunk_origins_raw = puntos[i : i + BATCH_SIZE]
         for j in range(0, n, BATCH_SIZE):
-            chunk_dests = clean_points[j : j + BATCH_SIZE]
-            
-            origins_str = "|".join(chunk_origins)
-            dests_str = "|".join(chunk_dests)
-            
-            url = f"https://api.distancematrix.ai/maps/api/distancematrix/json?origins={origins_str}&destinations={dests_str}&key={DISTANCEMATRIX_AI_KEY}"
-            
-            try:
-                r = requests.get(url, timeout=20)
-                if r.status_code == 200:
-                    data = r.json()
-                    if data.get("status") == "OK":
-                        rows = data.get("rows", [])
-                        for r_idx, row in enumerate(rows):
-                            elements = row.get("elements", [])
-                            for c_idx, element in enumerate(elements):
-                                val = 999999
-                                if element.get("status") == "OK":
-                                    val = element["duration"]["value"]
-                                global_row = i + r_idx
-                                global_col = j + c_idx
-                                full_matrix[global_row][global_col] = val
-                    else:
-                        err = data.get("error_message") or data.get("status")
-                        print(f"⚠️ Error API DM.ai en lote {i},{j}: {err}", file=sys.stderr)
-                else:
-                    print(f"⚠️ HTTP Error {r.status_code} en lote {i},{j}", file=sys.stderr)
-                
-                # Pequeña pausa si hay muchos datos
-                if n > 20: time.sleep(0.1)
+            chunk_dests_raw = puntos[j : j + BATCH_SIZE]
+            tasks.append((i, j, chunk_origins_raw, chunk_dests_raw))
 
-            except Exception as e:
-                print(f"⚠️ Excepción en lote {i},{j}: {str(e)}", file=sys.stderr)
+    # Ejecutamos en paralelo (I/O bound, los threads funcionan bien)
+    # 5 workers suele ser seguro para no saturar la red o rate limits agresivos
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        results = executor.map(fetch_mapbox_chunk, tasks)
 
-    print("✅ Matriz DM.ai completada.", file=sys.stdout)
+    # Procesamos resultados
+    for res in results:
+        if res:
+            i_start, j_start, durations = res
+            for r_local, row_vals in enumerate(durations):
+                for c_local, val in enumerate(row_vals):
+                    if val is None: val = 999999 
+                    
+                    global_row = i_start + r_local
+                    global_col = j_start + c_local
+                    full_matrix[global_row][global_col] = int(round(val))
+
+    print("✅ Matriz Mapbox completada.", file=sys.stdout)
     return full_matrix
 
 def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
@@ -320,11 +354,21 @@ def crear_modelo_datos(items, n_vans, base_addr):
     base_fmt = base_addr
     base_id = ""
     
+    # Abrimos la conexión AQUÍ una sola vez para todo el procesamiento
+    db_path = os.path.join(basedir, 'economy_routes.db')
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path, timeout=30)
+    except:
+        print("❌ Error abriendo DB en batch", file=sys.stderr)
+
     if base_addr:
-        c, f, i = obtener_datos_geo(base_addr)
+        # Pasamos la conexión reutilizable
+        c, f, i = obtener_datos_geo(base_addr, db_connection=conn)
         if c: 
             base_coord, base_fmt, base_id = c, f, i
         else:
+            if conn: conn.close()
             return {"invalidas": [f"BASE: {base_addr}"]}
 
     puntos_coords = [base_coord]
@@ -332,7 +376,6 @@ def crear_modelo_datos(items, n_vans, base_addr):
     paradas_malas = []
     
     for it in items:
-        # Optimización: Usar datos pre-calculados si existen
         if 'latlng' in it and it['latlng']:
             c = it['latlng']
             f = it.get('clean_address', '')
@@ -341,7 +384,8 @@ def crear_modelo_datos(items, n_vans, base_addr):
         else:
             addr = it.get('direccion') or it.get('address')
             if not addr: continue
-            c, f, i = obtener_datos_geo(addr)
+            # Pasamos la conexión reutilizable
+            c, f, i = obtener_datos_geo(addr, db_connection=conn)
         
         if c:
             puntos_coords.append(c)
@@ -355,6 +399,9 @@ def crear_modelo_datos(items, n_vans, base_addr):
             })
         else:
             paradas_malas.append(addr)
+    
+    # Cerramos la conexión al terminar el lote
+    if conn: conn.close()
             
     if paradas_malas:
         return {"invalidas": paradas_malas}
@@ -362,7 +409,7 @@ def crear_modelo_datos(items, n_vans, base_addr):
     if len(puntos_coords) < 2: return None 
     
     try:
-        matriz = obtener_matriz_dm_ai(puntos_coords)
+        matriz = obtener_matriz_mapbox(puntos_coords)
     except Exception as e:
         return {"error_critico": f"Error calculando rutas: {str(e)}"}
         
@@ -375,6 +422,9 @@ def crear_modelo_datos(items, n_vans, base_addr):
     }
 
 def resolver_vrp(data_model, dwell_min):
+    # Garbage collect antes de OR-Tools
+    gc.collect()
+    
     manager = pywrapcp.RoutingIndexManager(len(data_model['time_matrix']), data_model['num_vehicles'], data_model['depot'])
     routing = pywrapcp.RoutingModel(manager)
     
@@ -387,15 +437,30 @@ def resolver_vrp(data_model, dwell_min):
         
     transit_cb_idx = routing.RegisterTransitCallback(time_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_cb_idx)
-    routing.AddDimension(transit_cb_idx, 86400, 86400, True, 'Time')
+    
+    # Aumentamos el horizonte de tiempo significativamente (3 días) para evitar que falle en rutas largas
+    HORIZONTE_TIEMPO = 3 * 24 * 3600 
+    routing.AddDimension(transit_cb_idx, HORIZONTE_TIEMPO, HORIZONTE_TIEMPO, True, 'Time')
     
     time_dim = routing.GetDimensionOrDie('Time')
-    time_dim.SetGlobalSpanCostCoefficient(100)
     
+    # --- CÁLCULO DE TIEMPO DINÁMICO ---
+    num_nodos = len(data_model['time_matrix'])
+    if num_nodos < 15:
+        limit_seconds = 2   # Rápido para pruebas
+    elif num_nodos < 40:
+        limit_seconds = 5   # Medio
+    else:
+        limit_seconds = 30  # AUMENTADO A 30s para cargas masivas (70+ stops)
+    # ----------------------------------
+
     search_params = pywrapcp.DefaultRoutingSearchParameters()
-    search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
+    
+    # ESTRATEGIA CAMBIADA: PATH_CHEAPEST_ARC (Vecino más cercano) para evitar saltos locos
+    search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    
     search_params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-    search_params.time_limit.seconds = 1 
+    search_params.time_limit.seconds = limit_seconds
     
     sol = routing.SolveWithParameters(search_params)
     resultado = {}
@@ -455,6 +520,8 @@ def config():
     })
 
 def procesar_geocoding(s):
+    # NOTA: En hilos, mejor abrir/cerrar conexión individualmente para evitar conflictos
+    # Pero como limitaremos los workers, el impacto es menor.
     addr = s.get('direccion') or s.get('address')
     if not addr: return None
     c, f, i = obtener_datos_geo(addr) 
@@ -470,30 +537,36 @@ def procesar_geocoding(s):
     return {'error': addr}
 
 def resolver_cluster_wrapper(i, clust, base, dwell):
-    d_name = f"Van {i+1}"
-    if not clust:
-        return d_name, {"paradas":[], "duracion_estimada":0, "link":""}
-    
-    sub_stops = [x['data'] for x in clust]
-    model = crear_modelo_datos(sub_stops, 1, base)
-    
-    if not model:
-        return d_name, {"error": "Modelo de datos vacío"}
-    
-    if "error_critico" in model:
-        return d_name, {"error": model["error_critico"]}
+    # Wrapper para ejecución segura en thread
+    try:
+        d_name = f"Van {i+1}"
+        if not clust:
+            return d_name, {"paradas":[], "duracion_estimada":0, "link":""}
         
-    if "invalidas" in model:
-        return d_name, {"error": f"Direcciones inválidas en sub-cluster: {model['invalidas']}"}
+        sub_stops = [x['data'] for x in clust]
+        model = crear_modelo_datos(sub_stops, 1, base)
+        
+        if not model:
+            return d_name, {"error": "Modelo de datos vacío"}
+        
+        if "error_critico" in model:
+            return d_name, {"error": model["error_critico"]}
+            
+        if "invalidas" in model:
+            return d_name, {"error": f"Direcciones inválidas en sub-cluster: {model['invalidas']}"}
 
-    res = resolver_vrp(model, dwell)
-    if res:
-        return d_name, list(res.values())[0]
-    
-    return d_name, {"paradas":[], "duracion_estimada":0, "link":""}
+        res = resolver_vrp(model, dwell)
+        if res:
+            return d_name, list(res.values())[0]
+        
+        return d_name, {"paradas":[], "duracion_estimada":0, "link":""}
+    except Exception as e:
+        print(f"Error en cluster wrapper: {e}", file=sys.stderr)
+        return f"Van {i+1}", {"error": str(e)}
 
 @app.route('/optimizar', methods=['POST'])
 def optimizar():
+    gc.collect() # Limpieza preventiva
     req = request.json
     n_vans = int(req.get('num_vans', 1))
     base = req.get('base_address')
@@ -514,7 +587,8 @@ def optimizar():
             points_cluster = []
             malas = []
             
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            # REDUCCIÓN DE WORKERS: De 3 a 2 para ahorrar RAM
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 futures = {executor.submit(procesar_geocoding, s): s for s in stops}
                 for future in concurrent.futures.as_completed(futures):
                     res = future.result()
@@ -524,18 +598,16 @@ def optimizar():
                         else:
                             points_cluster.append(res)
             
-            # CHECK ESTRICTO: Si hay alguna mala, abortamos todo
             if malas:
                  return jsonify({"error": f"Direcciones no válidas (Falta Zip o no encontrada): {', '.join(malas)}"}), 400
             
             if not points_cluster:
                  return jsonify({"error": "No hay direcciones válidas."}), 400
             
-            # 2. CLUSTERS (K-MEANS PLUS PLUS - NATURAL)
             clusters = simple_kmeans_plus(points_cluster, n_vans)
             
-            # 3. RUTAS PARALELAS
-            with concurrent.futures.ThreadPoolExecutor(max_workers=n_vans if n_vans < 4 else 3) as executor:
+            # REDUCCIÓN DE WORKERS PARA VRP: MÁXIMO 2
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 futures_vrp = [executor.submit(resolver_cluster_wrapper, i, clust, base, dwell) for i, clust in enumerate(clusters)]
                 for future in concurrent.futures.as_completed(futures_vrp):
                     d_name, result = future.result()
@@ -544,6 +616,7 @@ def optimizar():
                     final_routes[d_name] = result
                     
         else:
+            # Flujo Secuencial (OPTIMIZADO CON CONEXIÓN ÚNICA)
             model = crear_modelo_datos(stops, 1, base)
             if model and "invalidas" in model:
                 return jsonify({"error": f"Direcciones no válidas (Falta Zip o no encontrada): {', '.join(model['invalidas'])}"}), 400
@@ -553,7 +626,8 @@ def optimizar():
                 final_routes = resolver_vrp(model, dwell)
             else:
                 return jsonify({"error": "Error creando modelo"}), 400
-                
+        
+        gc.collect() # Limpieza final
         return jsonify(final_routes)
 
     except Exception as e:
@@ -583,20 +657,31 @@ def optimizar_restantes():
     return recalcular_ruta_internal(new_order, base, dwell)
 
 def recalcular_ruta_internal(paradas_objs, base, dwell_time):
+    # También pasamos una conexión compartida aquí si fuera necesario, 
+    # pero recalcular suele ser rápido y con datos ya cacheados.
     c_base, fmt_base, _ = obtener_datos_geo(base)
     if not c_base: return jsonify({"error": "Base invalida"}), 400
     
     coords = [c_base]
     clean_stops = []
     
+    # Optimizacion local DB
+    db_path = os.path.join(basedir, 'economy_routes.db')
+    try:
+        conn = sqlite3.connect(db_path, timeout=30)
+    except:
+        conn = None
+
     for s in paradas_objs:
         addr = s.get('direccion') or s.get('address')
-        c, f, i = obtener_datos_geo(addr)
+        c, f, i = obtener_datos_geo(addr, db_connection=conn)
         if c:
             coords.append(c)
             s_new = s.copy()
             s_new.update({"clean_address": f, "place_id": i, "coord": c})
             clean_stops.append(s_new)
+    
+    if conn: conn.close()
             
     coords.append(c_base)
     
@@ -604,7 +689,7 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time):
     try:
         uniques = list(set(coords))
         if len(uniques) > 1:
-            matrix = obtener_matriz_dm_ai(uniques)
+            matrix = obtener_matriz_mapbox(uniques)
             idx_map = {u: i for i, u in enumerate(uniques)}
             
             for i in range(len(coords)-1):
@@ -637,8 +722,21 @@ def resolver_tsp_parcial(fixed, loose, base, dwell):
         
     routing.SetArcCostEvaluatorOfAllVehicles(routing.RegisterTransitCallback(time_cb))
     
+    # --- CÁLCULO DE TIEMPO DINÁMICO (Varita Mágica) ---
+    num_nodos = len(model['time_matrix'])
+    if num_nodos < 15:
+        limit_seconds = 2
+    elif num_nodos < 40:
+        limit_seconds = 5
+    else:
+        limit_seconds = 10
+    # --------------------------------------------------
+
     search_params = pywrapcp.DefaultRoutingSearchParameters()
+    # ESTRATEGIA CAMBIADA: PATH_CHEAPEST_ARC (Igual que arriba)
     search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    search_params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+    search_params.time_limit.seconds = limit_seconds
     
     sol = routing.SolveWithParameters(search_params)
     if not sol: return None
