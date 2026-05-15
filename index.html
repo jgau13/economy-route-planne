@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="widthf=device-width, initial-scale=1.0">
     <title>Economy Sign Supply Route Planner</title>
     
     <!-- Favicon and Apple Touch Icon -->
@@ -771,6 +771,9 @@
             const [editingGroupId, setEditingGroupId] = useState(null);
             const [newZoneName, setNewZoneName] = useState('');
             
+            // NUEVO: BACKUP PARA DESHACER "CLEAR ALL"
+            const [lastDeletedBackup, setLastDeletedBackup] = useState(null);
+            
             // Helper para contar paradas seleccionadas
             const selectedStopCount = useMemo(() => {
                 if (!stopSelectionInput.trim()) return 0;
@@ -1258,18 +1261,48 @@
 
             const clearAllStops = async () => {
                 if (!confirm("Are you sure you want to remove ALL stops?")) return;
+                
+                // 1. GUARDAR FOTOGRAFÍA (BACKUP) ANTES DE BORRAR
+                setLastDeletedBackup({
+                    stops: [...currentStops],
+                    groups: [...stopGroups]
+                });
+
+                // 2. BORRAR DE FIREBASE
                 const q = window.fbQuery(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops'));
                 const snapshot = await window.fbGetDocs(q);
                 const batch = window.fbWriteBatch(window.fbDb);
                 snapshot.docs.forEach(doc => batch.delete(doc.ref));
                 await batch.commit();
                 
-                // LIMPIAR TAMBIÉN EL ESTADO INTERNO PARA EVITAR RESIDUOS
+                // 3. LIMPIAR EL MAPA
                 setStopGroups([]);
                 setOptimizedRoutes(null);
                 setSelectedResultStops(new Set());
             };
 
+            const undoClearAllStops = async () => {
+                if (!lastDeletedBackup) return;
+                
+                const batch = window.fbWriteBatch(window.fbDb);
+                const colRef = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops');
+
+              
+                lastDeletedBackup.stops.forEach(stop => {
+                    const docRef = window.fbDoc(colRef, stop.id);
+                    const dataToSave = { ...stop };
+                    delete dataToSave.id; 
+                    batch.set(docRef, dataToSave);
+                });
+
+                await batch.commit();
+                
+            
+                setStopGroups(lastDeletedBackup.groups);
+                
+             
+                setLastDeletedBackup(null); 
+            };
             const clearAllGroups = () => {
                 if(confirm("Clear all zones? Stops will remain as Ungrouped.")){
                     setStopGroups([]);
@@ -2489,6 +2522,14 @@
                                     <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
                                         <h3 className="font-bold text-sm text-slate-500 uppercase flex items-center gap-2"><Icon name="list" className="h-4 w-4" /> Reference List</h3>
                                         <div className="flex gap-2">
+                                            {/* BOTÓN DESHACER (Solo aparece si hay un backup) */}
+                                            {lastDeletedBackup && (
+                                                <button onClick={undoClearAllStops} className="text-xs bg-orange-100 hover:bg-orange-200 text-orange-700 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors" title="Undo Clear All">
+                                                    <Icon name="undo" className="h-3 w-3" /> Undo Clear
+                                                </button>
+                                            )}
+                                            
+                                            {/* BOTONES NORMALES */}
                                             {(currentStops || []).length > 0 && (
                                                 <>
                                                     <button onClick={() => setShowSavePlanModal(true)} className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors" title="Save current stops and zones">
@@ -2500,7 +2541,6 @@
                                                 </>
                                             )}
                                         </div>
-                                    </div>
                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2">
                                         {(currentStops || []).map((stop, idx) => (
                                             <div key={stop.id} className="text-xs flex items-center justify-between gap-2 border-b border-slate-50 pb-1 group hover:bg-slate-50 p-1 rounded">
