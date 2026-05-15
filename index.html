@@ -614,7 +614,7 @@
             );
         };
         
-        const GlobalManifest = ({ routes, config, driverAssignments, drivers, onClose = null }) => {
+        const GlobalManifest = ({ routes, config, driverAssignments, drivers, vehicles = [], manualVehicleAssignments = {}, onClose = null }) => {
             const [dateVal, setDateVal] = useState(new Date().toLocaleDateString('en-US'));
             const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 
@@ -660,10 +660,14 @@
                                 const driver = (drivers || []).find(d => d.id === assignedId);
                                 const driverName = driver ? driver.name : "Unassigned";
 
+                                const defaultVehicle = (vehicles || []).find(v => v.assignedDriver === driverName);
+                                const currentVehicleName = manualVehicleAssignments[zoneName] || (defaultVehicle ? defaultVehicle.name : "");
+                                const driverLabel = currentVehicleName ? `${driverName} - ${currentVehicleName}` : driverName;
+
                                 return (
                                 <div key={idx} className="break-inside-avoid">
                                     <div className="bg-gray-100 border border-black p-2 font-bold text-lg mb-2 flex justify-between items-center">
-                                        <span>{zoneName} <span className="text-gray-600">({driverName})</span></span>
+                                        <span>{zoneName} <span className="text-gray-600">({driverLabel})</span></span>
                                         <div className="flex gap-4 text-sm">
                                             <span>Est. Time: {h}h {m}m</span>
                                             <span>•</span>
@@ -722,7 +726,8 @@
             // INPUTS
             const [newStopName, setNewStopName] = useState('');
             const [newStopAddress, setNewStopAddress] = useState('');
-            const [newStopLatLng, setNewStopLatLng] = useState(null); // NUEVO ESTADO PARA COORDENADAS
+            const [newStopLatLng, setNewStopLatLng] = useState(null); 
+            const [addressError, setAddressError] = useState(''); // ESTADO PARA ERROR DE ZIPCODE
 
             const [showSuggestions, setShowSuggestions] = useState(false);
             const [activeSuggestion, setActiveSuggestion] = useState(-1);
@@ -756,7 +761,7 @@
             // CLIENTS
             const [clientFormName, setClientFormName] = useState('');
             const [clientFormAddress, setClientFormAddress] = useState('');
-            const [clientFormLatLng, setClientFormLatLng] = useState(null); // PARA LA PESTAÑA CLIENTS
+            const [clientFormLatLng, setClientFormLatLng] = useState(null); 
             const [editingClientId, setEditingClientId] = useState(null);
 
             // ZONES
@@ -911,7 +916,6 @@
             const formatStopForBackend = (stop) => {
                 if (!stop) return stop;
                 const s = { ...stop };
-                // Si el backend de Python hace .split(',') necesita que sea un string, no un objeto
                 if (s.latlng && typeof s.latlng === 'object') {
                     s.latlng = `${s.latlng.lat},${s.latlng.lng}`;
                 }
@@ -961,6 +965,15 @@
 
             const initiateAddStop = () => {
                 if (!newStopAddress.trim()) return;
+                
+                // VALIDACIÓN DE ZIPCODE
+                if (!/\b\d{5}\b/.test(newStopAddress)) {
+                    setAddressError("⚠️ Missing Zipcode: Please select a complete address.");
+                    setTimeout(() => setAddressError(''), 4000);
+                    return;
+                }
+                setAddressError('');
+
                 setTempStopData({
                     name: newStopName.trim() || "Client",
                     address: newStopAddress,
@@ -979,6 +992,7 @@
                 setTempStopData(null);
                 setTempInvoices('');
                 setTempPieces('');
+                setAddressError(''); // Resetear error
                 setShowAddDetailsModal(true);
             };
             
@@ -990,6 +1004,7 @@
                 });
                 setTempInvoices(stopData.invoices || '');
                 setTempPieces(stopData.pieces || '');
+                setAddressError(''); // Resetear error
                 setShowAddDetailsModal(true);
             };
             
@@ -1126,6 +1141,15 @@
                 }
 
                 if (!tempStopData) return;
+
+                // VALIDACIÓN DE ZIPCODE CUANDO SE AÑADE DENTRO DEL MODAL (Manual a una ruta)
+                if (targetZoneForManualAdd) {
+                    if (!tempStopData.address || !/\b\d{5}\b/.test(tempStopData.address)) {
+                        setAddressError("⚠️ Missing Zipcode: Please select a complete address.");
+                        setTimeout(() => setAddressError(''), 4000);
+                        return;
+                    }
+                }
                 
                 // REPARACIÓN EN TIEMPO REAL SI FALTA LAT/LNG
                 let finalLatLng = tempStopData.latlng || null;
@@ -1189,6 +1213,7 @@
                 }
                 
                 setNewStopName(''); setNewStopAddress(''); setNewStopLatLng(null); setShowAddDetailsModal(false); setTempStopData(null);
+                setAddressError(''); // Limpiar errores pasados
                 if(inputRef.current && !targetZoneForManualAdd) inputRef.current.focus();
             };
 
@@ -2195,6 +2220,7 @@
                                                 }}
                                                 onKeyDown={(e) => handleEnter(e, () => invoicesInputRef.current?.focus())}
                                             />
+                                            {addressError && <p className="text-red-500 text-xs font-bold mt-1 animate-fade-in">{addressError}</p>}
                                         </div>
                                     </div>
                                 )}
@@ -2217,7 +2243,7 @@
                                     </div>
                                 </div>
                                 <div className="mt-6 flex gap-3">
-                                    <button onClick={() => { setShowAddDetailsModal(false); setTempStopData(null); setTargetZoneForManualAdd(null); setEditingResultStop(null); }} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
+                                    <button onClick={() => { setShowAddDetailsModal(false); setTempStopData(null); setTargetZoneForManualAdd(null); setEditingResultStop(null); setAddressError(''); }} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
                                     <button onClick={confirmAddStop} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg">Save</button>
                                 </div>
                             </div>
@@ -2324,6 +2350,7 @@
                                                             }
                                                         }}
                                                     />
+                                                    {addressError && !showAddDetailsModal && <p className="text-red-500 text-xs font-bold mt-1 animate-fade-in">{addressError}</p>}
                                                     <input 
                                                         ref={ghostInputRef}
                                                         className="opacity-0 w-0 h-0 absolute top-0 left-0"
@@ -2642,9 +2669,15 @@
                                                     <button onClick={() => openDriverMap(zoneName, routeData)} className="bg-white border border-slate-300 hover:border-ess-blue hover:text-ess-blue text-slate-600 font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors">
                                                         <Icon name="map" className="h-3 w-3" /> Map
                                                     </button>
-                                                    <a href={routeData.link} target="_blank" className="bg-white border border-slate-300 hover:border-ess-blue hover:text-ess-blue text-slate-600 font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors">
+                                                    <button 
+                                                        onClick={() => {
+                                                            const link = routeData.link || getWhatsappLink(routeData.paradas, driver?.name, routeData.link);
+                                                            window.open(link, '_blank');
+                                                        }} 
+                                                        className="bg-white border border-slate-300 hover:border-ess-blue hover:text-ess-blue text-slate-600 font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                    >
                                                         <Icon name="send" className="h-3 w-3" /> App
-                                                    </a>
+                                                    </button>
                                                     
                                                     {/* WHATSAPP LOGIC START */}
                                                     {(routeData.paradas || []).length <= 9 ? (
@@ -2942,6 +2975,8 @@
                                 config={companyConfig} 
                                 driverAssignments={driverAssignments} 
                                 drivers={drivers} 
+                                vehicles={vehicles}
+                                manualVehicleAssignments={manualVehicleAssignments}
                                 onClose={() => setShowGlobalPrint(false)}
                             />
                         )}
