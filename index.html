@@ -2,27 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="widthf=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Economy Sign Supply Route Planner</title>
     
-    <!-- Favicon and Apple Touch Icon -->
     <link rel="icon" type="image/png" href="https://static.wixstatic.com/media/63d26f_b22ddda42d0f4dcc8619b741d794ea92~mv2.png">
     <link rel="apple-touch-icon" href="https://static.wixstatic.com/media/63d26f_b22ddda42d0f4dcc8619b741d794ea92~mv2.png">
     
-    <!-- React and ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- FIREBASE SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
@@ -451,7 +445,7 @@
                     }
                 };
 
-                // DIBUJAR ALMACÉN CON CACHÉ GLOBAL (SOLUCIONA EL PROBLEMA DEL CAMBIO DE PESTAÑA)
+                // DIBUJAR ALMACÉN CON CACHÉ GLOBAL
                 if (baseAddress) {
                     geocodeAddressCached(baseAddress, (location) => {
                         const m = new window.google.maps.Marker({
@@ -726,7 +720,7 @@
             // INPUTS
             const [newStopName, setNewStopName] = useState('');
             const [newStopAddress, setNewStopAddress] = useState('');
-            const [newStopLatLng, setNewStopLatLng] = useState(null); 
+            const [newStopLatLng, setNewStopLatLng] = useState(null); // NUEVO ESTADO PARA COORDENADAS
             const [addressError, setAddressError] = useState(''); // ESTADO PARA ERROR DE ZIPCODE
 
             const [showSuggestions, setShowSuggestions] = useState(false);
@@ -761,7 +755,7 @@
             // CLIENTS
             const [clientFormName, setClientFormName] = useState('');
             const [clientFormAddress, setClientFormAddress] = useState('');
-            const [clientFormLatLng, setClientFormLatLng] = useState(null); 
+            const [clientFormLatLng, setClientFormLatLng] = useState(null); // PARA LA PESTAÑA CLIENTS
             const [editingClientId, setEditingClientId] = useState(null);
 
             // ZONES
@@ -919,6 +913,7 @@
             const formatStopForBackend = (stop) => {
                 if (!stop) return stop;
                 const s = { ...stop };
+                // Si el backend de Python hace .split(',') necesita que sea un string, no un objeto
                 if (s.latlng && typeof s.latlng === 'object') {
                     s.latlng = `${s.latlng.lat},${s.latlng.lng}`;
                 }
@@ -1275,7 +1270,7 @@
                 snapshot.docs.forEach(doc => batch.delete(doc.ref));
                 await batch.commit();
                 
-                // 3. LIMPIAR EL MAPA
+                // 3. LIMPIAR EL MAPA Y RESULTADOS
                 setStopGroups([]);
                 setOptimizedRoutes(null);
                 setSelectedResultStops(new Set());
@@ -1287,22 +1282,23 @@
                 const batch = window.fbWriteBatch(window.fbDb);
                 const colRef = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops');
 
-              
+                // Reconstruir en Firebase respetando los IDs originales
                 lastDeletedBackup.stops.forEach(stop => {
                     const docRef = window.fbDoc(colRef, stop.id);
                     const dataToSave = { ...stop };
-                    delete dataToSave.id; 
+                    delete dataToSave.id; // Quitar el id como propiedad para que no ensucie Firestore
                     batch.set(docRef, dataToSave);
                 });
 
                 await batch.commit();
                 
-            
+                // Reconstruir los grupos visuales
                 setStopGroups(lastDeletedBackup.groups);
                 
-             
+                // Ocultar el botón
                 setLastDeletedBackup(null); 
             };
+
             const clearAllGroups = () => {
                 if(confirm("Clear all zones? Stops will remain as Ungrouped.")){
                     setStopGroups([]);
@@ -2253,7 +2249,6 @@
                                                 }}
                                                 onKeyDown={(e) => handleEnter(e, () => invoicesInputRef.current?.focus())}
                                             />
-                                            {addressError && <p className="text-red-500 text-xs font-bold mt-1 animate-fade-in">{addressError}</p>}
                                         </div>
                                     </div>
                                 )}
@@ -2541,6 +2536,7 @@
                                                 </>
                                             )}
                                         </div>
+                                    </div>
                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2">
                                         {(currentStops || []).map((stop, idx) => (
                                             <div key={stop.id} className="text-xs flex items-center justify-between gap-2 border-b border-slate-50 pb-1 group hover:bg-slate-50 p-1 rounded">
