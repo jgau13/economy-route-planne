@@ -259,109 +259,175 @@
             const renderersRef = useRef([]); 
             const infoWindowRef = useRef(null); 
             const geocoderRef = useRef(null);
-            const drawingManagerRef = useRef(null);
             const baseLocCache = useRef(null); // CACHÉ PERSISTENTE PARA LA BASE
             const [mapReady, setMapReady] = useState(false);
+            const [activeDrawMode, setActiveDrawMode] = useState('lasso');
+            const activeModeRef = useRef('lasso');
+            const isDrawingRectRef = useRef(false);
+            const rectStartRef = useRef(null);
+            const drawShapeRef = useRef(null);
+            const polygonPointsRef = useRef([]);
+            const isLassoRef = useRef(false);
             const onMarkerClickRef = useRef(onMarkerClick);
 
             useEffect(() => {
                 onMarkerClickRef.current = onMarkerClick;
             }, [onMarkerClick]);
-            
-            // Shortcusts Listener
+
+            const onStopsSelectedRef = useRef(onStopsSelected);
+            useEffect(() => { onStopsSelectedRef.current = onStopsSelected; }, [onStopsSelected]);
+
+            const setDrawMode = (mode) => {
+                setActiveDrawMode(mode);
+                activeModeRef.current = mode;
+                // Limpiar dibujo en progreso
+                polygonPointsRef.current = [];
+                isDrawingRectRef.current = false;
+                if (drawShapeRef.current) { drawShapeRef.current.setMap(null); drawShapeRef.current = null; }
+                if (googleMapRef.current) {
+                    const cursor = mode === 'hand' ? '' : 'crosshair';
+                    googleMapRef.current.setOptions({ draggable: true, disableDoubleClickZoom: false, draggableCursor: cursor });
+                }
+            };
+
+            // Shortcuts: Shift+H hand, Shift+P polygon, Shift+S rectangle
             useEffect(() => {
                 const handleKeyDown = (e) => {
-                    if (!enableDrawing || !drawingManagerRef.current || !mapReady) return;
-                    
+                    if (!enableDrawing || !mapReady) return;
                     if (e.shiftKey) {
                         switch(e.key.toLowerCase()) {
-                            case 'h': // Hand/Pan
-                                drawingManagerRef.current.setDrawingMode(null);
-                                break;
-                            case 'p': // Polygon
-                                drawingManagerRef.current.setDrawingMode(window.google.maps.drawing.OverlayType.POLYGON);
-                                break;
-                            case 'r': // Rectangle
-                                drawingManagerRef.current.setDrawingMode(window.google.maps.drawing.OverlayType.RECTANGLE);
-                                break;
+                            case 'h': setDrawMode('hand'); break;
+                            case 'p': setDrawMode('polygon'); break;
+                            case 's': setDrawMode('rectangle'); break;
+                            case 'f': setDrawMode('lasso'); break;
                         }
                     }
                 };
-
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
             }, [enableDrawing, mapReady]);
 
+            // Custom drawing via native Google Maps events (DrawingManager removido en v3.65)
             useEffect(() => {
-                if (!window.google || !googleMapRef.current || !mapReady) return;
-                
-                if (enableDrawing) {
-                    if (!drawingManagerRef.current) {
-                        try {
-                            drawingManagerRef.current = new window.google.maps.drawing.DrawingManager({
-                                drawingMode: window.google.maps.drawing.OverlayType.POLYGON, 
-                                drawingControl: true,
-                                drawingControlOptions: {
-                                    position: window.google.maps.ControlPosition.TOP_CENTER,
-                                    drawingModes: [
-                                        window.google.maps.drawing.OverlayType.POLYGON,
-                                        window.google.maps.drawing.OverlayType.RECTANGLE
-                                    ],
-                                },
-                                rectangleOptions: {
-                                    fillColor: '#1b6e9b',
-                                    fillOpacity: 0.2,
-                                    strokeWeight: 2,
-                                    clickable: false,
-                                    editable: true,
-                                    zIndex: 1,
-                                },
-                                polygonOptions: {
-                                    fillColor: '#1b6e9b',
-                                    fillOpacity: 0.2,
-                                    strokeWeight: 2,
-                                    clickable: false,
-                                    editable: true,
-                                    zIndex: 1,
-                                }
-                            });
-                            
-                            drawingManagerRef.current.setMap(googleMapRef.current);
+                if (!window.google || !googleMapRef.current || !mapReady || !enableDrawing) return;
+                const map = googleMapRef.current;
+                map.setOptions({ draggableCursor: 'crosshair' }); // modo polygon por defecto
 
-                            window.google.maps.event.addListener(drawingManagerRef.current, 'overlaycomplete', function(event) {
-                                if (event.type === 'rectangle' || event.type === 'polygon') {
-                                    const shape = event.overlay;
-                                    const selected = [];
-                                    
-                                    markersRef.current.forEach(marker => {
-                                        let isInside = false;
-                                        if (event.type === 'rectangle') {
-                                            if (shape.getBounds().contains(marker.getPosition())) isInside = true;
-                                        } else if (event.type === 'polygon') {
-                                            if (window.google.maps.geometry && window.google.maps.geometry.poly) {
-                                                if (window.google.maps.geometry.poly.containsLocation(marker.getPosition(), shape)) isInside = true;
-                                            }
-                                        }
+                const listeners = [];
 
-                                        if (isInside && marker.customInfo && marker.customInfo.originalIndex !== undefined) {
-                                            selected.push(marker.customInfo.originalIndex);
-                                        }
-                                    });
-                                    
-                                    if (onStopsSelected) {
-                                        onStopsSelected(selected.sort((a,b) => a - b));
-                                    }
-                                    
-                                    setTimeout(() => shape.setMap(null), 600);
-                                }
-                            });
-                        } catch(e) { console.error("Error init drawing:", e); }
-                    } else {
-                        drawingManagerRef.current.setMap(googleMapRef.current);
+                // MOUSEDOWN: inicia rectangle o lasso
+                listeners.push(map.addListener('mousedown', (e) => {
+                    if (activeModeRef.current === 'rectangle') {
+                        isDrawingRectRef.current = true;
+                        rectStartRef.current = e.latLng;
+                        map.setOptions({ draggable: false, disableDoubleClickZoom: true });
+                    } else if (activeModeRef.current === 'lasso') {
+                        isLassoRef.current = true;
+                        polygonPointsRef.current = [e.latLng];
+                        map.setOptions({ draggable: false, disableDoubleClickZoom: true });
                     }
-                } else {
-                    if (drawingManagerRef.current) drawingManagerRef.current.setMap(null);
-                }
+                }));
+
+                // MOUSEMOVE: actualiza rectangle o traza lasso
+                listeners.push(map.addListener('mousemove', (e) => {
+                    if (activeModeRef.current === 'rectangle' && isDrawingRectRef.current) {
+                        if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                        const start = rectStartRef.current;
+                        drawShapeRef.current = new window.google.maps.Rectangle({
+                            bounds: new window.google.maps.LatLngBounds(
+                                { lat: Math.min(start.lat(), e.latLng.lat()), lng: Math.min(start.lng(), e.latLng.lng()) },
+                                { lat: Math.max(start.lat(), e.latLng.lat()), lng: Math.max(start.lng(), e.latLng.lng()) }
+                            ),
+                            fillColor: '#1b6e9b', fillOpacity: 0.2, strokeWeight: 2, strokeColor: '#1b6e9b', clickable: false, map
+                        });
+                    } else if (activeModeRef.current === 'lasso' && isLassoRef.current) {
+                        polygonPointsRef.current.push(e.latLng);
+                        if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                        const pts = polygonPointsRef.current;
+                        if (pts.length >= 3) {
+                            drawShapeRef.current = new window.google.maps.Polygon({
+                                paths: pts, fillColor: '#1b6e9b', fillOpacity: 0.2,
+                                strokeWeight: 2, strokeColor: '#1b6e9b', clickable: false, map
+                            });
+                        } else {
+                            drawShapeRef.current = new window.google.maps.Polyline({
+                                path: pts, strokeColor: '#1b6e9b', strokeWeight: 2, clickable: false, map
+                            });
+                        }
+                    }
+                }));
+
+                // MOUSEUP: finaliza rectangle o lasso y selecciona markers
+                listeners.push(map.addListener('mouseup', () => {
+                    map.setOptions({ draggable: true, disableDoubleClickZoom: false });
+                    if (activeModeRef.current === 'rectangle' && isDrawingRectRef.current) {
+                        isDrawingRectRef.current = false;
+                        if (drawShapeRef.current) {
+                            const bounds = drawShapeRef.current.getBounds();
+                            const selected = [];
+                            markersRef.current.forEach(m => {
+                                if (m.customInfo && bounds.contains(m.getPosition())) selected.push(m.customInfo.originalIndex);
+                            });
+                            if (onStopsSelectedRef.current) onStopsSelectedRef.current(selected.sort((a,b) => a-b));
+                            setTimeout(() => { if (drawShapeRef.current) { drawShapeRef.current.setMap(null); drawShapeRef.current = null; } }, 600);
+                        }
+                    } else if (activeModeRef.current === 'lasso' && isLassoRef.current) {
+                        isLassoRef.current = false;
+                        const pts = [...polygonPointsRef.current];
+                        polygonPointsRef.current = [];
+                        if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                        if (pts.length >= 3) {
+                            const closedPoly = new window.google.maps.Polygon({ paths: pts, map });
+                            const selected = [];
+                            markersRef.current.forEach(m => {
+                                if (m.customInfo && window.google.maps.geometry.poly.containsLocation(m.getPosition(), closedPoly)) {
+                                    selected.push(m.customInfo.originalIndex);
+                                }
+                            });
+                            if (onStopsSelectedRef.current) onStopsSelectedRef.current(selected.sort((a,b) => a-b));
+                            setTimeout(() => { closedPoly.setMap(null); drawShapeRef.current = null; }, 600);
+                        }
+                    }
+                }));
+
+                // POLYGON: click para agregar vértices, doble-click para cerrar
+                listeners.push(map.addListener('click', (e) => {
+                    if (activeModeRef.current !== 'polygon') return;
+                    polygonPointsRef.current.push(e.latLng);
+                    if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                    const pts = polygonPointsRef.current;
+                    if (pts.length >= 3) {
+                        drawShapeRef.current = new window.google.maps.Polygon({
+                            paths: pts, fillColor: '#1b6e9b', fillOpacity: 0.2,
+                            strokeWeight: 2, strokeColor: '#1b6e9b', clickable: false, map
+                        });
+                    } else {
+                        drawShapeRef.current = new window.google.maps.Polyline({
+                            path: pts, strokeColor: '#1b6e9b', strokeWeight: 2, clickable: false, map
+                        });
+                    }
+                }));
+
+                listeners.push(map.addListener('dblclick', () => {
+                    if (activeModeRef.current !== 'polygon' || polygonPointsRef.current.length < 3) return;
+                    const pts = [...polygonPointsRef.current];
+                    polygonPointsRef.current = [];
+                    if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                    const closedPoly = new window.google.maps.Polygon({ paths: pts, map });
+                    const selected = [];
+                    markersRef.current.forEach(m => {
+                        if (m.customInfo && window.google.maps.geometry.poly.containsLocation(m.getPosition(), closedPoly)) {
+                            selected.push(m.customInfo.originalIndex);
+                        }
+                    });
+                    if (onStopsSelectedRef.current) onStopsSelectedRef.current(selected.sort((a,b) => a-b));
+                    setTimeout(() => { closedPoly.setMap(null); drawShapeRef.current = null; }, 600);
+                }));
+
+                return () => {
+                    listeners.forEach(l => window.google.maps.event.removeListener(l));
+                    if (drawShapeRef.current) { drawShapeRef.current.setMap(null); drawShapeRef.current = null; }
+                };
             }, [enableDrawing, mapReady]);
 
             useEffect(() => {
@@ -519,7 +585,43 @@
 
             }, [routes, baseAddress]);
             
-            return <div className="w-full h-full rounded-xl" ref={mapRef}></div>;
+            return (
+                <div className="w-full h-full relative">
+                    {enableDrawing && mapReady && (
+                        <div style={{position:'absolute',top:'10px',left:'50%',transform:'translateX(-50%)',zIndex:10,display:'flex',gap:'4px',background:'white',borderRadius:'8px',padding:'4px 6px',boxShadow:'0 2px 8px rgba(0,0,0,0.2)'}}>
+                            <button
+                                onClick={() => setDrawMode('lasso')}
+                                title="Lasso / Freehand (Shift+F)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='lasso' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='lasso' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
+                                Lasso <span style={{opacity:0.6,fontSize:'10px'}}>⇧F</span>
+                            </button>
+                            <button
+                                onClick={() => setDrawMode('hand')}
+                                title="Hand / Pan (Shift+H)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='hand' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='hand' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M6 14a2 2 0 0 0-2 2v0c0 1.4.5 2.7 1.3 3.7L8 23h8l1.7-2.1c.8-1 1.3-2.3 1.3-3.7v-4.3"/><path d="M6 14v-2.5"/></svg>
+                                Hand <span style={{opacity:0.6,fontSize:'10px'}}>⇧H</span>
+                            </button>
+                            <button
+                                onClick={() => setDrawMode('polygon')}
+                                title="Polygon (Shift+P)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='polygon' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='polygon' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/></svg>
+                                Polygon <span style={{opacity:0.6,fontSize:'10px'}}>⇧P</span>
+                            </button>
+                            <button
+                                onClick={() => setDrawMode('rectangle')}
+                                title="Rectangle (Shift+S)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='rectangle' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='rectangle' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                                Rectangle <span style={{opacity:0.6,fontSize:'10px'}}>⇧S</span>
+                            </button>
+                        </div>
+                    )}
+                    <div className="w-full h-full rounded-xl" ref={mapRef}></div>
+                </div>
+            );
         };
 
         const PrintableSheet = ({ routeData, driverName, vehicle, config, duration, zoneName, hideId = false, onClose = null }) => {
