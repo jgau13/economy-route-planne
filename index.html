@@ -973,39 +973,45 @@
                 if (!user || !window.fbDb) return;
                 const uid = user.uid;
                 const userRef = (c) => window.fbCollection(window.fbDb, 'artifacts', appId, 'users', uid, c);
-                
-                window.fbOnSnapshot(window.fbQuery(userRef('clients')), s => setClientDB(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                window.fbOnSnapshot(window.fbQuery(userRef('drivers')), s => setDrivers(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                window.fbOnSnapshot(window.fbQuery(userRef('vehicles')), s => setVehicles(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                
+                const onErr = (e) => console.error('[Firestore onSnapshot error]', e);
+
+                const unsub1 = window.fbOnSnapshot(window.fbQuery(userRef('clients')), s => setClientDB(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
+                const unsub2 = window.fbOnSnapshot(window.fbQuery(userRef('drivers')), s => setDrivers(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
+                const unsub3 = window.fbOnSnapshot(window.fbQuery(userRef('vehicles')), s => setVehicles(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
+
                 // ORDENAMIENTO LOCAL (Evitar Firebase orderBy)
-                window.fbOnSnapshot(window.fbQuery(userRef('draft_stops')), s => {
+                const unsub4 = window.fbOnSnapshot(window.fbQuery(userRef('draft_stops')), s => {
                     const data = s.docs.map(d => ({id: d.id, ...d.data()}));
                     data.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
                     setCurrentStops(data);
-                });
-                
-                window.fbOnSnapshot(window.fbQuery(userRef('zones')), s => {
+                }, onErr);
+
+                const unsub5 = window.fbOnSnapshot(window.fbQuery(userRef('zones')), s => {
                     const data = s.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     data.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
                     setZones(data);
-                });
-                
-                window.fbOnSnapshot(window.fbQuery(userRef('saved_plans')), s => {
+                }, onErr);
+
+                const unsub6 = window.fbOnSnapshot(window.fbQuery(userRef('saved_plans')), s => {
                     const data = s.docs.map(d => ({id: d.id, ...d.data()}));
                     data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
                     setSavedPlans(data);
-                });
-                
-                window.fbOnSnapshot(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config'), (docSnap) => {
+                }, onErr);
+
+                const unsub7 = window.fbOnSnapshot(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config'), (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
                         if (data.companyConfig) setCompanyConfig(data.companyConfig);
                         if (data.baseAddress) setBaseAddress(data.baseAddress);
                     }
-                });
+                }, onErr);
 
-                // Load monitor PIN
+                return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); };
+            }, [user, dbReady]);
+
+            // Load monitor PIN (separate effect)
+            useEffect(() => {
+                if (!user || !window.fbDb || !window.fbGetDoc) return;
                 window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', 'settings'))
                     .then(snap => { if (snap.exists() && snap.data().pin) setMonitorPin(snap.data().pin); })
                     .catch(() => {});
@@ -2068,16 +2074,22 @@
                     pieces: s.pieces || '',
                     delivered: false
                 }));
-                await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), {
-                    driverName: driver.name,
-                    driverPhone: driver.phone || '',
-                    zoneName,
-                    trip,
-                    date: today,
-                    createdAt: now.toISOString(),
-                    expireAt,
-                    stops
-                });
+                try {
+                    await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), {
+                        driverName: driver.name,
+                        driverPhone: driver.phone || '',
+                        zoneName,
+                        trip,
+                        date: today,
+                        createdAt: now.toISOString(),
+                        expireAt,
+                        stops
+                    });
+                } catch (err) {
+                    console.error('[consolidateRoute] Firestore write failed:', err);
+                    alert('Error saving route: ' + (err.message || err.code || err));
+                    return;
+                }
 
                 const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
                 const paradas = routeData.paradas || [];
