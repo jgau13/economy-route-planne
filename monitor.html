@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Delivery Monitor - ESS</title>
+
+    <link rel="icon" type="image/png" href="https://static.wixstatic.com/media/63d26f_b22ddda42d0f4dcc8619b741d794ea92~mv2.png">
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, query, orderBy, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        window.initFirebaseMonitor = (config) => {
+            try {
+                const app = initializeApp(config);
+                const auth = getAuth(app);
+                const db = getFirestore(app);
+
+                window.fbAuth = auth;
+                window.fbDb = db;
+                window.fbSignInAnon = () => signInAnonymously(auth);
+                window.fbSignOut = signOut;
+                window.fbOnAuthStateChanged = onAuthStateChanged;
+                window.fbCollection = collection;
+                window.fbOnSnapshot = onSnapshot;
+                window.fbQuery = query;
+                window.fbOrderBy = orderBy;
+                window.fbDoc = doc;
+                window.fbGetDoc = getDoc;
+                window.firebaseMonitorReady = true;
+                return true;
+            } catch (e) {
+                console.error(e);
+                return false;
+            }
+        };
+    </script>
+
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { ess: { blue: '#3178A1', green: '#74B745', dark: '#0f4c6e' } } } }
+        }
+    </script>
+
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #f1f5f9; }
+        .loader { border: 3px solid #e2e8f0; border-radius: 50%; border-top-color: #1b6e9b; width: 28px; height: 28px; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        const Icon = ({ name, className = "" }) => {
+            const [svg, setSvg] = useState(null);
+            useEffect(() => {
+                if (typeof lucide === 'undefined' || !lucide.icons) return;
+                const key = name.split('-').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+                const data = lucide.icons[key] || lucide.icons[name];
+                if (data) { const el = lucide.createElement(data); el.setAttribute('class', className); setSvg(el.outerHTML); }
+            }, [name, className]);
+            if (!svg) return <span className={className} />;
+            return <span dangerouslySetInnerHTML={{ __html: svg }} style={{ display: 'contents' }} />;
+        };
+
+        const PinScreen = ({ onUnlock, loading }) => {
+            const [digits, setDigits] = useState('');
+            const [shake, setShake] = useState(false);
+            const [error, setError] = useState('');
+
+            const press = (d) => {
+                if (digits.length >= 4) return;
+                setDigits(prev => prev + d);
+                setError('');
+            };
+            const del = () => setDigits(prev => prev.slice(0, -1));
+
+            useEffect(() => {
+                if (digits.length === 4) {
+                    const result = onUnlock(digits);
+                    if (result === false) {
+                        setShake(true);
+                        setError('Incorrect PIN. Try again.');
+                        setTimeout(() => { setShake(false); setDigits(''); }, 600);
+                    }
+                }
+            }, [digits]);
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-xs border border-slate-200 overflow-hidden">
+                        <div className="bg-ess-dark px-6 pt-8 pb-6 text-center">
+                            <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-10 mx-auto mb-4 brightness-0 invert" />
+                            <h1 className="font-bold text-white text-lg">Delivery Monitor</h1>
+                            <p className="text-blue-200 text-xs mt-1">Enter your PIN to continue</p>
+                        </div>
+
+                        <div className="p-6">
+                            {/* PIN dots */}
+                            <div className={`flex justify-center gap-4 mb-6 ${shake ? 'animate-bounce' : ''}`}>
+                                {[0,1,2,3].map(i => (
+                                    <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all duration-150 ${i < digits.length ? 'bg-ess-blue border-ess-blue scale-110' : 'border-slate-300 bg-white'}`} />
+                                ))}
+                            </div>
+
+                            {error && <p className="text-center text-red-500 text-xs font-bold mb-4">{error}</p>}
+                            {loading && <p className="text-center text-slate-400 text-xs mb-4">Connecting…</p>}
+
+                            {/* Keypad */}
+                            <div className="grid grid-cols-3 gap-3">
+                                {[1,2,3,4,5,6,7,8,9].map(n => (
+                                    <button key={n} onClick={() => press(String(n))}
+                                        className="py-4 rounded-xl bg-slate-50 hover:bg-ess-blue hover:text-white active:scale-95 font-bold text-xl text-slate-700 transition-all border border-slate-200">
+                                        {n}
+                                    </button>
+                                ))}
+                                <div />
+                                <button onClick={() => press('0')}
+                                    className="py-4 rounded-xl bg-slate-50 hover:bg-ess-blue hover:text-white active:scale-95 font-bold text-xl text-slate-700 transition-all border border-slate-200">
+                                    0
+                                </button>
+                                <button onClick={del}
+                                    className="py-4 rounded-xl bg-slate-50 hover:bg-red-50 hover:text-red-500 active:scale-95 font-bold text-slate-400 transition-all border border-slate-200 flex items-center justify-center">
+                                    ⌫
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Photo lightbox modal
+        const PhotoModal = ({ url, onClose }) => (
+            <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+                <div className="relative max-w-lg w-full">
+                    <img src={url} alt="Proof of delivery" className="w-full rounded-xl shadow-2xl" />
+                    <button onClick={onClose} className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70">
+                        <Icon name="x" className="h-5 w-5" />
+                    </button>
+                </div>
+            </div>
+        );
+
+        // Single driver route card
+        const DriverCard = ({ routeDoc, onPhotoClick, searchTerm = '' }) => {
+            const [expanded, setExpanded] = useState(true);
+            const isMatch = (stop) => !searchTerm ||
+                (stop.nombre || stop.name || '').toLowerCase().includes(searchTerm) ||
+                (stop.invoices || '').toLowerCase().includes(searchTerm) ||
+                (stop.direccion || stop.address || '').toLowerCase().includes(searchTerm);
+            const { driverName, driverPhone, zoneName, trip, date, stops = [], status } = routeDoc;
+            const delivered = stops.filter(s => s.delivered).length;
+            const total = stops.length;
+            const pct = total > 0 ? Math.round((delivered / total) * 100) : 0;
+            const allDone = pct === 100 && total > 0;
+
+            const fmtTime = (iso) => {
+                if (!iso) return '';
+                try { return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
+                catch { return ''; }
+            };
+
+            return (
+                <div className={`bg-white rounded-xl shadow-sm border-l-4 overflow-hidden fade-in ${allDone ? 'border-green-500' : 'border-ess-blue'}`}>
+                    {/* Card header */}
+                    <div
+                        className="p-4 cursor-pointer select-none hover:bg-slate-50 transition-colors"
+                        onClick={() => setExpanded(p => !p)}
+                    >
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${allDone ? 'bg-green-100' : 'bg-blue-50'}`}>
+                                    <Icon name="truck" className={`h-5 w-5 ${allDone ? 'text-green-600' : 'text-ess-blue'}`} />
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="font-bold text-slate-800 truncate">{driverName}</div>
+                                    <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                                        <span className="font-semibold text-slate-500 uppercase">{zoneName}</span>
+                                        {trip && (
+                                            <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${trip === 'AM' ? 'bg-sky-100 text-sky-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                {trip}
+                                            </span>
+                                        )}
+                                        {driverPhone && <span>{driverPhone}</span>}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                                {allDone ? (
+                                    <span className="text-xs font-bold bg-green-100 text-green-700 px-2.5 py-1 rounded-full flex items-center gap-1">
+                                        <Icon name="check-circle" className="h-3 w-3" /> Complete
+                                    </span>
+                                ) : (
+                                    <span className="text-xs font-bold bg-blue-50 text-ess-blue px-2.5 py-1 rounded-full flex items-center gap-1">
+                                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-ess-blue animate-pulse" />
+                                        Active
+                                    </span>
+                                )}
+                                <Icon name={expanded ? 'chevron-up' : 'chevron-down'} className="h-4 w-4 text-slate-400" />
+                            </div>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="mt-3 space-y-1">
+                            <div className="flex justify-between text-xs font-bold text-slate-500">
+                                <span>{delivered}/{total} stops delivered</span>
+                                <span className={allDone ? 'text-green-600' : 'text-ess-blue'}>{pct}%</span>
+                            </div>
+                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full rounded-full transition-all duration-700"
+                                    style={{ width: `${pct}%`, backgroundColor: allDone ? '#16a34a' : '#1b6e9b' }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Stop list */}
+                    {expanded && (
+                        <div className="border-t border-slate-100">
+                            {stops.map((stop, i) => (
+                                <div
+                                    key={i}
+                                    className={`flex items-center gap-3 px-4 py-3 border-b border-slate-50 last:border-b-0 ${
+                                        isMatch(stop) && searchTerm ? 'bg-yellow-50 border-l-2 border-l-yellow-400' : stop.delivered ? 'bg-green-50/40' : ''
+                                    }`}
+                                >
+                                    {/* Status icon */}
+                                    <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                                        stop.delivered ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'
+                                    }`}>
+                                        {stop.delivered ? <Icon name="check" className="h-4 w-4" /> : i + 1}
+                                    </div>
+
+                                    {/* Stop info */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className={`text-sm font-semibold truncate ${stop.delivered ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                                            {stop.nombre || stop.name}
+                                        </div>
+                                        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                                            <span className="text-xs text-slate-400 truncate max-w-[180px]">{stop.direccion || stop.address}</span>
+                                            {stop.invoices && (
+                                                <span className="text-xs font-mono font-bold bg-yellow-50 text-yellow-700 px-1.5 py-0.5 rounded border border-yellow-100">
+                                                    {stop.invoices}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Right side: time + photo */}
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                        {stop.delivered && stop.deliveredAt && (
+                                            <span className="text-xs text-green-600 font-bold whitespace-nowrap">
+                                                {fmtTime(stop.deliveredAt)}
+                                            </span>
+                                        )}
+                                        {stop.proofUrl ? (
+                                            <button onClick={() => onPhotoClick(stop.proofUrl)} className="group" title="View proof">
+                                                <img
+                                                    src={stop.proofUrl}
+                                                    alt="proof"
+                                                    className="w-10 h-10 rounded-lg object-cover border-2 border-green-200 group-hover:border-green-400 transition-colors shadow-sm"
+                                                />
+                                            </button>
+                                        ) : stop.delivered ? (
+                                            <span className="text-xs text-slate-300 italic">No photo</span>
+                                        ) : (
+                                            <span className="text-xs text-slate-300">Pending</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        function MonitorApp() {
+            const [pinUnlocked, setPinUnlocked] = useState(() => sessionStorage.getItem('ess_monitor_unlocked') === '1');
+            const [firebaseReady, setFirebaseReady] = useState(false);
+            const [storedPin, setStoredPin] = useState(null);
+            const [configError, setConfigError] = useState(false);
+            const [routes, setRoutes] = useState([]);
+            const [filterDate, setFilterDate] = useState(() => new Date().toISOString().split('T')[0]);
+            const [photoUrl, setPhotoUrl] = useState(null);
+            const [lastUpdate, setLastUpdate] = useState(null);
+            const [searchTerm, setSearchTerm] = useState('');
+            const unsubRef = useRef(null);
+
+            // Init Firebase + anonymous auth + load PIN
+            useEffect(() => {
+                const init = async () => {
+                    try {
+                        const res = await fetch('/config');
+                        const cfg = await res.json();
+                        if (!cfg.firebaseConfig) throw new Error('Missing config');
+                        window.initFirebaseMonitor(cfg.firebaseConfig);
+
+                        await new Promise(r => {
+                            const t = setInterval(() => { if (window.firebaseMonitorReady) { clearInterval(t); r(); } }, 80);
+                        });
+
+                        await window.fbSignInAnon();
+
+                        // Load PIN from Firestore
+                        const snap = await window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', 'settings'));
+                        setStoredPin(snap.exists() ? (snap.data().pin || '1234') : '1234');
+                        setFirebaseReady(true);
+                    } catch {
+                        setConfigError(true);
+                        setFirebaseReady(true);
+                    }
+                };
+                init();
+            }, []);
+
+            const handlePinAttempt = (digits) => {
+                const correct = storedPin || '1234';
+                if (digits === correct) {
+                    sessionStorage.setItem('ess_monitor_unlocked', '1');
+                    setPinUnlocked(true);
+                } else {
+                    return false;
+                }
+            };
+
+            // Subscribe to active_routes when unlocked
+            useEffect(() => {
+                if (!pinUnlocked || !firebaseReady || !window.fbDb) return;
+                unsubRef.current?.();
+
+                const colRef = window.fbCollection(window.fbDb, 'artifacts', appId, 'active_routes');
+                unsubRef.current = window.fbOnSnapshot(colRef, snap => {
+                    const docs = snap.docs.map(d => ({ token: d.id, ...d.data() }));
+                    setRoutes(docs);
+                    setLastUpdate(new Date());
+                });
+
+                return () => unsubRef.current?.();
+            }, [pinUnlocked, firebaseReady]);
+
+            const handleLogout = () => {
+                sessionStorage.removeItem('ess_monitor_unlocked');
+                setPinUnlocked(false);
+            };
+
+            // Filter by selected date + search term
+            const q = searchTerm.trim().toLowerCase();
+            const stopMatches = (stop) => !q ||
+                (stop.nombre || stop.name || '').toLowerCase().includes(q) ||
+                (stop.invoices || '').toLowerCase().includes(q) ||
+                (stop.direccion || stop.address || '').toLowerCase().includes(q);
+
+            const filtered = routes
+                .filter(r => (r.date || '') === filterDate)
+                .filter(r => !q || (r.stops || []).some(stopMatches));
+
+            const activeCount = filtered.filter(r => (r.stops || []).some(s => !s.delivered)).length;
+            const doneCount = filtered.filter(r => (r.stops || []).length > 0 && (r.stops || []).every(s => s.delivered)).length;
+
+            // PIN gate
+            if (!firebaseReady) return (
+                <div className="min-h-screen flex items-center justify-center">
+                    <div className="loader" />
+                </div>
+            );
+
+            if (configError) return (
+                <div className="min-h-screen flex items-center justify-center p-6 text-center">
+                    <div>
+                        <div className="text-4xl mb-3">⚠️</div>
+                        <p className="font-bold text-slate-700">Could not connect to server.</p>
+                        <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-ess-blue text-white rounded-lg font-bold text-sm">Retry</button>
+                    </div>
+                </div>
+            );
+
+            if (!pinUnlocked) return <PinScreen onUnlock={handlePinAttempt} loading={!storedPin} />;
+
+            return (
+                <div className="min-h-screen bg-slate-100">
+                    {photoUrl && <PhotoModal url={photoUrl} onClose={() => setPhotoUrl(null)} />}
+
+                    {/* Header */}
+                    <div className="bg-ess-dark shadow-md sticky top-0 z-40">
+                        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3">
+                                <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-8 brightness-0 invert" />
+                                <div>
+                                    <h1 className="font-bold text-white text-sm leading-none">Live Delivery Monitor</h1>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                {lastUpdate && (
+                                    <span className="text-xs text-blue-200 hidden sm:block">
+                                        Updated {lastUpdate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+                                    </span>
+                                )}
+                                <input
+                                    type="date"
+                                    value={filterDate}
+                                    onChange={e => setFilterDate(e.target.value)}
+                                    className="text-sm font-bold bg-white/10 text-white border border-white/20 rounded-lg px-3 py-1.5 outline-none focus:bg-white/20"
+                                />
+                                <button
+                                    onClick={handleLogout}
+                                    className="text-blue-200 hover:text-white text-xs font-bold flex items-center gap-1 px-2 py-1.5 rounded hover:bg-white/10 transition-colors"
+                                >
+                                    <Icon name="log-out" className="h-3.5 w-3.5" />
+                                    Exit
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+                        {/* Summary pills */}
+                        {filtered.length > 0 && (
+                            <div className="flex flex-wrap gap-3">
+                                <div className="bg-white rounded-xl px-4 py-3 shadow-sm border border-slate-200 flex items-center gap-2">
+                                    <Icon name="users" className="h-4 w-4 text-ess-blue" />
+                                    <span className="text-sm font-bold text-slate-700">{filtered.length} Driver{filtered.length !== 1 ? 's' : ''}</span>
+                                </div>
+                                <div className="bg-white rounded-xl px-4 py-3 shadow-sm border border-slate-200 flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-ess-blue animate-pulse inline-block" />
+                                    <span className="text-sm font-bold text-ess-blue">{activeCount} Active</span>
+                                </div>
+                                <div className="bg-white rounded-xl px-4 py-3 shadow-sm border border-slate-200 flex items-center gap-2">
+                                    <Icon name="check-circle" className="h-4 w-4 text-green-600" />
+                                    <span className="text-sm font-bold text-green-600">{doneCount} Complete</span>
+                                </div>
+                                <div className="bg-white rounded-xl px-4 py-3 shadow-sm border border-slate-200 flex items-center gap-2">
+                                    <Icon name="package" className="h-4 w-4 text-slate-400" />
+                                    <span className="text-sm font-bold text-slate-600">
+                                        {filtered.reduce((acc, r) => acc + (r.stops || []).filter(s => s.delivered).length, 0)}
+                                        {' / '}
+                                        {filtered.reduce((acc, r) => acc + (r.stops || []).length, 0)} stops delivered
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Search bar */}
+                        <div className="relative">
+                            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                                <Icon name="search" className="h-4 w-4 text-slate-400" />
+                            </div>
+                            <input
+                                type="text"
+                                placeholder="Search by company name or invoice number…"
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl shadow-sm text-sm outline-none focus:ring-2 focus:ring-ess-blue focus:border-transparent"
+                            />
+                            {searchTerm && (
+                                <button onClick={() => setSearchTerm('')} className="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-slate-600">
+                                    <Icon name="x" className="h-4 w-4" />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Search result count */}
+                        {q && (
+                            <p className="text-xs text-slate-500 -mt-3 px-1">
+                                {filtered.length === 0
+                                    ? 'No routes match your search.'
+                                    : `${filtered.reduce((acc, r) => acc + (r.stops||[]).filter(s => stopMatches(s)).length, 0)} stop(s) found across ${filtered.length} driver(s)`}
+                            </p>
+                        )}
+
+                        {/* Driver cards grid */}
+                        {filtered.length > 0 ? (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                                {filtered
+                                    .sort((a, b) => {
+                                        // Active routes first, then by driver name
+                                        const aDone = (a.stops || []).every(s => s.delivered);
+                                        const bDone = (b.stops || []).every(s => s.delivered);
+                                        if (aDone !== bDone) return aDone ? 1 : -1;
+                                        return (a.driverName || '').localeCompare(b.driverName || '');
+                                    })
+                                    .map(r => (
+                                        <DriverCard
+                                            key={r.token}
+                                            routeDoc={r}
+                                            onPhotoClick={setPhotoUrl}
+                                            searchTerm={q}
+                                        />
+                                    ))
+                                }
+                            </div>
+                        ) : (
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 py-20 text-center">
+                                <Icon name="truck" className="h-14 w-14 text-slate-200 mx-auto mb-4" />
+                                <h3 className="font-bold text-slate-400 text-lg">No active routes</h3>
+                                <p className="text-slate-300 text-sm mt-1">
+                                    {filterDate === new Date().toISOString().split('T')[0]
+                                        ? 'No routes have been consolidated today yet.'
+                                        : `No routes found for ${filterDate}.`}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<MonitorApp />);
+    </script>
+</body>
+</html>

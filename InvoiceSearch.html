@@ -18,7 +18,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, query, where, getDocs, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, query, where, getDocs, orderBy, limit, getDoc, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         window.initializeFirebaseGlobally = (config) => {
             try {
@@ -34,6 +34,8 @@
                 window.fbGetDocs = getDocs;
                 window.fbOrderBy = orderBy;
                 window.fbLimit = limit;
+                window.fbGetDoc = getDoc;
+                window.fbDoc = doc;
                 return true;
             } catch (e) {
                 console.error(e);
@@ -97,6 +99,18 @@
             );
         };
 
+        const PhotoModal = ({ url, onClose }) => (
+            <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+                <div className="relative max-w-lg w-full">
+                    <img src={url} alt="Proof of delivery" className="w-full rounded-xl shadow-2xl" />
+                    <button onClick={onClose} className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-2 hover:bg-black/70">
+                        <Icon name="x" className="h-5 w-5" />
+                    </button>
+                    <p className="text-center text-white/60 text-xs mt-3">Tap anywhere to close</p>
+                </div>
+            </div>
+        );
+
         const InvoiceSearchApp = () => {
             const [user, setUser] = useState(null);
             const [initializing, setInitializing] = useState(true);
@@ -105,6 +119,16 @@
             const [results, setResults] = useState([]);
             const [plans, setPlans] = useState([]);
             const [drivers, setDrivers] = useState({});
+
+            // Proof of delivery tab
+            const [activeTab, setActiveTab] = useState('history');
+            const [proofTerm, setProofTerm] = useState('');
+            const [proofDateFrom, setProofDateFrom] = useState('');
+            const [proofDateTo, setProofDateTo] = useState('');
+            const [proofResults, setProofResults] = useState([]);
+            const [proofLoading, setProofLoading] = useState(false);
+            const [proofSearched, setProofSearched] = useState(false);
+            const [photoModal, setPhotoModal] = useState(null);
             
             // Initial Config Load & Auth Check
             useEffect(() => {
@@ -215,6 +239,53 @@
                 if (e.key === 'Enter') handleSearch();
             };
 
+            const searchProofs = async () => {
+                if (!proofTerm.trim() && !proofDateFrom && !proofDateTo) return;
+                setProofLoading(true);
+                setProofSearched(true);
+                try {
+                    const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'proof_of_delivery');
+                    let q;
+                    const term = proofTerm.trim();
+
+                    if (term) {
+                        // Search by invoice number using array-contains
+                        q = window.fbQuery(col, window.fbWhere('invoices', 'array-contains', term));
+                    } else {
+                        // Date range search (no invoice filter)
+                        const constraints = [];
+                        if (proofDateFrom) constraints.push(window.fbWhere('date', '>=', proofDateFrom));
+                        if (proofDateTo)   constraints.push(window.fbWhere('date', '<=', proofDateTo));
+                        q = window.fbQuery(col, ...constraints, window.fbOrderBy('date', 'desc'), window.fbLimit(100));
+                    }
+
+                    const snap = await window.fbGetDocs(q);
+                    let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                    // Client-side date filter when searching by invoice
+                    if (term && (proofDateFrom || proofDateTo)) {
+                        docs = docs.filter(d => {
+                            if (proofDateFrom && d.date < proofDateFrom) return false;
+                            if (proofDateTo   && d.date > proofDateTo)   return false;
+                            return true;
+                        });
+                    }
+
+                    // Sort by timestamp desc
+                    docs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    setProofResults(docs);
+                } catch (e) {
+                    console.error('Proof search error:', e);
+                    alert('Search error: ' + e.message);
+                } finally {
+                    setProofLoading(false);
+                }
+            };
+
+            const handleProofKeyDown = (e) => {
+                if (e.key === 'Enter') searchProofs();
+            };
+
             if (initializing) {
                 return (
                     <div className="min-h-screen flex items-center justify-center p-4">
@@ -227,80 +298,219 @@
 
             return (
                 <div className="max-w-4xl mx-auto p-6">
-                    <div className="flex justify-between items-center mb-8">
+                    {photoModal && <PhotoModal url={photoModal} onClose={() => setPhotoModal(null)} />}
+
+                    {/* Header */}
+                    <div className="flex justify-between items-center mb-6">
                         <div className="flex items-center gap-3">
                             <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-10" />
-                            <h1 className="text-2xl font-bold text-slate-800">Invoice History Search</h1>
+                            <h1 className="text-2xl font-bold text-slate-800">Invoice &amp; Delivery Search</h1>
                         </div>
-                        <div className="text-sm text-slate-500 font-bold">
-                            Searching last 6 weeks ({plans.length} plans loaded)
-                        </div>
+                        <button onClick={() => { if(window.fbSignOut && window.fbAuth) window.fbSignOut(window.fbAuth); }} className="text-sm text-slate-400 hover:text-red-500 font-bold flex items-center gap-1">
+                            <Icon name="log-out" className="h-4 w-4" /> Exit
+                        </button>
                     </div>
 
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
-                        <div className="flex gap-4">
-                            <div className="relative flex-1">
-                                <Icon name="search" className="absolute left-3 top-3.5 text-slate-400 h-5 w-5" />
-                                <input 
-                                    type="text" 
-                                    className="w-full pl-10 p-3 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue text-lg" 
-                                    placeholder="Enter Invoice # or Client Name..." 
-                                    value={searchTerm}
-                                    onChange={e => setSearchTerm(e.target.value)}
-                                    onKeyDown={handleKeyDown}
-                                    autoFocus
-                                />
+                    {/* Tabs */}
+                    <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-6 w-fit">
+                        <button
+                            onClick={() => setActiveTab('history')}
+                            className={`px-5 py-2.5 rounded-lg font-bold text-sm transition-colors flex items-center gap-2 ${activeTab === 'history' ? 'bg-white text-ess-blue shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <Icon name="clock" className="h-4 w-4" /> Invoice History
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('proof')}
+                            className={`px-5 py-2.5 rounded-lg font-bold text-sm transition-colors flex items-center gap-2 ${activeTab === 'proof' ? 'bg-white text-ess-blue shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <Icon name="camera" className="h-4 w-4" /> Proof of Delivery
+                        </button>
+                    </div>
+
+                    {/* ── TAB: Invoice History ── */}
+                    {activeTab === 'history' && (
+                        <div>
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6">
+                                <div className="flex gap-3">
+                                    <div className="relative flex-1">
+                                        <Icon name="search" className="absolute left-3 top-3.5 text-slate-400 h-5 w-5" />
+                                        <input
+                                            type="text"
+                                            className="w-full pl-10 p-3 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue text-base"
+                                            placeholder="Invoice # or Client Name…"
+                                            value={searchTerm}
+                                            onChange={e => setSearchTerm(e.target.value)}
+                                            onKeyDown={handleKeyDown}
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <button onClick={handleSearch} className="bg-ess-blue text-white px-6 py-3 rounded-lg font-bold hover:bg-sky-700 transition-colors shadow">
+                                        Search
+                                    </button>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-2">Searching last 6 weeks · {plans.length} plans loaded</p>
                             </div>
-                            <button onClick={handleSearch} className="bg-ess-blue text-white px-8 py-3 rounded-lg font-bold hover:bg-sky-700 transition-colors shadow-lg">
-                                Search
-                            </button>
-                        </div>
-                    </div>
 
-                    <div className="space-y-4">
-                        {results.length > 0 ? (
-                            results.map((hit, idx) => (
-                                <div key={idx} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow animate-fade-in">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div>
-                                            <h3 className="font-bold text-lg text-slate-800">{hit.client}</h3>
-                                            <p className="text-sm text-slate-500">{hit.address}</p>
+                            <div className="space-y-3">
+                                {results.length > 0 ? results.map((hit, idx) => (
+                                    <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div>
+                                                <h3 className="font-bold text-lg text-slate-800">{hit.client}</h3>
+                                                <p className="text-sm text-slate-500">{hit.address}</p>
+                                            </div>
+                                            <div className="font-mono font-bold text-base bg-yellow-100 text-yellow-800 px-3 py-1 rounded-lg">
+                                                {hit.invoices || 'No Inv #'}
+                                            </div>
                                         </div>
-                                        <div className="text-right">
-                                            <div className="font-mono font-bold text-lg bg-yellow-100 text-yellow-800 px-2 py-1 rounded inline-block">
-                                                {hit.invoices || "No Inv #"}
+                                        <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-slate-100 text-sm">
+                                            <div>
+                                                <span className="block text-slate-400 text-xs font-bold uppercase mb-0.5">Date</span>
+                                                <span className="font-bold text-slate-700 flex items-center gap-1"><Icon name="calendar" className="h-3 w-3" /> {hit.date}</span>
+                                            </div>
+                                            <div>
+                                                <span className="block text-slate-400 text-xs font-bold uppercase mb-0.5">Driver</span>
+                                                <span className={`font-bold flex items-center gap-1 ${hit.driver === 'Unassigned' ? 'text-red-500' : 'text-green-600'}`}>
+                                                    <Icon name="truck" className="h-3 w-3" /> {hit.driver}
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <span className="block text-slate-400 text-xs font-bold uppercase mb-0.5">Zone</span>
+                                                <span className="font-bold text-slate-700">{hit.zone}</span>
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-100 text-sm">
-                                        <div>
-                                            <span className="block text-slate-400 text-xs font-bold uppercase">Date Delivered</span>
-                                            <span className="font-bold text-slate-700 flex items-center gap-1"><Icon name="calendar" className="h-3 w-3" /> {hit.date}</span>
-                                        </div>
-                                        <div>
-                                            <span className="block text-slate-400 text-xs font-bold uppercase">Driver</span>
-                                            <span className={`font-bold flex items-center gap-1 ${hit.driver === 'Unassigned' ? 'text-red-500' : 'text-green-600'}`}>
-                                                <Icon name="truck" className="h-3 w-3" /> {hit.driver}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="block text-slate-400 text-xs font-bold uppercase">Plan / Zone</span>
-                                            <span className="font-bold text-slate-700">{hit.planName} / {hit.zone}</span>
+                                )) : searchTerm ? (
+                                    <div className="text-center py-10 text-slate-400">No results for "{searchTerm}" in the last 6 weeks.</div>
+                                ) : (
+                                    <div className="text-center py-20 text-slate-300 flex flex-col items-center">
+                                        <Icon name="search" className="h-16 w-16 mb-4 opacity-20" />
+                                        <p>Enter an invoice number or client name.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── TAB: Proof of Delivery ── */}
+                    {activeTab === 'proof' && (
+                        <div>
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 space-y-4">
+                                <div className="flex gap-3">
+                                    <div className="relative flex-1">
+                                        <Icon name="hash" className="absolute left-3 top-3.5 text-slate-400 h-5 w-5" />
+                                        <input
+                                            type="text"
+                                            className="w-full pl-10 p-3 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue text-base"
+                                            placeholder="Invoice number (e.g. 10234)"
+                                            value={proofTerm}
+                                            onChange={e => setProofTerm(e.target.value)}
+                                            onKeyDown={handleProofKeyDown}
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <button onClick={searchProofs} disabled={proofLoading} className="bg-ess-blue text-white px-6 py-3 rounded-lg font-bold hover:bg-sky-700 transition-colors shadow disabled:opacity-50 flex items-center gap-2">
+                                        {proofLoading ? <div className="border-2 border-white border-t-transparent rounded-full w-4 h-4 animate-spin" /> : <Icon name="search" className="h-4 w-4" />}
+                                        Search
+                                    </button>
+                                </div>
+                                <div className="flex gap-3 items-center">
+                                    <span className="text-xs font-bold text-slate-500 uppercase whitespace-nowrap">Date range</span>
+                                    <input
+                                        type="date"
+                                        className="flex-1 p-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue"
+                                        value={proofDateFrom}
+                                        onChange={e => setProofDateFrom(e.target.value)}
+                                    />
+                                    <span className="text-slate-400 text-sm">to</span>
+                                    <input
+                                        type="date"
+                                        className="flex-1 p-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-ess-blue"
+                                        value={proofDateTo}
+                                        onChange={e => setProofDateTo(e.target.value)}
+                                    />
+                                    {(proofDateFrom || proofDateTo) && (
+                                        <button onClick={() => { setProofDateFrom(''); setProofDateTo(''); }} className="text-slate-400 hover:text-red-500 p-1" title="Clear dates">
+                                            <Icon name="x" className="h-4 w-4" />
+                                        </button>
+                                    )}
+                                </div>
+                                <p className="text-xs text-slate-400">Search by exact invoice number, optionally filtered by date range.</p>
+                            </div>
+
+                            {/* Proof results */}
+                            <div className="space-y-3">
+                                {proofLoading && (
+                                    <div className="text-center py-10 text-slate-400 flex flex-col items-center gap-3">
+                                        <div className="border-3 border-slate-200 border-t-ess-blue rounded-full w-8 h-8 animate-spin" style={{borderWidth:3}} />
+                                        <span className="text-sm">Searching…</span>
+                                    </div>
+                                )}
+
+                                {!proofLoading && proofSearched && proofResults.length === 0 && (
+                                    <div className="text-center py-14 text-slate-400 flex flex-col items-center gap-2">
+                                        <Icon name="camera-off" className="h-12 w-12 opacity-20" />
+                                        <p className="font-medium">No proof of delivery found.</p>
+                                        <p className="text-xs">Try a different invoice number or date range.</p>
+                                    </div>
+                                )}
+
+                                {!proofLoading && proofResults.map((proof, idx) => (
+                                    <div key={idx} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex gap-4 items-start hover:shadow-md transition-shadow">
+                                        {/* Photo thumbnail */}
+                                        {proof.photoUrl ? (
+                                            <button onClick={() => setPhotoModal(proof.photoUrl)} className="flex-shrink-0 group" title="View photo">
+                                                <img
+                                                    src={proof.photoUrl}
+                                                    alt="proof"
+                                                    className="w-20 h-20 rounded-xl object-cover border-2 border-slate-200 group-hover:border-ess-blue transition-colors shadow-sm"
+                                                />
+                                                <p className="text-xs text-center text-slate-400 mt-1 group-hover:text-ess-blue">View</p>
+                                            </button>
+                                        ) : (
+                                            <div className="flex-shrink-0 w-20 h-20 rounded-xl bg-slate-100 flex items-center justify-center border-2 border-dashed border-slate-200">
+                                                <Icon name="camera-off" className="h-6 w-6 text-slate-300" />
+                                            </div>
+                                        )}
+
+                                        {/* Info */}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-start justify-between gap-2 mb-1">
+                                                <h3 className="font-bold text-slate-800 truncate">{proof.customerName}</h3>
+                                                <span className="font-mono font-bold text-sm bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded flex-shrink-0">
+                                                    {proof.invoicesRaw || proof.invoices?.join(', ') || '–'}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 truncate mb-2">{proof.stopAddress}</p>
+                                            <div className="grid grid-cols-3 gap-2 text-xs">
+                                                <div>
+                                                    <span className="text-slate-400 font-bold uppercase block">Date</span>
+                                                    <span className="font-bold text-slate-700">{proof.date}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-slate-400 font-bold uppercase block">Driver</span>
+                                                    <span className="font-bold text-green-600 flex items-center gap-1">
+                                                        <Icon name="truck" className="h-3 w-3" /> {proof.driverName || '–'}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-slate-400 font-bold uppercase block">Zone</span>
+                                                    <span className="font-bold text-slate-700">{proof.zoneName || '–'}</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))
-                        ) : (
-                            searchTerm && <div className="text-center py-10 text-slate-400">No results found for "{searchTerm}" in the last 6 weeks.</div>
-                        )}
-                        
-                        {!searchTerm && (
-                            <div className="text-center py-20 text-slate-300 flex flex-col items-center">
-                                <Icon name="search" className="h-16 w-16 mb-4 opacity-20" />
-                                <p>Enter an invoice number to find out who delivered it.</p>
+                                ))}
+
+                                {!proofLoading && !proofSearched && (
+                                    <div className="text-center py-20 text-slate-300 flex flex-col items-center">
+                                        <Icon name="camera" className="h-16 w-16 mb-4 opacity-20" />
+                                        <p>Enter an invoice number to find its proof of delivery.</p>
+                                    </div>
+                                )}
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
             );
         };
