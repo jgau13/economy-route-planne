@@ -2077,12 +2077,20 @@
                     expireAt,
                     stops
                 });
+
+                const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
+                const paradas = routeData.paradas || [];
+                const googleLink = routeData.link || (paradas.length > 0
+                    ? `https://www.google.com/maps/dir/?api=1&origin=${encode(baseAddress)}&destination=${encode(baseAddress)}&waypoints=${paradas.map(s => encode(s.direccion || s.address)).join('%7C')}&travelmode=driving`
+                    : '');
+                const appleLink = paradas.length > 0
+                    ? `https://maps.apple.com/?saddr=${encode(baseAddress)}&daddr=${paradas.map(s => encode(s.direccion || s.address)).join('+to:')}+to:${encode(baseAddress)}&dirflg=d`
+                    : '';
                 const baseUrl = window.location.origin;
                 const driverLink = `${baseUrl}/driver.html?r=${token}`;
                 const phone = (driver.phone || '').replace(/\D/g, '');
-                const msg = encodeURIComponent(`Your ${trip} delivery route (${zoneName}) is ready:\n${driverLink}`);
-                const waUrl = `https://wa.me/${phone}?text=${msg}`;
-                window.open(waUrl, '_blank');
+                const message = `Hello, here is your updated route:\n\n📍 *Google Maps:*\n${googleLink}\n\n🍎 *Apple Maps:*\n${appleLink}\n\nYour stop tracking link is: ${driverLink}\n\nDrive safely!`;
+                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
             };
             const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setClientFormLatLng(c.latlng || null); setEditingClientId(c.id); };
 
@@ -2870,46 +2878,11 @@
                                                         <Icon name="send" className="h-3 w-3" /> App
                                                     </button>
                                                     
-                                                    {/* WHATSAPP LOGIC START */}
-                                                    {(routeData.paradas || []).length <= 9 ? (
-                                                        <button 
-                                                            onClick={() => {
-                                                                const link = getWhatsappLink(routeData.paradas, driver?.name, routeData.link);
-                                                                window.open(link, '_blank');
-                                                            }} 
-                                                            className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors"
-                                                        >
-                                                            <Icon name="message-circle" className="h-4 w-4" /> WhatsApp
-                                                        </button>
-                                                    ) : (
-                                                        <div className="col-span-2 flex gap-1">
-                                                            {Array.from({ length: Math.ceil((routeData.paradas || []).length / 9) }).map((_, idx) => {
-                                                                const start = idx * 9;
-                                                                const end = start + 9;
-                                                                const chunk = (routeData.paradas || []).slice(start, end);
-                                                                return (
-                                                                    <button 
-                                                                        key={idx} 
-                                                                        onClick={() => {
-                                                                            const link = getWhatsappLink(chunk, driver?.name, null);
-                                                                            window.open(link, '_blank');
-                                                                        }} 
-                                                                        className="flex-1 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-1 shadow-sm transition-colors"
-                                                                        title={`Stops ${start + 1} - ${Math.min(end, (routeData.paradas || []).length)}`}
-                                                                    >
-                                                                        <Icon name="message-circle" className="h-3 w-3" /> Part {idx + 1}
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    )}
-                                                    {/* WHATSAPP LOGIC END */}
-
-                                                    <button 
+                                                    <button
                                                         onClick={() => {
-                                                            autoSavePlan(); // AUTO-SAVE ON PRINT SHEET
-                                                            setPrintData({ 
-                                                                stops: routeData.paradas, 
+                                                            autoSavePlan();
+                                                            setPrintData({
+                                                                stops: routeData.paradas,
                                                                 driverName: driver ? driver.name : "Unassigned",
                                                                 vehicle: currentVehicleName,
                                                                 phone: driver ? driver.phone : "",
@@ -2924,9 +2897,9 @@
 
                                                     <button
                                                         onClick={() => consolidateRoute(zoneName, routeData, driver)}
-                                                        className="col-span-2 bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                        className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
                                                     >
-                                                        <Icon name="send" className="h-4 w-4" /> Consolidate Route
+                                                        <Icon name="message-circle" className="h-4 w-4" /> Consolidate & Send
                                                     </button>
                                                 </div>
                                             </div>
