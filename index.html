@@ -905,6 +905,7 @@
             const [settingsMsg, setSettingsMsg] = useState('');
             const [monitorPin, setMonitorPin] = useState('1234');
             const [showMonitorPin, setShowMonitorPin] = useState(false);
+            const [consolidatedRoutes, setConsolidatedRoutes] = useState({});
             const fileInputRef = useRef(null);
 
             // RESULTS
@@ -2090,7 +2091,8 @@
                 const driverLink = `${baseUrl}/driver.html?r=${token}`;
                 const phone = (driver.phone || '').replace(/\D/g, '');
                 const message = `Hello, here is your updated route:\n\n📍 *Google Maps:*\n${googleLink}\n\n🍎 *Apple Maps:*\n${appleLink}\n\nYour stop tracking link is: ${driverLink}\n\nDrive safely!`;
-                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
+                const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+                setConsolidatedRoutes(prev => ({ ...prev, [zoneName]: waUrl }));
             };
             const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setClientFormLatLng(c.latlng || null); setEditingClientId(c.id); };
 
@@ -2895,12 +2897,32 @@
                                                         <Icon name="printer" className="h-4 w-4" /> Print Sheet
                                                     </button>
 
-                                                    <button
-                                                        onClick={() => consolidateRoute(zoneName, routeData, driver)}
-                                                        className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
-                                                    >
-                                                        <Icon name="message-circle" className="h-4 w-4" /> Consolidate & Send
-                                                    </button>
+                                                    {consolidatedRoutes[zoneName] ? (
+                                                        <div className="col-span-2 flex gap-2">
+                                                            <a
+                                                                href={consolidatedRoutes[zoneName]}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="flex-1 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                            >
+                                                                <Icon name="message-circle" className="h-4 w-4" /> Send via WhatsApp
+                                                            </a>
+                                                            <button
+                                                                onClick={() => consolidateRoute(zoneName, routeData, driver)}
+                                                                className="px-3 py-3 bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold rounded-lg text-xs flex items-center gap-1 shadow-sm transition-colors"
+                                                                title="Re-consolidate"
+                                                            >
+                                                                <Icon name="refresh-cw" className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => consolidateRoute(zoneName, routeData, driver)}
+                                                            className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                        >
+                                                            <Icon name="message-circle" className="h-4 w-4" /> Consolidate & Send
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                         );
