@@ -2051,6 +2051,39 @@
                 } 
             };
             const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', id)); };
+
+            const consolidateRoute = async (zoneName, routeData, driver) => {
+                if (!driver) return alert('Assign a driver first.');
+                if (!window.fbDb) return alert('Firebase not ready.');
+                const token = crypto.randomUUID();
+                const now = new Date();
+                const trip = now.getHours() < 12 ? 'AM' : 'PM';
+                const today = now.toISOString().split('T')[0];
+                const expireAt = new Date(now.getTime() + 72 * 60 * 60 * 1000);
+                const stops = (routeData.paradas || []).map(s => ({
+                    nombre: s.nombre || s.name || '',
+                    direccion: s.direccion || s.address || '',
+                    invoices: s.invoices || '',
+                    pieces: s.pieces || '',
+                    delivered: false
+                }));
+                await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), {
+                    driverName: driver.name,
+                    driverPhone: driver.phone || '',
+                    zoneName,
+                    trip,
+                    date: today,
+                    createdAt: now.toISOString(),
+                    expireAt,
+                    stops
+                });
+                const baseUrl = window.location.origin;
+                const driverLink = `${baseUrl}/driver.html?r=${token}`;
+                const phone = (driver.phone || '').replace(/\D/g, '');
+                const msg = encodeURIComponent(`Your ${trip} delivery route (${zoneName}) is ready:\n${driverLink}`);
+                const waUrl = `https://wa.me/${phone}?text=${msg}`;
+                window.open(waUrl, '_blank');
+            };
             const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setClientFormLatLng(c.latlng || null); setEditingClientId(c.id); };
 
             const addZoneFromSettings = async () => { 
@@ -2887,6 +2920,13 @@
                                                         className="col-span-2 bg-slate-800 text-white hover:bg-black font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors"
                                                     >
                                                         <Icon name="printer" className="h-4 w-4" /> Print Sheet
+                                                    </button>
+
+                                                    <button
+                                                        onClick={() => consolidateRoute(zoneName, routeData, driver)}
+                                                        className="col-span-2 bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                    >
+                                                        <Icon name="send" className="h-4 w-4" /> Consolidate Route
                                                     </button>
                                                 </div>
                                             </div>
