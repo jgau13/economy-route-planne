@@ -813,6 +813,7 @@
         function App() {
             const [user, setUser] = useState(null);
             const [dbReady, setDbReady] = useState(false);
+            const [syncKey, setSyncKey] = useState(0);
             const [clientDB, setClientDB] = useState([]);
             const [drivers, setDrivers] = useState([]);
             const [vehicles, setVehicles] = useState([]);
@@ -1007,7 +1008,7 @@
                 }, onErr);
 
                 return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); };
-            }, [user, dbReady]);
+            }, [user, dbReady, syncKey]);
 
             // Load monitor PIN (separate effect)
             useEffect(() => {
@@ -2105,6 +2106,7 @@
                 const message = `Hello, here is your updated route:\n\n📍 *Google Maps:*\n${googleLink}\n\n🍎 *Apple Maps:*\n${appleLink}\n\nYour stop tracking link is: ${driverLink}\n\nDrive safely!`;
                 const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
                 setConsolidatedRoutes(prev => ({ ...prev, [zoneName]: waUrl }));
+                setSyncKey(k => k + 1);
             };
             const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setClientFormLatLng(c.latlng || null); setEditingClientId(c.id); };
 
