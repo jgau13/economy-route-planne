@@ -18,7 +18,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, doc, onSnapshot, updateDoc, addDoc, collection } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, setPersistence, inMemoryPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
         window.initFirebaseDriver = (config) => {
             try {
@@ -38,7 +38,7 @@
                 window.fbStorageRef = ref;
                 window.fbUploadBytes = uploadBytes;
                 window.fbGetDownloadURL = getDownloadURL;
-                window.fbSignInAnon = () => signInAnonymously(auth);
+                window.fbSignInAnon = () => setPersistence(auth, inMemoryPersistence).then(() => signInAnonymously(auth));
                 window.firebaseDriverReady = true;
                 return true;
             } catch (e) {
