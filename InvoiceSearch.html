@@ -245,33 +245,29 @@
                 setProofSearched(true);
                 try {
                     const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'proof_of_delivery');
-                    let q;
-                    const term = proofTerm.trim();
+                    const term = proofTerm.trim().toLowerCase();
 
-                    if (term) {
-                        // Search by invoice number using array-contains
-                        q = window.fbQuery(col, window.fbWhere('invoices', 'array-contains', term));
-                    } else {
-                        // Date range search (no invoice filter)
-                        const constraints = [];
-                        if (proofDateFrom) constraints.push(window.fbWhere('date', '>=', proofDateFrom));
-                        if (proofDateTo)   constraints.push(window.fbWhere('date', '<=', proofDateTo));
-                        q = window.fbQuery(col, ...constraints, window.fbOrderBy('date', 'desc'), window.fbLimit(100));
-                    }
+                    // Always fetch by date range (or last 300 docs) and filter client-side
+                    // This supports invoice #, customer name, and address search uniformly
+                    const constraints = [];
+                    if (proofDateFrom) constraints.push(window.fbWhere('date', '>=', proofDateFrom));
+                    if (proofDateTo)   constraints.push(window.fbWhere('date', '<=', proofDateTo));
+                    const q = window.fbQuery(col, ...constraints, window.fbOrderBy('date', 'desc'), window.fbLimit(300));
 
                     const snap = await window.fbGetDocs(q);
                     let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-                    // Client-side date filter when searching by invoice
-                    if (term && (proofDateFrom || proofDateTo)) {
+                    // Client-side filter by term (invoice, name, or address)
+                    if (term) {
                         docs = docs.filter(d => {
-                            if (proofDateFrom && d.date < proofDateFrom) return false;
-                            if (proofDateTo   && d.date > proofDateTo)   return false;
-                            return true;
+                            const invoiceMatch = (d.invoicesRaw || '').toLowerCase().includes(term) ||
+                                (d.invoices || []).some(inv => inv.toLowerCase().includes(term));
+                            const nameMatch = (d.customerName || '').toLowerCase().includes(term);
+                            const addressMatch = (d.stopAddress || '').toLowerCase().includes(term);
+                            return invoiceMatch || nameMatch || addressMatch;
                         });
                     }
 
-                    // Sort by timestamp desc
                     docs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                     setProofResults(docs);
                 } catch (e) {
@@ -402,7 +398,7 @@
                                         <input
                                             type="text"
                                             className="w-full pl-10 p-3 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue text-base"
-                                            placeholder="Invoice number (e.g. 10234)"
+                                            placeholder="Invoice #, customer name, or address"
                                             value={proofTerm}
                                             onChange={e => setProofTerm(e.target.value)}
                                             onKeyDown={handleProofKeyDown}
@@ -435,7 +431,7 @@
                                         </button>
                                     )}
                                 </div>
-                                <p className="text-xs text-slate-400">Search by exact invoice number, optionally filtered by date range.</p>
+                                <p className="text-xs text-slate-400">Search by invoice #, customer name, or address. Optionally filter by date range.</p>
                             </div>
 
                             {/* Proof results */}
@@ -505,7 +501,7 @@
                                 {!proofLoading && !proofSearched && (
                                     <div className="text-center py-20 text-slate-300 flex flex-col items-center">
                                         <Icon name="camera" className="h-16 w-16 mb-4 opacity-20" />
-                                        <p>Enter an invoice number to find its proof of delivery.</p>
+                                        <p>Search by invoice #, customer name, or address.</p>
                                     </div>
                                 )}
                             </div>
