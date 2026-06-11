@@ -155,6 +155,15 @@
                 setProofStop(idx);
             };
 
+            const markUndelivered = async (idx) => {
+                if (!route || !token) return;
+                const stops = route.stops.map((s, i) =>
+                    i === idx ? { ...s, delivered: false, deliveredAt: null } : s
+                );
+                const ref = window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token);
+                await window.fbUpdateDoc(ref, { stops });
+            };
+
             // Compress image to max 1200px wide, JPEG 75% — keeps files ~200-400 KB
             const compressImage = (file) => new Promise((resolve) => {
                 const img = new Image();
@@ -420,8 +429,14 @@
                                                     ? new Date(stop.deliveredAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
                                                     : '–'}
                                                 {!stop.proofUrl && (
-                                                    <span className="ml-auto text-slate-400 font-normal">No photo</span>
+                                                    <span className="text-slate-400 font-normal">No photo</span>
                                                 )}
+                                                <button
+                                                    onClick={() => markUndelivered(idx)}
+                                                    className="ml-auto flex items-center gap-1 text-slate-400 hover:text-red-500 font-bold transition-colors px-2 py-1 rounded-lg hover:bg-red-50"
+                                                >
+                                                    <Icon name="undo-2" className="h-3.5 w-3.5" /> Undo
+                                                </button>
                                             </div>
                                         ) : (
                                             <button

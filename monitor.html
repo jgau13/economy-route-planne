@@ -294,7 +294,8 @@
         };
 
         function MonitorApp() {
-            const [pinUnlocked, setPinUnlocked] = useState(() => sessionStorage.getItem('ess_monitor_unlocked') === '1');
+            const lsKey = `ess_monitor_${dispatcherUid || 'default'}`;
+            const [pinUnlocked, setPinUnlocked] = useState(() => localStorage.getItem(lsKey) === '1');
             const [firebaseReady, setFirebaseReady] = useState(false);
             const [storedPin, setStoredPin] = useState(null);
             const [configError, setConfigError] = useState(false);
@@ -336,7 +337,7 @@
             const handlePinAttempt = (digits) => {
                 const correct = storedPin || '1234';
                 if (digits === correct) {
-                    sessionStorage.setItem('ess_monitor_unlocked', '1');
+                    localStorage.setItem(lsKey, '1');
                     setPinUnlocked(true);
                 } else {
                     return false;
@@ -361,7 +362,7 @@
             }, [pinUnlocked, firebaseReady]);
 
             const handleLogout = () => {
-                sessionStorage.removeItem('ess_monitor_unlocked');
+                localStorage.removeItem(lsKey);
                 setPinUnlocked(false);
             };
 
