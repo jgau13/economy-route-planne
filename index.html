@@ -1013,7 +1013,7 @@
             // Load monitor PIN (separate effect)
             useEffect(() => {
                 if (!user || !window.fbDb || !window.fbGetDoc) return;
-                window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', 'settings'))
+                window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', user.uid))
                     .then(snap => { if (snap.exists() && snap.data().pin) setMonitorPin(snap.data().pin); })
                     .catch(() => {});
             }, [user, dbReady]);
@@ -2084,7 +2084,8 @@
                         date: today,
                         createdAt: now.toISOString(),
                         expireAt,
-                        stops
+                        stops,
+                        dispatcherUid: user.uid
                     });
                 } catch (err) {
                     console.error('[consolidateRoute] Firestore write failed:', err);
@@ -2122,7 +2123,7 @@
                 if (window.fbDb) {
                     await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'settings', 'config'), { companyConfig, baseAddress }, { merge: true });
                     if (monitorPin.trim().length >= 4) {
-                        await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', 'settings'), { pin: monitorPin.trim() }, { merge: true });
+                        await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', user.uid), { pin: monitorPin.trim() }, { merge: true });
                     }
                     alert("Settings saved!");
                 }
@@ -3148,6 +3149,13 @@
                                             </div>
                                         </div>
                                         <button onClick={saveSettings} className="bg-ess-blue text-white px-4 py-2 rounded font-bold w-full">Save Monitor PIN</button>
+                                        <div className="mt-3">
+                                            <label className="block text-sm font-bold text-slate-500 mb-1">Monitor Link (share with sales staff)</label>
+                                            <div className="flex gap-2 items-center">
+                                                <input readOnly value={`${window.location.origin}/monitor.html?d=${user?.uid || ''}`} className="flex-1 p-2 border rounded text-xs font-mono bg-slate-50 text-slate-600" onClick={e => e.target.select()} />
+                                                <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/monitor.html?d=${user?.uid || ''}`)} className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold text-slate-600 whitespace-nowrap">Copy</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 

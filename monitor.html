@@ -64,6 +64,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const dispatcherUid = new URLSearchParams(window.location.search).get('d') || '';
 
         const Icon = ({ name, className = "" }) => {
             const [svg, setSvg] = useState(null);
@@ -319,8 +320,9 @@
 
                         await window.fbSignInAnon();
 
-                        // Load PIN from Firestore
-                        const snap = await window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', 'settings'));
+                        // Load PIN from Firestore (per dispatcher uid)
+                        const pinDocId = dispatcherUid || 'settings';
+                        const snap = await window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', pinDocId));
                         setStoredPin(snap.exists() ? (snap.data().pin || '1234') : '1234');
                         setFirebaseReady(true);
                     } catch {
@@ -348,7 +350,9 @@
 
                 const colRef = window.fbCollection(window.fbDb, 'artifacts', appId, 'active_routes');
                 unsubRef.current = window.fbOnSnapshot(colRef, snap => {
-                    const docs = snap.docs.map(d => ({ token: d.id, ...d.data() }));
+                    const docs = snap.docs
+                        .map(d => ({ token: d.id, ...d.data() }))
+                        .filter(r => !dispatcherUid || r.dispatcherUid === dispatcherUid);
                     setRoutes(docs);
                     setLastUpdate(new Date());
                 });
