@@ -20,7 +20,7 @@
 
         window.initFirebaseMonitor = (config) => {
             try {
-                const app = initializeApp(config);
+                const app = initializeApp(config, 'monitor-app');
                 const auth = getAuth(app);
                 const db = getFirestore(app);
 
