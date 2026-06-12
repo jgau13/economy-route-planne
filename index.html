@@ -269,109 +269,175 @@
             const renderersRef = useRef([]); 
             const infoWindowRef = useRef(null); 
             const geocoderRef = useRef(null);
-            const drawingManagerRef = useRef(null);
             const baseLocCache = useRef(null); // CACHÉ PERSISTENTE PARA LA BASE
             const [mapReady, setMapReady] = useState(false);
+            const [activeDrawMode, setActiveDrawMode] = useState('lasso');
+            const activeModeRef = useRef('lasso');
+            const isDrawingRectRef = useRef(false);
+            const rectStartRef = useRef(null);
+            const drawShapeRef = useRef(null);
+            const polygonPointsRef = useRef([]);
+            const isLassoRef = useRef(false);
             const onMarkerClickRef = useRef(onMarkerClick);
 
             useEffect(() => {
                 onMarkerClickRef.current = onMarkerClick;
             }, [onMarkerClick]);
-            
-            // Shortcusts Listener
+
+            const onStopsSelectedRef = useRef(onStopsSelected);
+            useEffect(() => { onStopsSelectedRef.current = onStopsSelected; }, [onStopsSelected]);
+
+            const setDrawMode = (mode) => {
+                setActiveDrawMode(mode);
+                activeModeRef.current = mode;
+                // Limpiar dibujo en progreso
+                polygonPointsRef.current = [];
+                isDrawingRectRef.current = false;
+                if (drawShapeRef.current) { drawShapeRef.current.setMap(null); drawShapeRef.current = null; }
+                if (googleMapRef.current) {
+                    const cursor = mode === 'hand' ? '' : 'crosshair';
+                    googleMapRef.current.setOptions({ draggable: true, disableDoubleClickZoom: false, draggableCursor: cursor });
+                }
+            };
+
+            // Shortcuts: Shift+H hand, Shift+P polygon, Shift+S rectangle
             useEffect(() => {
                 const handleKeyDown = (e) => {
-                    if (!enableDrawing || !drawingManagerRef.current || !mapReady) return;
-                    
+                    if (!enableDrawing || !mapReady) return;
                     if (e.shiftKey) {
                         switch(e.key.toLowerCase()) {
-                            case 'h': // Hand/Pan
-                                drawingManagerRef.current.setDrawingMode(null);
-                                break;
-                            case 'p': // Polygon
-                                drawingManagerRef.current.setDrawingMode(window.google.maps.drawing.OverlayType.POLYGON);
-                                break;
-                            case 'r': // Rectangle
-                                drawingManagerRef.current.setDrawingMode(window.google.maps.drawing.OverlayType.RECTANGLE);
-                                break;
+                            case 'h': setDrawMode('hand'); break;
+                            case 'p': setDrawMode('polygon'); break;
+                            case 's': setDrawMode('rectangle'); break;
+                            case 'f': setDrawMode('lasso'); break;
                         }
                     }
                 };
-
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
             }, [enableDrawing, mapReady]);
 
+            // Custom drawing via native Google Maps events (DrawingManager removido en v3.65)
             useEffect(() => {
-                if (!window.google || !googleMapRef.current || !mapReady) return;
-                
-                if (enableDrawing) {
-                    if (!drawingManagerRef.current) {
-                        try {
-                            drawingManagerRef.current = new window.google.maps.drawing.DrawingManager({
-                                drawingMode: window.google.maps.drawing.OverlayType.POLYGON, 
-                                drawingControl: true,
-                                drawingControlOptions: {
-                                    position: window.google.maps.ControlPosition.TOP_CENTER,
-                                    drawingModes: [
-                                        window.google.maps.drawing.OverlayType.POLYGON,
-                                        window.google.maps.drawing.OverlayType.RECTANGLE
-                                    ],
-                                },
-                                rectangleOptions: {
-                                    fillColor: '#1b6e9b',
-                                    fillOpacity: 0.2,
-                                    strokeWeight: 2,
-                                    clickable: false,
-                                    editable: true,
-                                    zIndex: 1,
-                                },
-                                polygonOptions: {
-                                    fillColor: '#1b6e9b',
-                                    fillOpacity: 0.2,
-                                    strokeWeight: 2,
-                                    clickable: false,
-                                    editable: true,
-                                    zIndex: 1,
-                                }
-                            });
-                            
-                            drawingManagerRef.current.setMap(googleMapRef.current);
+                if (!window.google || !googleMapRef.current || !mapReady || !enableDrawing) return;
+                const map = googleMapRef.current;
+                map.setOptions({ draggableCursor: 'crosshair' }); // modo polygon por defecto
 
-                            window.google.maps.event.addListener(drawingManagerRef.current, 'overlaycomplete', function(event) {
-                                if (event.type === 'rectangle' || event.type === 'polygon') {
-                                    const shape = event.overlay;
-                                    const selected = [];
-                                    
-                                    markersRef.current.forEach(marker => {
-                                        let isInside = false;
-                                        if (event.type === 'rectangle') {
-                                            if (shape.getBounds().contains(marker.getPosition())) isInside = true;
-                                        } else if (event.type === 'polygon') {
-                                            if (window.google.maps.geometry && window.google.maps.geometry.poly) {
-                                                if (window.google.maps.geometry.poly.containsLocation(marker.getPosition(), shape)) isInside = true;
-                                            }
-                                        }
+                const listeners = [];
 
-                                        if (isInside && marker.customInfo && marker.customInfo.originalIndex !== undefined) {
-                                            selected.push(marker.customInfo.originalIndex);
-                                        }
-                                    });
-                                    
-                                    if (onStopsSelected) {
-                                        onStopsSelected(selected.sort((a,b) => a - b));
-                                    }
-                                    
-                                    setTimeout(() => shape.setMap(null), 600);
-                                }
-                            });
-                        } catch(e) { console.error("Error init drawing:", e); }
-                    } else {
-                        drawingManagerRef.current.setMap(googleMapRef.current);
+                // MOUSEDOWN: inicia rectangle o lasso
+                listeners.push(map.addListener('mousedown', (e) => {
+                    if (activeModeRef.current === 'rectangle') {
+                        isDrawingRectRef.current = true;
+                        rectStartRef.current = e.latLng;
+                        map.setOptions({ draggable: false, disableDoubleClickZoom: true });
+                    } else if (activeModeRef.current === 'lasso') {
+                        isLassoRef.current = true;
+                        polygonPointsRef.current = [e.latLng];
+                        map.setOptions({ draggable: false, disableDoubleClickZoom: true });
                     }
-                } else {
-                    if (drawingManagerRef.current) drawingManagerRef.current.setMap(null);
-                }
+                }));
+
+                // MOUSEMOVE: actualiza rectangle o traza lasso
+                listeners.push(map.addListener('mousemove', (e) => {
+                    if (activeModeRef.current === 'rectangle' && isDrawingRectRef.current) {
+                        if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                        const start = rectStartRef.current;
+                        drawShapeRef.current = new window.google.maps.Rectangle({
+                            bounds: new window.google.maps.LatLngBounds(
+                                { lat: Math.min(start.lat(), e.latLng.lat()), lng: Math.min(start.lng(), e.latLng.lng()) },
+                                { lat: Math.max(start.lat(), e.latLng.lat()), lng: Math.max(start.lng(), e.latLng.lng()) }
+                            ),
+                            fillColor: '#1b6e9b', fillOpacity: 0.2, strokeWeight: 2, strokeColor: '#1b6e9b', clickable: false, map
+                        });
+                    } else if (activeModeRef.current === 'lasso' && isLassoRef.current) {
+                        polygonPointsRef.current.push(e.latLng);
+                        if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                        const pts = polygonPointsRef.current;
+                        if (pts.length >= 3) {
+                            drawShapeRef.current = new window.google.maps.Polygon({
+                                paths: pts, fillColor: '#1b6e9b', fillOpacity: 0.2,
+                                strokeWeight: 2, strokeColor: '#1b6e9b', clickable: false, map
+                            });
+                        } else {
+                            drawShapeRef.current = new window.google.maps.Polyline({
+                                path: pts, strokeColor: '#1b6e9b', strokeWeight: 2, clickable: false, map
+                            });
+                        }
+                    }
+                }));
+
+                // MOUSEUP: finaliza rectangle o lasso y selecciona markers
+                listeners.push(map.addListener('mouseup', () => {
+                    map.setOptions({ draggable: true, disableDoubleClickZoom: false });
+                    if (activeModeRef.current === 'rectangle' && isDrawingRectRef.current) {
+                        isDrawingRectRef.current = false;
+                        if (drawShapeRef.current) {
+                            const bounds = drawShapeRef.current.getBounds();
+                            const selected = [];
+                            markersRef.current.forEach(m => {
+                                if (m.customInfo && bounds.contains(m.getPosition())) selected.push(m.customInfo.originalIndex);
+                            });
+                            if (onStopsSelectedRef.current) onStopsSelectedRef.current(selected.sort((a,b) => a-b));
+                            setTimeout(() => { if (drawShapeRef.current) { drawShapeRef.current.setMap(null); drawShapeRef.current = null; } }, 600);
+                        }
+                    } else if (activeModeRef.current === 'lasso' && isLassoRef.current) {
+                        isLassoRef.current = false;
+                        const pts = [...polygonPointsRef.current];
+                        polygonPointsRef.current = [];
+                        if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                        if (pts.length >= 3) {
+                            const closedPoly = new window.google.maps.Polygon({ paths: pts, map });
+                            const selected = [];
+                            markersRef.current.forEach(m => {
+                                if (m.customInfo && window.google.maps.geometry.poly.containsLocation(m.getPosition(), closedPoly)) {
+                                    selected.push(m.customInfo.originalIndex);
+                                }
+                            });
+                            if (onStopsSelectedRef.current) onStopsSelectedRef.current(selected.sort((a,b) => a-b));
+                            setTimeout(() => { closedPoly.setMap(null); drawShapeRef.current = null; }, 600);
+                        }
+                    }
+                }));
+
+                // POLYGON: click para agregar vértices, doble-click para cerrar
+                listeners.push(map.addListener('click', (e) => {
+                    if (activeModeRef.current !== 'polygon') return;
+                    polygonPointsRef.current.push(e.latLng);
+                    if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                    const pts = polygonPointsRef.current;
+                    if (pts.length >= 3) {
+                        drawShapeRef.current = new window.google.maps.Polygon({
+                            paths: pts, fillColor: '#1b6e9b', fillOpacity: 0.2,
+                            strokeWeight: 2, strokeColor: '#1b6e9b', clickable: false, map
+                        });
+                    } else {
+                        drawShapeRef.current = new window.google.maps.Polyline({
+                            path: pts, strokeColor: '#1b6e9b', strokeWeight: 2, clickable: false, map
+                        });
+                    }
+                }));
+
+                listeners.push(map.addListener('dblclick', () => {
+                    if (activeModeRef.current !== 'polygon' || polygonPointsRef.current.length < 3) return;
+                    const pts = [...polygonPointsRef.current];
+                    polygonPointsRef.current = [];
+                    if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                    const closedPoly = new window.google.maps.Polygon({ paths: pts, map });
+                    const selected = [];
+                    markersRef.current.forEach(m => {
+                        if (m.customInfo && window.google.maps.geometry.poly.containsLocation(m.getPosition(), closedPoly)) {
+                            selected.push(m.customInfo.originalIndex);
+                        }
+                    });
+                    if (onStopsSelectedRef.current) onStopsSelectedRef.current(selected.sort((a,b) => a-b));
+                    setTimeout(() => { closedPoly.setMap(null); drawShapeRef.current = null; }, 600);
+                }));
+
+                return () => {
+                    listeners.forEach(l => window.google.maps.event.removeListener(l));
+                    if (drawShapeRef.current) { drawShapeRef.current.setMap(null); drawShapeRef.current = null; }
+                };
             }, [enableDrawing, mapReady]);
 
             useEffect(() => {
@@ -529,7 +595,43 @@
 
             }, [routes, baseAddress]);
             
-            return <div className="w-full h-full rounded-xl" ref={mapRef}></div>;
+            return (
+                <div className="w-full h-full relative">
+                    {enableDrawing && mapReady && (
+                        <div style={{position:'absolute',top:'10px',left:'50%',transform:'translateX(-50%)',zIndex:10,display:'flex',gap:'4px',background:'white',borderRadius:'8px',padding:'4px 6px',boxShadow:'0 2px 8px rgba(0,0,0,0.2)'}}>
+                            <button
+                                onClick={() => setDrawMode('lasso')}
+                                title="Lasso / Freehand (Shift+F)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='lasso' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='lasso' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
+                                Lasso <span style={{opacity:0.6,fontSize:'10px'}}>⇧F</span>
+                            </button>
+                            <button
+                                onClick={() => setDrawMode('hand')}
+                                title="Hand / Pan (Shift+H)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='hand' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='hand' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M6 14a2 2 0 0 0-2 2v0c0 1.4.5 2.7 1.3 3.7L8 23h8l1.7-2.1c.8-1 1.3-2.3 1.3-3.7v-4.3"/><path d="M6 14v-2.5"/></svg>
+                                Hand <span style={{opacity:0.6,fontSize:'10px'}}>⇧H</span>
+                            </button>
+                            <button
+                                onClick={() => setDrawMode('polygon')}
+                                title="Polygon (Shift+P)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='polygon' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='polygon' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/></svg>
+                                Polygon <span style={{opacity:0.6,fontSize:'10px'}}>⇧P</span>
+                            </button>
+                            <button
+                                onClick={() => setDrawMode('rectangle')}
+                                title="Rectangle (Shift+S)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='rectangle' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='rectangle' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                                Rectangle <span style={{opacity:0.6,fontSize:'10px'}}>⇧S</span>
+                            </button>
+                        </div>
+                    )}
+                    <div className="w-full h-full rounded-xl" ref={mapRef}></div>
+                </div>
+            );
         };
 
         const PrintableSheet = ({ routeData, driverName, vehicle, config, duration, zoneName, hideId = false, onClose = null }) => {
@@ -711,6 +813,7 @@
         function App() {
             const [user, setUser] = useState(null);
             const [dbReady, setDbReady] = useState(false);
+            const [syncKey, setSyncKey] = useState(0);
             const [clientDB, setClientDB] = useState([]);
             const [drivers, setDrivers] = useState([]);
             const [vehicles, setVehicles] = useState([]);
@@ -760,6 +863,7 @@
             // DRIVERS
             const [newDriverName, setNewDriverName] = useState('');
             const [newDriverPhone, setNewDriverPhone] = useState('');
+            const [newDriverPin, setNewDriverPin] = useState('');
             const [editingDriverId, setEditingDriverId] = useState(null);
 
             // CLIENTS
@@ -803,6 +907,7 @@
             const [settingsMsg, setSettingsMsg] = useState('');
             const [monitorPin, setMonitorPin] = useState('1234');
             const [showMonitorPin, setShowMonitorPin] = useState(false);
+            const [consolidatedRoutes, setConsolidatedRoutes] = useState({});
             const fileInputRef = useRef(null);
 
             // RESULTS
@@ -870,40 +975,46 @@
                 if (!user || !window.fbDb) return;
                 const uid = user.uid;
                 const userRef = (c) => window.fbCollection(window.fbDb, 'artifacts', appId, 'users', uid, c);
-                
-                window.fbOnSnapshot(window.fbQuery(userRef('clients')), s => setClientDB(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                window.fbOnSnapshot(window.fbQuery(userRef('drivers')), s => setDrivers(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                window.fbOnSnapshot(window.fbQuery(userRef('vehicles')), s => setVehicles(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                
+                const onErr = (e) => console.error('[Firestore onSnapshot error]', e);
+
+                const unsub1 = window.fbOnSnapshot(window.fbQuery(userRef('clients')), s => setClientDB(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
+                const unsub2 = window.fbOnSnapshot(window.fbQuery(userRef('drivers')), s => setDrivers(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
+                const unsub3 = window.fbOnSnapshot(window.fbQuery(userRef('vehicles')), s => setVehicles(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
+
                 // ORDENAMIENTO LOCAL (Evitar Firebase orderBy)
-                window.fbOnSnapshot(window.fbQuery(userRef('draft_stops')), s => {
+                const unsub4 = window.fbOnSnapshot(window.fbQuery(userRef('draft_stops')), s => {
                     const data = s.docs.map(d => ({id: d.id, ...d.data()}));
                     data.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
                     setCurrentStops(data);
-                });
-                
-                window.fbOnSnapshot(window.fbQuery(userRef('zones')), s => {
+                }, onErr);
+
+                const unsub5 = window.fbOnSnapshot(window.fbQuery(userRef('zones')), s => {
                     const data = s.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     data.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
                     setZones(data);
-                });
-                
-                window.fbOnSnapshot(window.fbQuery(userRef('saved_plans')), s => {
+                }, onErr);
+
+                const unsub6 = window.fbOnSnapshot(window.fbQuery(userRef('saved_plans')), s => {
                     const data = s.docs.map(d => ({id: d.id, ...d.data()}));
                     data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
                     setSavedPlans(data);
-                });
-                
-                window.fbOnSnapshot(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config'), (docSnap) => {
+                }, onErr);
+
+                const unsub7 = window.fbOnSnapshot(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config'), (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
                         if (data.companyConfig) setCompanyConfig(data.companyConfig);
                         if (data.baseAddress) setBaseAddress(data.baseAddress);
                     }
-                });
+                }, onErr);
 
-                // Load monitor PIN
-                window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', 'settings'))
+                return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); };
+            }, [user, dbReady, syncKey]);
+
+            // Load monitor PIN (separate effect)
+            useEffect(() => {
+                if (!user || !window.fbDb || !window.fbGetDoc) return;
+                window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', user.uid))
                     .then(snap => { if (snap.exists() && snap.data().pin) setMonitorPin(snap.data().pin); })
                     .catch(() => {});
             }, [user, dbReady]);
@@ -1930,7 +2041,19 @@
             const updateVehicle = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', id), data); setEditingVehicleId(null); };
             const assignVehicleDriver = async (vehicleId, driverName) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', vehicleId), { assignedDriver: driverName }); };
             
-            const addDriver = async () => { if(newDriverName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers'), { name: newDriverName, phone: newDriverPhone, active: true }); setNewDriverName(''); setNewDriverPhone(''); } };
+            const AVATAR_COLORS = ['#3178A1','#74B745','#e67e22','#9b59b6','#e74c3c','#1abc9c','#c0392b','#2980b9'];
+            const syncDriverAccess = async (driverList) => {
+                if (!user || !window.fbDb || !window.fbSetDoc) return;
+                try {
+                    await window.fbSetDoc(
+                        window.fbDoc(window.fbDb, 'artifacts', appId, 'driver_access', user.uid),
+                        { drivers: driverList.map((d, i) => ({ id: d.id, name: d.name, pin: d.pin || '0000', color: d.color || AVATAR_COLORS[i % AVATAR_COLORS.length] })) }
+                    );
+                } catch (e) { console.error('[syncDriverAccess]', e); }
+            };
+            useEffect(() => { if (drivers && drivers.length > 0) syncDriverAccess(drivers); }, [drivers]);
+
+            const addDriver = async () => { if(newDriverName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers'), { name: newDriverName, phone: newDriverPhone, pin: newDriverPin.slice(0,4) || '0000', active: true }); setNewDriverName(''); setNewDriverPhone(''); setNewDriverPin(''); } };
             const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers', id)); };
             const updateDriver = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers', id), data); setEditingDriverId(null); };
             
@@ -1949,6 +2072,56 @@
                 } 
             };
             const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', id)); };
+
+            const consolidateRoute = async (zoneName, routeData, driver) => {
+                if (!driver) return alert('Assign a driver first.');
+                if (!window.fbDb) return alert('Firebase not ready.');
+                const token = crypto.randomUUID();
+                const now = new Date();
+                const trip = now.getHours() < 12 ? 'AM' : 'PM';
+                const today = now.toISOString().split('T')[0];
+                const expireAt = new Date(now.getTime() + 72 * 60 * 60 * 1000);
+                const stops = (routeData.paradas || []).map(s => ({
+                    nombre: s.nombre || s.name || '',
+                    direccion: s.direccion || s.address || '',
+                    invoices: s.invoices || '',
+                    pieces: s.pieces || '',
+                    delivered: false
+                }));
+                const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
+                const paradas = routeData.paradas || [];
+                const googleLink = routeData.link || (paradas.length > 0
+                    ? `https://www.google.com/maps/dir/?api=1&origin=${encode(baseAddress)}&destination=${encode(baseAddress)}&waypoints=${paradas.map(s => encode(s.direccion || s.address)).join('%7C')}&travelmode=driving`
+                    : '');
+                try {
+                    await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), {
+                        driverName: driver.name,
+                        driverPhone: driver.phone || '',
+                        zoneName,
+                        trip,
+                        date: today,
+                        createdAt: now.toISOString(),
+                        expireAt,
+                        stops,
+                        dispatcherUid: user.uid,
+                        link: googleLink
+                    });
+                } catch (err) {
+                    console.error('[consolidateRoute] Firestore write failed:', err);
+                    alert('Error saving route: ' + (err.message || err.code || err));
+                    return;
+                }
+                const appleLink = paradas.length > 0
+                    ? `https://maps.apple.com/?saddr=${encode(baseAddress)}&daddr=${paradas.map(s => encode(s.direccion || s.address)).join('+to:')}+to:${encode(baseAddress)}&dirflg=d`
+                    : '';
+                const baseUrl = window.location.origin;
+                const driverLink = `${baseUrl}/driver.html?r=${token}`;
+                const phone = (driver.phone || '').replace(/\D/g, '');
+                const message = `Hello, here is your updated route:\n\n📍 *Google Maps:*\n${googleLink}\n\n🍎 *Apple Maps:*\n${appleLink}\n\nYour stop tracking link is: ${driverLink}\n\nDrive safely!`;
+                const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+                setConsolidatedRoutes(prev => ({ ...prev, [zoneName]: waUrl }));
+                setSyncKey(k => k + 1);
+            };
             const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setClientFormLatLng(c.latlng || null); setEditingClientId(c.id); };
 
             const addZoneFromSettings = async () => { 
@@ -1963,7 +2136,7 @@
                 if (window.fbDb) {
                     await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'settings', 'config'), { companyConfig, baseAddress }, { merge: true });
                     if (monitorPin.trim().length >= 4) {
-                        await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', 'settings'), { pin: monitorPin.trim() }, { merge: true });
+                        await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', user.uid), { pin: monitorPin.trim() }, { merge: true });
                     }
                     alert("Settings saved!");
                 }
@@ -2735,46 +2908,11 @@
                                                         <Icon name="send" className="h-3 w-3" /> App
                                                     </button>
                                                     
-                                                    {/* WHATSAPP LOGIC START */}
-                                                    {(routeData.paradas || []).length <= 9 ? (
-                                                        <button 
-                                                            onClick={() => {
-                                                                const link = getWhatsappLink(routeData.paradas, driver?.name, routeData.link);
-                                                                window.open(link, '_blank');
-                                                            }} 
-                                                            className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors"
-                                                        >
-                                                            <Icon name="message-circle" className="h-4 w-4" /> WhatsApp
-                                                        </button>
-                                                    ) : (
-                                                        <div className="col-span-2 flex gap-1">
-                                                            {Array.from({ length: Math.ceil((routeData.paradas || []).length / 9) }).map((_, idx) => {
-                                                                const start = idx * 9;
-                                                                const end = start + 9;
-                                                                const chunk = (routeData.paradas || []).slice(start, end);
-                                                                return (
-                                                                    <button 
-                                                                        key={idx} 
-                                                                        onClick={() => {
-                                                                            const link = getWhatsappLink(chunk, driver?.name, null);
-                                                                            window.open(link, '_blank');
-                                                                        }} 
-                                                                        className="flex-1 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-1 shadow-sm transition-colors"
-                                                                        title={`Stops ${start + 1} - ${Math.min(end, (routeData.paradas || []).length)}`}
-                                                                    >
-                                                                        <Icon name="message-circle" className="h-3 w-3" /> Part {idx + 1}
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    )}
-                                                    {/* WHATSAPP LOGIC END */}
-
-                                                    <button 
+                                                    <button
                                                         onClick={() => {
-                                                            autoSavePlan(); // AUTO-SAVE ON PRINT SHEET
-                                                            setPrintData({ 
-                                                                stops: routeData.paradas, 
+                                                            autoSavePlan();
+                                                            setPrintData({
+                                                                stops: routeData.paradas,
                                                                 driverName: driver ? driver.name : "Unassigned",
                                                                 vehicle: currentVehicleName,
                                                                 phone: driver ? driver.phone : "",
@@ -2786,6 +2924,33 @@
                                                     >
                                                         <Icon name="printer" className="h-4 w-4" /> Print Sheet
                                                     </button>
+
+                                                    {consolidatedRoutes[zoneName] ? (
+                                                        <div className="col-span-2 flex gap-2">
+                                                            <a
+                                                                href={consolidatedRoutes[zoneName]}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="flex-1 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                            >
+                                                                <Icon name="message-circle" className="h-4 w-4" /> Send via WhatsApp
+                                                            </a>
+                                                            <button
+                                                                onClick={() => consolidateRoute(zoneName, routeData, driver)}
+                                                                className="px-3 py-3 bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold rounded-lg text-xs flex items-center gap-1 shadow-sm transition-colors"
+                                                                title="Re-consolidate"
+                                                            >
+                                                                <Icon name="refresh-cw" className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => consolidateRoute(zoneName, routeData, driver)}
+                                                            className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                        >
+                                                            <Icon name="message-circle" className="h-4 w-4" /> Consolidate & Send
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                         );
@@ -2908,29 +3073,37 @@
                                 </div>
                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="users" className="h-6 w-6 text-ess-blue" /> Drivers</h2>
-                                    <div className="flex gap-2 mb-4">
-                                        <input type="text" placeholder="Name" className="flex-1 p-2 border rounded" value={newDriverName} onChange={e=>setNewDriverName(e.target.value)} />
-                                        <input type="text" placeholder="Phone" className="flex-1 p-2 border rounded" value={newDriverPhone} onChange={e=>setNewDriverPhone(e.target.value)} />
-                                        <button onClick={addDriver} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add</button>
+                                    <div className="grid grid-cols-2 gap-2 mb-2">
+                                        <input type="text" placeholder="Name" className="p-2 border rounded" value={newDriverName} onChange={e=>setNewDriverName(e.target.value)} />
+                                        <input type="text" placeholder="Phone" className="p-2 border rounded" value={newDriverPhone} onChange={e=>setNewDriverPhone(e.target.value)} />
+                                        <input type="text" inputMode="numeric" maxLength="4" placeholder="PIN (4 digits)" className="p-2 border rounded font-mono tracking-widest" value={newDriverPin} onChange={e=>setNewDriverPin(e.target.value.replace(/\D/g,'').slice(0,4))} />
+                                        <button onClick={addDriver} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add Driver</button>
                                     </div>
-                                    <div className="space-y-2">
-                                        {(drivers || []).map(d => (
+                                    <div className="space-y-2 mt-4">
+                                        {(drivers || []).map((d, i) => {
+                                            const avatarColor = d.color || AVATAR_COLORS[i % AVATAR_COLORS.length];
+                                            const initials = d.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+                                            return (
                                             <div key={d.id} className="flex justify-between items-center p-3 border rounded hover:bg-slate-50">
                                                 {editingDriverId === d.id ? (
                                                     <div className="flex-1 mr-2 space-y-1">
                                                         <input type="text" defaultValue={d.name} className="border p-1 rounded text-sm w-full" placeholder="Name" onBlur={(e) => updateDriver(d.id, { name: e.target.value })} />
                                                         <input type="text" defaultValue={d.phone} className="border p-1 rounded text-sm w-full" placeholder="Phone" onBlur={(e) => updateDriver(d.id, { phone: e.target.value })} />
-                                                        <button onClick={() => setEditingDriverId(null)} className="text-xs text-blue-500">Done</button>
+                                                        <input type="text" inputMode="numeric" maxLength="4" defaultValue={d.pin || ''} className="border p-1 rounded text-sm w-full font-mono tracking-widest" placeholder="PIN (4 digits)" onBlur={(e) => updateDriver(d.id, { pin: e.target.value.replace(/\D/g,'').slice(0,4) || '0000' })} />
+                                                        <button onClick={() => setEditingDriverId(null)} className="text-xs text-blue-500 font-bold">Done</button>
                                                     </div>
                                                 ) : (
-                                                    <div>
-                                                        <div className="font-bold flex items-center gap-2">{d.name} <button onClick={() => setEditingDriverId(d.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
-                                                        <div className="text-xs text-slate-500">{d.phone}</div>
+                                                    <div className="flex items-center gap-3 flex-1">
+                                                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-black flex-shrink-0" style={{ backgroundColor: avatarColor }}>{initials}</div>
+                                                        <div>
+                                                            <div className="font-bold flex items-center gap-2">{d.name} <button onClick={() => setEditingDriverId(d.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
+                                                            <div className="text-xs text-slate-500">{d.phone} {d.pin ? <span className="ml-1 font-mono bg-slate-100 px-1 rounded">PIN: {'•'.repeat(d.pin.length)}</span> : <span className="ml-1 text-amber-500 font-semibold">No PIN set</span>}</div>
+                                                        </div>
                                                     </div>
                                                 )}
-                                                <button onClick={()=>deleteDriver(d.id)} className="text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                <button onClick={()=>deleteDriver(d.id)} className="text-red-500 ml-2 flex-shrink-0"><Icon name="trash-2" className="h-4 w-4" /></button>
                                             </div>
-                                        ))}
+                                        )})}
                                     </div>
                                 </div>
                             </div>
@@ -2997,6 +3170,21 @@
                                             </div>
                                         </div>
                                         <button onClick={saveSettings} className="bg-ess-blue text-white px-4 py-2 rounded font-bold w-full">Save Monitor PIN</button>
+                                        <div className="mt-3">
+                                            <label className="block text-sm font-bold text-slate-500 mb-1">Monitor Link (share with sales staff)</label>
+                                            <div className="flex gap-2 items-center">
+                                                <input readOnly value={`${window.location.origin}/monitor.html?d=${user?.uid || ''}`} className="flex-1 p-2 border rounded text-xs font-mono bg-slate-50 text-slate-600" onClick={e => e.target.select()} />
+                                                <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/monitor.html?d=${user?.uid || ''}`)} className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold text-slate-600 whitespace-nowrap">Copy</button>
+                                            </div>
+                                        </div>
+                                        <div className="mt-3 pt-3 border-t border-slate-100">
+                                            <label className="block text-sm font-bold text-slate-500 mb-1">Driver App URL (drivers save this to their phone)</label>
+                                            <p className="text-xs text-slate-400 mb-2">Share this once — drivers bookmark it as a PWA on their home screen and see their routes automatically.</p>
+                                            <div className="flex gap-2 items-center">
+                                                <input readOnly value={`${window.location.origin}/driver.html?company=${user?.uid || ''}`} className="flex-1 p-2 border rounded text-xs font-mono bg-slate-50 text-slate-600" onClick={e => e.target.select()} />
+                                                <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/driver.html?company=${user?.uid || ''}`)} className="px-3 py-2 bg-ess-blue hover:bg-blue-700 text-white rounded text-xs font-bold whitespace-nowrap">Copy</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 
