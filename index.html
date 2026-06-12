@@ -863,6 +863,7 @@
             // DRIVERS
             const [newDriverName, setNewDriverName] = useState('');
             const [newDriverPhone, setNewDriverPhone] = useState('');
+            const [newDriverPin, setNewDriverPin] = useState('');
             const [editingDriverId, setEditingDriverId] = useState(null);
 
             // CLIENTS
@@ -2040,7 +2041,19 @@
             const updateVehicle = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', id), data); setEditingVehicleId(null); };
             const assignVehicleDriver = async (vehicleId, driverName) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', vehicleId), { assignedDriver: driverName }); };
             
-            const addDriver = async () => { if(newDriverName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers'), { name: newDriverName, phone: newDriverPhone, active: true }); setNewDriverName(''); setNewDriverPhone(''); } };
+            const AVATAR_COLORS = ['#3178A1','#74B745','#e67e22','#9b59b6','#e74c3c','#1abc9c','#c0392b','#2980b9'];
+            const syncDriverAccess = async (driverList) => {
+                if (!user || !window.fbDb || !window.fbSetDoc) return;
+                try {
+                    await window.fbSetDoc(
+                        window.fbDoc(window.fbDb, 'artifacts', appId, 'driver_access', user.uid),
+                        { drivers: driverList.map((d, i) => ({ id: d.id, name: d.name, pin: d.pin || '0000', color: d.color || AVATAR_COLORS[i % AVATAR_COLORS.length] })) }
+                    );
+                } catch (e) { console.error('[syncDriverAccess]', e); }
+            };
+            useEffect(() => { if (drivers && drivers.length > 0) syncDriverAccess(drivers); }, [drivers]);
+
+            const addDriver = async () => { if(newDriverName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers'), { name: newDriverName, phone: newDriverPhone, pin: newDriverPin.slice(0,4) || '0000', active: true }); setNewDriverName(''); setNewDriverPhone(''); setNewDriverPin(''); } };
             const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers', id)); };
             const updateDriver = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers', id), data); setEditingDriverId(null); };
             
@@ -2075,6 +2088,11 @@
                     pieces: s.pieces || '',
                     delivered: false
                 }));
+                const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
+                const paradas = routeData.paradas || [];
+                const googleLink = routeData.link || (paradas.length > 0
+                    ? `https://www.google.com/maps/dir/?api=1&origin=${encode(baseAddress)}&destination=${encode(baseAddress)}&waypoints=${paradas.map(s => encode(s.direccion || s.address)).join('%7C')}&travelmode=driving`
+                    : '');
                 try {
                     await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), {
                         driverName: driver.name,
@@ -2085,19 +2103,14 @@
                         createdAt: now.toISOString(),
                         expireAt,
                         stops,
-                        dispatcherUid: user.uid
+                        dispatcherUid: user.uid,
+                        link: googleLink
                     });
                 } catch (err) {
                     console.error('[consolidateRoute] Firestore write failed:', err);
                     alert('Error saving route: ' + (err.message || err.code || err));
                     return;
                 }
-
-                const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
-                const paradas = routeData.paradas || [];
-                const googleLink = routeData.link || (paradas.length > 0
-                    ? `https://www.google.com/maps/dir/?api=1&origin=${encode(baseAddress)}&destination=${encode(baseAddress)}&waypoints=${paradas.map(s => encode(s.direccion || s.address)).join('%7C')}&travelmode=driving`
-                    : '');
                 const appleLink = paradas.length > 0
                     ? `https://maps.apple.com/?saddr=${encode(baseAddress)}&daddr=${paradas.map(s => encode(s.direccion || s.address)).join('+to:')}+to:${encode(baseAddress)}&dirflg=d`
                     : '';
@@ -3060,29 +3073,37 @@
                                 </div>
                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="users" className="h-6 w-6 text-ess-blue" /> Drivers</h2>
-                                    <div className="flex gap-2 mb-4">
-                                        <input type="text" placeholder="Name" className="flex-1 p-2 border rounded" value={newDriverName} onChange={e=>setNewDriverName(e.target.value)} />
-                                        <input type="text" placeholder="Phone" className="flex-1 p-2 border rounded" value={newDriverPhone} onChange={e=>setNewDriverPhone(e.target.value)} />
-                                        <button onClick={addDriver} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add</button>
+                                    <div className="grid grid-cols-2 gap-2 mb-2">
+                                        <input type="text" placeholder="Name" className="p-2 border rounded" value={newDriverName} onChange={e=>setNewDriverName(e.target.value)} />
+                                        <input type="text" placeholder="Phone" className="p-2 border rounded" value={newDriverPhone} onChange={e=>setNewDriverPhone(e.target.value)} />
+                                        <input type="text" inputMode="numeric" maxLength="4" placeholder="PIN (4 digits)" className="p-2 border rounded font-mono tracking-widest" value={newDriverPin} onChange={e=>setNewDriverPin(e.target.value.replace(/\D/g,'').slice(0,4))} />
+                                        <button onClick={addDriver} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add Driver</button>
                                     </div>
-                                    <div className="space-y-2">
-                                        {(drivers || []).map(d => (
+                                    <div className="space-y-2 mt-4">
+                                        {(drivers || []).map((d, i) => {
+                                            const avatarColor = d.color || AVATAR_COLORS[i % AVATAR_COLORS.length];
+                                            const initials = d.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+                                            return (
                                             <div key={d.id} className="flex justify-between items-center p-3 border rounded hover:bg-slate-50">
                                                 {editingDriverId === d.id ? (
                                                     <div className="flex-1 mr-2 space-y-1">
                                                         <input type="text" defaultValue={d.name} className="border p-1 rounded text-sm w-full" placeholder="Name" onBlur={(e) => updateDriver(d.id, { name: e.target.value })} />
                                                         <input type="text" defaultValue={d.phone} className="border p-1 rounded text-sm w-full" placeholder="Phone" onBlur={(e) => updateDriver(d.id, { phone: e.target.value })} />
-                                                        <button onClick={() => setEditingDriverId(null)} className="text-xs text-blue-500">Done</button>
+                                                        <input type="text" inputMode="numeric" maxLength="4" defaultValue={d.pin || ''} className="border p-1 rounded text-sm w-full font-mono tracking-widest" placeholder="PIN (4 digits)" onBlur={(e) => updateDriver(d.id, { pin: e.target.value.replace(/\D/g,'').slice(0,4) || '0000' })} />
+                                                        <button onClick={() => setEditingDriverId(null)} className="text-xs text-blue-500 font-bold">Done</button>
                                                     </div>
                                                 ) : (
-                                                    <div>
-                                                        <div className="font-bold flex items-center gap-2">{d.name} <button onClick={() => setEditingDriverId(d.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
-                                                        <div className="text-xs text-slate-500">{d.phone}</div>
+                                                    <div className="flex items-center gap-3 flex-1">
+                                                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-black flex-shrink-0" style={{ backgroundColor: avatarColor }}>{initials}</div>
+                                                        <div>
+                                                            <div className="font-bold flex items-center gap-2">{d.name} <button onClick={() => setEditingDriverId(d.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
+                                                            <div className="text-xs text-slate-500">{d.phone} {d.pin ? <span className="ml-1 font-mono bg-slate-100 px-1 rounded">PIN: {'•'.repeat(d.pin.length)}</span> : <span className="ml-1 text-amber-500 font-semibold">No PIN set</span>}</div>
+                                                        </div>
                                                     </div>
                                                 )}
-                                                <button onClick={()=>deleteDriver(d.id)} className="text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                <button onClick={()=>deleteDriver(d.id)} className="text-red-500 ml-2 flex-shrink-0"><Icon name="trash-2" className="h-4 w-4" /></button>
                                             </div>
-                                        ))}
+                                        )})}
                                     </div>
                                 </div>
                             </div>
@@ -3154,6 +3175,14 @@
                                             <div className="flex gap-2 items-center">
                                                 <input readOnly value={`${window.location.origin}/monitor.html?d=${user?.uid || ''}`} className="flex-1 p-2 border rounded text-xs font-mono bg-slate-50 text-slate-600" onClick={e => e.target.select()} />
                                                 <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/monitor.html?d=${user?.uid || ''}`)} className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold text-slate-600 whitespace-nowrap">Copy</button>
+                                            </div>
+                                        </div>
+                                        <div className="mt-3 pt-3 border-t border-slate-100">
+                                            <label className="block text-sm font-bold text-slate-500 mb-1">Driver App URL (drivers save this to their phone)</label>
+                                            <p className="text-xs text-slate-400 mb-2">Share this once — drivers bookmark it as a PWA on their home screen and see their routes automatically.</p>
+                                            <div className="flex gap-2 items-center">
+                                                <input readOnly value={`${window.location.origin}/driver.html?company=${user?.uid || ''}`} className="flex-1 p-2 border rounded text-xs font-mono bg-slate-50 text-slate-600" onClick={e => e.target.select()} />
+                                                <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/driver.html?company=${user?.uid || ''}`)} className="px-3 py-2 bg-ess-blue hover:bg-blue-700 text-white rounded text-xs font-bold whitespace-nowrap">Copy</button>
                                             </div>
                                         </div>
                                     </div>
