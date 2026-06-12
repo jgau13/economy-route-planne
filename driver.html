@@ -65,6 +65,8 @@
         .fade-in { animation: fadeIn 0.3s ease-out; }
         @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
         .shake { animation: shake 0.5s ease-out; }
+        @keyframes zoomIn { from { opacity:0; transform:scale(0.85); } to { opacity:1; transform:scale(1); } }
+        .zoom-in { animation: zoomIn 0.2s ease-out; }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen">
@@ -107,6 +109,7 @@
         function RouteStopList({ route, token, onBack }) {
             const [proofStop, setProofStop] = useState(null);
             const [uploading, setUploading] = useState(false);
+            const [lightboxUrl, setLightboxUrl] = useState(null);
             const fileInputRef = useRef(null);
 
             const markDelivered = async (idx) => {
@@ -183,6 +186,16 @@
                 <div className="min-h-screen bg-slate-100 pb-12">
                 <div className="max-w-lg mx-auto">
                     <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoSelected} />
+
+                    {/* Lightbox */}
+                    {lightboxUrl && (
+                        <div className="fixed inset-0 z-50 bg-black flex items-center justify-center" onClick={() => setLightboxUrl(null)}>
+                            <img src={lightboxUrl} alt="proof" className="max-w-full max-h-full object-contain zoom-in" />
+                            <button className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2">
+                                <Icon name="x" className="h-6 w-6" />
+                            </button>
+                        </div>
+                    )}
 
                     {/* Proof modal */}
                     {proofStop !== null && (
@@ -279,7 +292,7 @@
                                                     </div>
                                                 )}
                                             </div>
-                                            {stop.proofUrl && <img src={stop.proofUrl} alt="proof" className="w-14 h-14 rounded-xl object-cover border-2 border-ess-green/30 flex-shrink-0" />}
+                                            {stop.proofUrl && <img src={stop.proofUrl} alt="proof" onClick={() => setLightboxUrl(stop.proofUrl)} className="w-14 h-14 rounded-xl object-cover border-2 border-ess-green/30 flex-shrink-0 cursor-pointer active:scale-95 transition-transform" />}
                                         </div>
                                         {done ? (
                                             <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 text-xs text-ess-green font-bold">
