@@ -19,7 +19,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, doc, getDoc, onSnapshot, updateDoc, addDoc, collection } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc, addDoc, collection } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
         import { getAuth, signInAnonymously, setPersistence, inMemoryPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
@@ -35,6 +35,7 @@
                 window.fbDoc = doc;
                 window.fbGetDoc = getDoc;
                 window.fbOnSnapshot = onSnapshot;
+                window.fbSetDoc = setDoc;
                 window.fbUpdateDoc = updateDoc;
                 window.fbAddDoc = addDoc;
                 window.fbCollection = collection;
@@ -358,6 +359,13 @@
             const [routes, setRoutes] = useState([]);
             const [detailToken, setDetailToken] = useState(null);
             const [detailRoute, setDetailRoute] = useState(null);
+            const [showMenu, setShowMenu] = useState(false);
+            const [changingPin, setChangingPin] = useState(false);
+            const [newPinStep, setNewPinStep] = useState(1); // 1=enter new, 2=confirm
+            const [newPinA, setNewPinA] = useState('');
+            const [newPinB, setNewPinB] = useState('');
+            const [pinChangeShake, setPinChangeShake] = useState(false);
+            const [pinChangeDone, setPinChangeDone] = useState(false);
             const unsubRoutes = useRef(null);
             const unsubDetail = useRef(null);
 
@@ -457,6 +465,56 @@
                 setScreen('picker');
             };
 
+            const startChangePin = () => {
+                setShowMenu(false);
+                setNewPinStep(1);
+                setNewPinA('');
+                setNewPinB('');
+                setPinChangeShake(false);
+                setPinChangeDone(false);
+                setChangingPin(true);
+            };
+
+            const handleNewPinDigit = async (d) => {
+                if (newPinStep === 1) {
+                    const next = newPinA + d;
+                    setNewPinA(next);
+                    if (next.length === 4) {
+                        setTimeout(() => { setNewPinStep(2); setNewPinB(''); }, 300);
+                    }
+                } else {
+                    const next = newPinB + d;
+                    setNewPinB(next);
+                    if (next.length === 4) {
+                        if (next === newPinA) {
+                            // Save new PIN
+                            try {
+                                const docRef = window.fbDoc(window.fbDb, 'artifacts', appId, 'driver_access', companyUid);
+                                const snap = await window.fbGetDoc(docRef);
+                                if (snap.exists()) {
+                                    const updated = (snap.data().drivers || []).map(dr =>
+                                        dr.id === selectedDriver.id ? { ...dr, pin: next } : dr
+                                    );
+                                    await window.fbSetDoc(docRef, { drivers: updated });
+                                    const updatedDriver = { ...selectedDriver, pin: next };
+                                    setSelectedDriver(updatedDriver);
+                                    localStorage.setItem(lsKey, JSON.stringify(updatedDriver));
+                                }
+                                setPinChangeDone(true);
+                                setTimeout(() => setChangingPin(false), 1500);
+                            } catch (e) {
+                                console.error('PIN save error:', e);
+                                alert('Could not save PIN. Try again.');
+                                setChangingPin(false);
+                            }
+                        } else {
+                            setPinChangeShake(true);
+                            setTimeout(() => { setNewPinB(''); setNewPinStep(1); setNewPinA(''); setPinChangeShake(false); }, 800);
+                        }
+                    }
+                }
+            };
+
             // ── Screens ──
 
             if (screen === 'loading') return <LoadingScreen msg="Loading driver app…" />;
@@ -533,6 +591,58 @@
                 );
             }
 
+            // Change PIN modal
+            if (changingPin) {
+                const currentDigits = newPinStep === 1 ? newPinA : newPinB;
+                return (
+                    <div className="min-h-screen bg-ess-dark flex flex-col items-center justify-between py-12 px-6">
+                        <button onClick={() => setChangingPin(false)} className="self-start text-white/50 hover:text-white flex items-center gap-1 text-sm">
+                            <Icon name="arrow-left" className="h-4 w-4" /> Cancel
+                        </button>
+
+                        <div className="flex flex-col items-center gap-6">
+                            {pinChangeDone ? (
+                                <>
+                                    <div className="text-5xl">✅</div>
+                                    <p className="text-white font-bold text-xl">PIN updated!</p>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: selectedDriver?.color || AVATAR_COLORS[0] }}>
+                                        <Icon name="lock" className="h-7 w-7 text-white" />
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="text-white font-bold text-xl">
+                                            {newPinStep === 1 ? 'Enter new PIN' : 'Confirm new PIN'}
+                                        </p>
+                                        <p className="text-white/50 text-sm mt-1">{selectedDriver?.name}</p>
+                                    </div>
+                                    <div className={`flex gap-4 ${pinChangeShake ? 'shake' : ''}`}>
+                                        {[0,1,2,3].map(i => (
+                                            <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all ${i < currentDigits.length ? 'bg-ess-green border-ess-green' : 'border-white/40 bg-transparent'}`} />
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        {!pinChangeDone && (
+                            <div className="grid grid-cols-3 gap-3 w-full max-w-xs">
+                                {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((k, i) => (
+                                    k === '' ? <div key={i} /> :
+                                    <button key={i} onClick={() => k === '⌫'
+                                        ? (newPinStep === 1 ? setNewPinA(p => p.slice(0,-1)) : setNewPinB(p => p.slice(0,-1)))
+                                        : handleNewPinDigit(k)}
+                                        className="h-16 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-2xl font-bold active:scale-95 transition-all">
+                                        {k}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
             // Routes list screen
             const today = new Date().toISOString().split('T')[0];
             const todayRoutes = routes.filter(r => r.date === today);
@@ -589,16 +699,27 @@
                 <div className="min-h-screen bg-slate-100 pb-12">
                 <div className="max-w-lg mx-auto">
                     {/* Header */}
-                    <div className="bg-ess-dark px-4 pt-10 pb-6">
+                    <div className="bg-ess-dark px-4 pt-10 pb-6 relative">
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-white/60 text-sm">{greeting},</p>
                                 <p className="text-white font-black text-2xl">{selectedDriver?.name?.split(' ')[0]}</p>
                             </div>
-                            <button onClick={logout} className="w-11 h-11 rounded-2xl flex items-center justify-center text-white text-lg font-black shadow-lg" style={{ backgroundColor: color }}>
+                            <button onClick={() => setShowMenu(m => !m)} className="w-11 h-11 rounded-2xl flex items-center justify-center text-white text-lg font-black shadow-lg" style={{ backgroundColor: color }}>
                                 {initials}
                             </button>
                         </div>
+                        {showMenu && (
+                            <div className="absolute right-4 top-full mt-1 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-50 w-48 fade-in">
+                                <button onClick={startChangePin} className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-slate-50 font-semibold text-sm">
+                                    <Icon name="lock" className="h-4 w-4 text-ess-blue" /> Change PIN
+                                </button>
+                                <div className="h-px bg-slate-100" />
+                                <button onClick={logout} className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 font-semibold text-sm">
+                                    <Icon name="log-out" className="h-4 w-4" /> Log out
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     <div className="px-4 pt-5 space-y-5">
