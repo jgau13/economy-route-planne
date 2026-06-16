@@ -665,21 +665,21 @@
             const initials = (selectedDriver?.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
             const color = selectedDriver?.color || AVATAR_COLORS[0];
 
-            const RouteCard = ({ r }) => {
+            const RouteCard = ({ r, faded }) => {
                 const stops = r.stops || [];
                 const delivered = stops.filter(s => s.delivered).length;
                 const total = stops.length;
                 const pct = total > 0 ? Math.round((delivered / total) * 100) : 0;
                 const done = delivered === total && total > 0;
                 return (
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 fade-in">
+                    <div className={`bg-white rounded-2xl shadow-sm border p-4 fade-in ${faded ? 'border-slate-100 opacity-60' : 'border-slate-200'}`}>
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
-                                <span className="font-black text-slate-800 text-base">{r.zoneName}</span>
+                                <span className={`font-black text-base ${faded ? 'line-through text-slate-400' : 'text-slate-800'}`}>{r.zoneName}</span>
                                 {r.trip && <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${r.trip === 'AM' ? 'bg-sky-100 text-sky-700' : 'bg-orange-100 text-orange-700'}`}>{r.trip}</span>}
                                 {done && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Done</span>}
                             </div>
-                            <span className="text-xs text-slate-400">{r.date}</span>
+                            <span className={`text-xs ${faded ? 'line-through text-slate-300' : 'text-slate-400'}`}>{r.date}</span>
                         </div>
 
                         <div className="space-y-1.5 mb-3">
@@ -746,7 +746,7 @@
                         {otherRoutes.length > 0 && (
                             <div>
                                 <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">Other Routes</p>
-                                <div className="space-y-3">{otherRoutes.map(r => <RouteCard key={r.token} r={r} />)}</div>
+                                <div className="space-y-3">{otherRoutes.map(r => <RouteCard key={r.token} r={r} faded />)}</div>
                             </div>
                         )}
 

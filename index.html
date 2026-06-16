@@ -2076,10 +2076,11 @@
             const consolidateRoute = async (zoneName, routeData, driver) => {
                 if (!driver) return alert('Assign a driver first.');
                 if (!window.fbDb) return alert('Firebase not ready.');
-                const token = crypto.randomUUID();
                 const now = new Date();
                 const trip = now.getHours() < 12 ? 'AM' : 'PM';
                 const today = now.toISOString().split('T')[0];
+                const tokenBase = `${user.uid}-${driver.name}-${zoneName}-${today}-${trip}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+                const token = tokenBase.slice(0, 64);
                 const expireAt = new Date(now.getTime() + 72 * 60 * 60 * 1000);
                 const stops = (routeData.paradas || []).map(s => ({
                     nombre: s.nombre || s.name || '',
