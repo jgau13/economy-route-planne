@@ -1,35 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // User private data — only the owner can read/write
-    match /artifacts/{appId}/users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Active routes — any authenticated user can read/write (drivers use anonymous auth)
-    match /artifacts/{appId}/active_routes/{token} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Proof of delivery — any authenticated user can read/write
-    match /artifacts/{appId}/proof_of_delivery/{docId} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Monitor config — any authenticated user can read; only email-authenticated users can write
-    match /artifacts/{appId}/monitor_config/{uid} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.token.email != null;
-    }
-
-    // Driver access — any authenticated user can read/write (drivers update their own PIN)
-    match /artifacts/{appId}/driver_access/{uid} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Catch-all: any other path under artifacts is accessible to authenticated users
-    match /artifacts/{appId}/{document=**} {
+    match /{document=**} {
       allow read, write: if request.auth != null;
     }
   }
