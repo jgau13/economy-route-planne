@@ -369,6 +369,9 @@
             const [selectedDriver, setSelectedDriver] = useState(null);
             const [pinDigits, setPinDigits] = useState('');
             const [pinShake, setPinShake] = useState(false);
+            const pinRef = useRef('');
+            const newPinARef = useRef('');
+            const newPinBRef = useRef('');
             const [routes, setRoutes] = useState([]);
             const [detailToken, setDetailToken] = useState(null);
             const [detailRoute, setDetailRoute] = useState(null);
@@ -421,6 +424,7 @@
             }, []);
 
             const pickDriver = (driver) => {
+                pinRef.current = '';
                 setSelectedDriver(driver);
                 setPinDigits('');
                 setPinShake(false);
@@ -428,18 +432,20 @@
             };
 
             const handlePin = (d) => {
-                if (pinDigits.length >= 4) return;
-                const next = pinDigits + d;
+                if (pinRef.current.length >= 4) return;
+                const next = pinRef.current + d;
+                pinRef.current = next;
                 setPinDigits(next);
                 if (next.length === 4) {
                     if (next === (selectedDriver.pin || '0000')) {
                         localStorage.setItem(lsKey, JSON.stringify(selectedDriver));
+                        pinRef.current = '';
                         setPinDigits('');
                         subscribeRoutes(selectedDriver);
                         setScreen('routes');
                     } else {
                         setPinShake(true);
-                        setTimeout(() => { setPinDigits(''); setPinShake(false); }, 800);
+                        setTimeout(() => { pinRef.current = ''; setPinDigits(''); setPinShake(false); }, 800);
                     }
                 }
             };
@@ -472,14 +478,18 @@
                 localStorage.removeItem(lsKey);
                 unsubRoutes.current?.();
                 unsubDetail.current?.();
+                pinRef.current = '';
                 setSelectedDriver(null);
                 setRoutes([]);
                 setDetailRoute(null);
+                setShowMenu(false);
                 setScreen('picker');
             };
 
             const startChangePin = () => {
                 setShowMenu(false);
+                newPinARef.current = '';
+                newPinBRef.current = '';
                 setNewPinStep(1);
                 setNewPinA('');
                 setNewPinB('');
@@ -490,16 +500,18 @@
 
             const handleNewPinDigit = async (d) => {
                 if (newPinStep === 1) {
-                    const next = newPinA + d;
+                    const next = newPinARef.current + d;
+                    newPinARef.current = next;
                     setNewPinA(next);
                     if (next.length === 4) {
-                        setTimeout(() => { setNewPinStep(2); setNewPinB(''); }, 300);
+                        setTimeout(() => { setNewPinStep(2); newPinBRef.current = ''; setNewPinB(''); }, 300);
                     }
                 } else {
-                    const next = newPinB + d;
+                    const next = newPinBRef.current + d;
+                    newPinBRef.current = next;
                     setNewPinB(next);
                     if (next.length === 4) {
-                        if (next === newPinA) {
+                        if (next === newPinARef.current) {
                             // Save new PIN
                             try {
                                 const docRef = window.fbDoc(window.fbDb, 'artifacts', appId, 'driver_access', companyUid);
@@ -522,7 +534,7 @@
                             }
                         } else {
                             setPinChangeShake(true);
-                            setTimeout(() => { setNewPinB(''); setNewPinStep(1); setNewPinA(''); setPinChangeShake(false); }, 800);
+                            setTimeout(() => { newPinARef.current = ''; newPinBRef.current = ''; setNewPinA(''); setNewPinB(''); setNewPinStep(1); setPinChangeShake(false); }, 800);
                         }
                     }
                 }
