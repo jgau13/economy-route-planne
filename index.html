@@ -2094,6 +2094,9 @@
                 const googleLink = routeData.link || (paradas.length > 0
                     ? `https://www.google.com/maps/dir/?api=1&origin=${encode(baseAddress)}&destination=${encode(baseAddress)}&waypoints=${paradas.map(s => encode(s.direccion || s.address)).join('%7C')}&travelmode=driving`
                     : '');
+                const appleLink = paradas.length > 0
+                    ? `https://maps.apple.com/?saddr=${encode(baseAddress)}&daddr=${paradas.map(s => encode(s.direccion || s.address)).join('+to:')}+to:${encode(baseAddress)}&dirflg=d`
+                    : '';
                 try {
                     await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), {
                         driverName: driver.name,
@@ -2105,16 +2108,14 @@
                         expireAt,
                         stops,
                         dispatcherUid: user.uid,
-                        link: googleLink
+                        link: googleLink,
+                        appleLink
                     });
                 } catch (err) {
                     console.error('[consolidateRoute] Firestore write failed:', err);
                     alert('Error saving route: ' + (err.message || err.code || err));
                     return;
                 }
-                const appleLink = paradas.length > 0
-                    ? `https://maps.apple.com/?saddr=${encode(baseAddress)}&daddr=${paradas.map(s => encode(s.direccion || s.address)).join('+to:')}+to:${encode(baseAddress)}&dirflg=d`
-                    : '';
                 const baseUrl = window.location.origin;
                 const driverLink = `${baseUrl}/driver.html?r=${token}`;
                 const phone = (driver.phone || '').replace(/\D/g, '');
