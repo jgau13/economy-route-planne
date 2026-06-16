@@ -672,7 +672,10 @@
                 const pct = total > 0 ? Math.round((delivered / total) * 100) : 0;
                 const done = delivered === total && total > 0;
                 const [showGpsModal, setShowGpsModal] = useState(false);
-                const hasGps = !!(r.link || r.appleLink);
+                const appleLink = r.appleLink || (stops.length > 0
+                    ? `https://maps.apple.com/?${stops.map(s => `daddr=${encodeURIComponent(s.direccion || s.nombre || '')}`).join('&')}&dirflg=d`
+                    : null);
+                const hasGps = !!(r.link || appleLink);
                 return (
                     <div className={`bg-white rounded-2xl shadow-sm border p-4 fade-in ${faded ? 'border-slate-100 opacity-60' : 'border-slate-200'}`}>
                         <div className="flex items-center justify-between mb-3">
@@ -727,8 +730,8 @@
                                                 <Icon name="chevron-right" className="h-4 w-4 text-slate-300 ml-auto" />
                                             </a>
                                         )}
-                                        {r.appleLink && (
-                                            <a href={r.appleLink} target="_blank" rel="noopener noreferrer" onClick={() => setShowGpsModal(false)}
+                                        {appleLink && (
+                                            <a href={appleLink} target="_blank" rel="noopener noreferrer" onClick={() => setShowGpsModal(false)}
                                                 className="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 hover:bg-slate-50 active:scale-95 transition-all">
                                                 <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
                                                     <Icon name="navigation" className="h-5 w-5 text-slate-700" />
