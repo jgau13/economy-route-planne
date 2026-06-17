@@ -16,7 +16,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signOut, setPersistence, inMemoryPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, query, orderBy, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, query, orderBy, doc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         window.initFirebaseMonitor = (config) => {
             try {
@@ -35,6 +35,7 @@
                 window.fbOrderBy = orderBy;
                 window.fbDoc = doc;
                 window.fbGetDoc = getDoc;
+                window.fbDeleteDoc = deleteDoc;
                 window.firebaseMonitorReady = true;
                 return true;
             } catch (e) {
@@ -158,7 +159,7 @@
         );
 
         // Single driver route card
-        const DriverCard = ({ routeDoc, onPhotoClick, searchTerm = '' }) => {
+        const DriverCard = ({ routeDoc, onPhotoClick, onDelete, searchTerm = '' }) => {
             const [expanded, setExpanded] = useState(true);
             const isMatch = (stop) => !searchTerm ||
                 (stop.nombre || stop.name || '').toLowerCase().includes(searchTerm) ||
@@ -213,6 +214,13 @@
                                         Active
                                     </span>
                                 )}
+                                <button
+                                    onClick={e => { e.stopPropagation(); if (window.confirm(`Delete ${driverName} – ${zoneName} ${trip}?`)) onDelete(routeDoc.token); }}
+                                    className="p-1.5 rounded-lg hover:bg-red-50 hover:text-red-500 text-slate-300 transition-colors"
+                                    title="Delete route"
+                                >
+                                    <Icon name="trash-2" className="h-4 w-4" />
+                                </button>
                                 <Icon name={expanded ? 'chevron-up' : 'chevron-down'} className="h-4 w-4 text-slate-400" />
                             </div>
                         </div>
@@ -508,6 +516,7 @@
                                             key={r.token}
                                             routeDoc={r}
                                             onPhotoClick={setPhotoUrl}
+                                            onDelete={token => window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token))}
                                             searchTerm={q}
                                         />
                                     ))
