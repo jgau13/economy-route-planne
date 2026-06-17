@@ -2082,13 +2082,32 @@
                 const tokenBase = `${user.uid}-${driver.name}-${zoneName}-${today}-${trip}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
                 const token = tokenBase.slice(0, 64);
                 const expireAt = new Date(now.getTime() + 72 * 60 * 60 * 1000);
-                const stops = (routeData.paradas || []).map(s => ({
-                    nombre: s.nombre || s.name || '',
-                    direccion: s.direccion || s.address || '',
-                    invoices: s.invoices || '',
-                    pieces: s.pieces || '',
-                    delivered: false
-                }));
+
+                // Fetch existing route to preserve delivered status on re-consolidate
+                let existingStopsMap = {};
+                try {
+                    const existingSnap = await window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token));
+                    if (existingSnap.exists()) {
+                        (existingSnap.data().stops || []).forEach(s => {
+                            const key = (s.nombre || s.name || '').toLowerCase().trim();
+                            if (key) existingStopsMap[key] = s;
+                        });
+                    }
+                } catch(e) {}
+
+                const stops = (routeData.paradas || []).map(s => {
+                    const nombre = s.nombre || s.name || '';
+                    const prev = existingStopsMap[nombre.toLowerCase().trim()];
+                    return {
+                        nombre,
+                        direccion: s.direccion || s.address || '',
+                        invoices: s.invoices || '',
+                        pieces: s.pieces || '',
+                        delivered: prev ? (prev.delivered || false) : false,
+                        ...(prev?.deliveredAt ? { deliveredAt: prev.deliveredAt } : {}),
+                        ...(prev?.proofUrl   ? { proofUrl:   prev.proofUrl   } : {}),
+                    };
+                });
                 const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
                 const paradas = routeData.paradas || [];
                 const googleLink = routeData.link || (paradas.length > 0
