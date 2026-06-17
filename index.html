@@ -2085,15 +2085,34 @@
 
                 // Fetch existing route to preserve delivered status on re-consolidate
                 let existingStopsMap = {};
+                let isExistingRoute = false;
                 try {
                     const existingSnap = await window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token));
                     if (existingSnap.exists()) {
+                        isExistingRoute = true;
                         (existingSnap.data().stops || []).forEach(s => {
                             const key = (s.nombre || s.name || '').toLowerCase().trim();
                             if (key) existingStopsMap[key] = s;
                         });
                     }
                 } catch(e) {}
+
+                // Si es ruta nueva, avisar si el driver ya tiene otra ruta activa hoy
+                if (!isExistingRoute) {
+                    try {
+                        const allSnap = await window.fbGetDocs(window.fbCollection(window.fbDb, 'artifacts', appId, 'active_routes'));
+                        const pending = allSnap.docs
+                            .map(d => ({ id: d.id, ...d.data() }))
+                            .filter(r => r.driverName === driver.name && r.date === today && r.dispatcherUid === user.uid)
+                            .filter(r => (r.stops || []).some(s => !s.delivered));
+                        if (pending.length > 0) {
+                            const ex = pending[0];
+                            const pendingCount = (ex.stops || []).filter(s => !s.delivered).length;
+                            const ok = window.confirm(`${driver.name} ya tiene una ruta ${ex.zoneName} ${ex.trip} activa con ${pendingCount} parada(s) pendiente(s).\n\nEsta consolidación crea una ruta adicional (no la sustituye). ¿Continuar?`);
+                            if (!ok) return;
+                        }
+                    } catch(e) {}
+                }
 
                 const stops = (routeData.paradas || []).map(s => {
                     const nombre = s.nombre || s.name || '';
