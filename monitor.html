@@ -187,8 +187,9 @@
         };
 
         // Single driver route card
-        const DriverCard = ({ routeDoc, onPhotoClick, onDelete, onConfirmStop, searchTerm = '' }) => {
+        const DriverCard = ({ routeDoc, onPhotoClick, onDelete, onConfirmStop, searchTerm = '', expandAll }) => {
             const [expanded, setExpanded] = useState(true);
+            useEffect(() => { if (expandAll !== undefined) setExpanded(expandAll); }, [expandAll]);
             const isMatch = (stop) => !searchTerm ||
                 (stop.nombre || stop.name || '').toLowerCase().includes(searchTerm) ||
                 (stop.invoices || '').toLowerCase().includes(searchTerm) ||
@@ -341,6 +342,7 @@
             const [routes, setRoutes] = useState([]);
             const [filterDate, setFilterDate] = useState(() => new Date().toISOString().split('T')[0]);
             const [hideCompleted, setHideCompleted] = useState(() => localStorage.getItem(lsKey + '_hc') === '1');
+            const [allExpanded, setAllExpanded] = useState(true);
             const toggleHideCompleted = () => setHideCompleted(prev => {
                 const next = !prev;
                 localStorage.setItem(lsKey + '_hc', next ? '1' : '0');
@@ -487,6 +489,14 @@
                                     className="text-sm font-bold bg-white/10 text-white border border-white/20 rounded-lg px-3 py-1.5 outline-none focus:bg-white/20"
                                 />
                                 <button
+                                    onClick={() => setAllExpanded(p => !p)}
+                                    title={allExpanded ? 'Collapse all cards' : 'Expand all cards'}
+                                    className="text-blue-200 hover:text-white text-xs font-bold flex items-center gap-1 px-2 py-1.5 rounded hover:bg-white/10 transition-colors"
+                                >
+                                    <Icon name={allExpanded ? 'minimize-2' : 'maximize-2'} className="h-3.5 w-3.5" />
+                                    <span className="hidden sm:inline">{allExpanded ? 'Collapse' : 'Expand'}</span>
+                                </button>
+                                <button
                                     onClick={toggleHideCompleted}
                                     title={hideCompleted ? 'Show completed routes' : 'Hide completed routes'}
                                     className={`text-xs font-bold flex items-center gap-1 px-2 py-1.5 rounded transition-colors ${hideCompleted ? 'bg-white/20 text-white' : 'text-blue-200 hover:text-white hover:bg-white/10'}`}
@@ -580,6 +590,7 @@
                                             onDelete={token => window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), { hidden: true })}
                                             onConfirmStop={(token, stopIdx, stopName) => setConfirmModal({ token, stopIdx, stopName })}
                                             searchTerm={q}
+                                            expandAll={allExpanded}
                                         />
                                     ))
                                 }
