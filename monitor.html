@@ -16,7 +16,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signOut, setPersistence, inMemoryPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, query, orderBy, doc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, query, orderBy, doc, getDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         window.initFirebaseMonitor = (config) => {
             try {
@@ -36,6 +36,7 @@
                 window.fbDoc = doc;
                 window.fbGetDoc = getDoc;
                 window.fbDeleteDoc = deleteDoc;
+                window.fbUpdateDoc = updateDoc;
                 window.firebaseMonitorReady = true;
                 return true;
             } catch (e) {
@@ -158,8 +159,35 @@
             </div>
         );
 
+        // Confirm delivery modal (used by sales rep when driver is out of range)
+        const ConfirmDeliveryModal = ({ stopName, onConfirm, onClose }) => {
+            const now = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            const [time, setTime] = React.useState(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
+            const handle = () => {
+                const [h, m] = time.split(':').map(Number);
+                const dt = new Date(); dt.setHours(h, m, 0, 0);
+                onConfirm(dt.toISOString());
+            };
+            return (
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+                        <h3 className="font-bold text-slate-800 text-lg mb-1">Confirm Delivery</h3>
+                        <p className="text-slate-500 text-sm mb-5 truncate">{stopName}</p>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Delivery Time</label>
+                        <input type="time" value={time} onChange={e => setTime(e.target.value)}
+                            className="w-full p-3 border border-slate-300 rounded-xl text-xl font-bold text-center mb-5 outline-none focus:border-ess-blue" />
+                        <div className="flex gap-3">
+                            <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-600 font-bold">Cancel</button>
+                            <button onClick={handle} className="flex-1 py-3 rounded-xl bg-green-500 text-white font-bold">Confirm</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // Single driver route card
-        const DriverCard = ({ routeDoc, onPhotoClick, onDelete, searchTerm = '' }) => {
+        const DriverCard = ({ routeDoc, onPhotoClick, onDelete, onConfirmStop, searchTerm = '' }) => {
             const [expanded, setExpanded] = useState(true);
             const isMatch = (stop) => !searchTerm ||
                 (stop.nombre || stop.name || '').toLowerCase().includes(searchTerm) ||
@@ -290,7 +318,10 @@
                                         ) : stop.delivered ? (
                                             <span className="text-xs text-slate-300 italic">No photo</span>
                                         ) : (
-                                            <span className="text-xs text-slate-300">Pending</span>
+                                            <button
+                                                onClick={() => onConfirmStop(routeDoc.token, i, stop.nombre || stop.name)}
+                                                className="text-xs bg-slate-100 hover:bg-ess-blue hover:text-white text-slate-500 px-2.5 py-1.5 rounded-lg font-bold transition-colors whitespace-nowrap"
+                                            >Confirm</button>
                                         )}
                                     </div>
                                 </div>
@@ -312,7 +343,20 @@
             const [photoUrl, setPhotoUrl] = useState(null);
             const [lastUpdate, setLastUpdate] = useState(null);
             const [searchTerm, setSearchTerm] = useState('');
+            const [confirmModal, setConfirmModal] = useState(null); // { token, stopIdx, stopName }
             const unsubRef = useRef(null);
+
+            const handleConfirmStop = async (deliveredAt) => {
+                if (!confirmModal) return;
+                const { token, stopIdx } = confirmModal;
+                const route = routes.find(r => r.token === token);
+                if (!route) return;
+                const stops = route.stops.map((s, i) =>
+                    i === stopIdx ? { ...s, delivered: true, deliveredAt, confirmedByMonitor: true } : s
+                );
+                await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), { stops });
+                setConfirmModal(null);
+            };
 
             // Init Firebase + anonymous auth + load PIN
             useEffect(() => {
@@ -361,7 +405,8 @@
                 unsubRef.current = window.fbOnSnapshot(colRef, snap => {
                     const docs = snap.docs
                         .map(d => ({ token: d.id, ...d.data() }))
-                        .filter(r => !dispatcherUid || r.dispatcherUid === dispatcherUid);
+                        .filter(r => !dispatcherUid || r.dispatcherUid === dispatcherUid)
+                        .filter(r => !r.hidden);
                     setRoutes(docs);
                     setLastUpdate(new Date());
                 });
@@ -410,6 +455,7 @@
             return (
                 <div className="min-h-screen bg-slate-100">
                     {photoUrl && <PhotoModal url={photoUrl} onClose={() => setPhotoUrl(null)} />}
+                    {confirmModal && <ConfirmDeliveryModal stopName={confirmModal.stopName} onConfirm={handleConfirmStop} onClose={() => setConfirmModal(null)} />}
 
                     {/* Header */}
                     <div className="bg-ess-dark shadow-md sticky top-0 z-40">
@@ -516,7 +562,8 @@
                                             key={r.token}
                                             routeDoc={r}
                                             onPhotoClick={setPhotoUrl}
-                                            onDelete={token => window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token))}
+                                            onDelete={token => window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), { hidden: true })}
+                                            onConfirmStop={(token, stopIdx, stopName) => setConfirmModal({ token, stopIdx, stopName })}
                                             searchTerm={q}
                                         />
                                     ))

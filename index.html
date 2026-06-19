@@ -2073,6 +2073,21 @@
             };
             const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', id)); };
 
+            const geocodeAddress = (address) => new Promise((resolve) => {
+                if (!window.google?.maps?.Geocoder) return resolve(null);
+                if (window.geocodeCache[address]) return resolve(window.geocodeCache[address]);
+                new window.google.maps.Geocoder().geocode({ address }, (results, status) => {
+                    if (status === 'OK' && results[0]) {
+                        const loc = results[0].geometry.location;
+                        const coords = { lat: loc.lat(), lng: loc.lng() };
+                        window.geocodeCache[address] = coords;
+                        resolve(coords);
+                    } else {
+                        resolve(null);
+                    }
+                });
+            });
+
             const consolidateRoute = async (zoneName, routeData, driver) => {
                 if (!driver) return alert('Assign a driver first.');
                 if (!window.fbDb) return alert('Firebase not ready.');
@@ -2125,8 +2140,18 @@
                         delivered: prev ? (prev.delivered || false) : false,
                         ...(prev?.deliveredAt ? { deliveredAt: prev.deliveredAt } : {}),
                         ...(prev?.proofUrl   ? { proofUrl:   prev.proofUrl   } : {}),
+                        ...(prev?.lat        ? { lat: prev.lat, lng: prev.lng } : {}),
                     };
                 });
+
+                // Geocodificar stops que no tienen coordenadas aún
+                for (let i = 0; i < stops.length; i++) {
+                    if (!stops[i].lat && stops[i].direccion) {
+                        const coords = await geocodeAddress(stops[i].direccion);
+                        if (coords) { stops[i].lat = coords.lat; stops[i].lng = coords.lng; }
+                    }
+                }
+
                 const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
                 const paradas = routeData.paradas || [];
                 const googleLink = routeData.link || (paradas.length > 0
