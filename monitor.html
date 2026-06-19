@@ -340,6 +340,12 @@
             const [configError, setConfigError] = useState(false);
             const [routes, setRoutes] = useState([]);
             const [filterDate, setFilterDate] = useState(() => new Date().toISOString().split('T')[0]);
+            const [hideCompleted, setHideCompleted] = useState(() => localStorage.getItem(lsKey + '_hc') === '1');
+            const toggleHideCompleted = () => setHideCompleted(prev => {
+                const next = !prev;
+                localStorage.setItem(lsKey + '_hc', next ? '1' : '0');
+                return next;
+            });
             const [photoUrl, setPhotoUrl] = useState(null);
             const [lastUpdate, setLastUpdate] = useState(null);
             const [searchTerm, setSearchTerm] = useState('');
@@ -428,7 +434,8 @@
 
             const filtered = routes
                 .filter(r => (r.date || '') === filterDate)
-                .filter(r => !q || (r.stops || []).some(stopMatches));
+                .filter(r => !q || (r.stops || []).some(stopMatches))
+                .filter(r => !hideCompleted || (r.stops || []).length === 0 || !(r.stops || []).every(s => s.delivered));
 
             const activeCount = filtered.filter(r => (r.stops || []).some(s => !s.delivered)).length;
             const doneCount = filtered.filter(r => (r.stops || []).length > 0 && (r.stops || []).every(s => s.delivered)).length;
@@ -479,6 +486,14 @@
                                     onChange={e => setFilterDate(e.target.value)}
                                     className="text-sm font-bold bg-white/10 text-white border border-white/20 rounded-lg px-3 py-1.5 outline-none focus:bg-white/20"
                                 />
+                                <button
+                                    onClick={toggleHideCompleted}
+                                    title={hideCompleted ? 'Show completed routes' : 'Hide completed routes'}
+                                    className={`text-xs font-bold flex items-center gap-1 px-2 py-1.5 rounded transition-colors ${hideCompleted ? 'bg-white/20 text-white' : 'text-blue-200 hover:text-white hover:bg-white/10'}`}
+                                >
+                                    <Icon name={hideCompleted ? 'eye-off' : 'eye'} className="h-3.5 w-3.5" />
+                                    <span className="hidden sm:inline">{hideCompleted ? 'Show done' : 'Hide done'}</span>
+                                </button>
                                 <button
                                     onClick={handleLogout}
                                     className="text-blue-200 hover:text-white text-xs font-bold flex items-center gap-1 px-2 py-1.5 rounded hover:bg-white/10 transition-colors"

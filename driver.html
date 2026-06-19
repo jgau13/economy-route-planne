@@ -425,6 +425,7 @@
             const [newPinB, setNewPinB] = useState('');
             const [pinChangeShake, setPinChangeShake] = useState(false);
             const [pinChangeDone, setPinChangeDone] = useState(false);
+            const [allCollapsed, setAllCollapsed] = useState(false);
             const unsubRoutes = useRef(null);
             const unsubDetail = useRef(null);
 
@@ -720,7 +721,7 @@
             const initials = (selectedDriver?.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
             const color = selectedDriver?.color || AVATAR_COLORS[0];
 
-            const RouteCard = ({ r, faded }) => {
+            const RouteCard = ({ r, faded, collapsed }) => {
                 const stops = r.stops || [];
                 const delivered = stops.filter(s => s.delivered).length;
                 const total = stops.length;
@@ -739,9 +740,14 @@
                                 {r.trip && <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${r.trip === 'AM' ? 'bg-sky-100 text-sky-700' : 'bg-orange-100 text-orange-700'}`}>{r.trip}</span>}
                                 {done && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Done</span>}
                             </div>
-                            <span className={`text-xs ${faded ? 'line-through text-slate-300' : 'text-slate-400'}`}>{r.date}</span>
+                            <div className="flex items-center gap-2">
+                                {collapsed && <span className="text-xs font-bold text-slate-500">{delivered}/{total}</span>}
+                                <span className={`text-xs ${faded ? 'line-through text-slate-300' : 'text-slate-400'}`}>{r.date}</span>
+                            </div>
                         </div>
 
+                        {!collapsed && (
+                        <>
                         <div className="space-y-1.5 mb-3">
                             <div className="flex justify-between text-xs font-bold">
                                 <span className="text-slate-500">{delivered}/{total} stops</span>
@@ -764,6 +770,8 @@
                                 <Icon name="list-checks" className="h-4 w-4" /> My Stops
                             </button>
                         </div>
+                        </>
+                        )}
 
                         {/* GPS picker modal */}
                         {showGpsModal && (
@@ -835,17 +843,25 @@
                     </div>
 
                     <div className="px-4 pt-5 space-y-5">
+                        {routes.length > 0 && (
+                            <div className="flex justify-end">
+                                <button onClick={() => setAllCollapsed(c => !c)} className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-slate-600 px-3 py-1.5 rounded-xl hover:bg-slate-200 transition-colors bg-white shadow-sm border border-slate-200">
+                                    <Icon name={allCollapsed ? 'maximize-2' : 'minimize-2'} className="h-3.5 w-3.5" />
+                                    {allCollapsed ? 'Expand all' : 'Collapse all'}
+                                </button>
+                            </div>
+                        )}
                         {todayRoutes.length > 0 && (
                             <div>
                                 <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">Today's Routes</p>
-                                <div className="space-y-3">{todayRoutes.map(r => <RouteCard key={r.token} r={r} />)}</div>
+                                <div className="space-y-3">{todayRoutes.map(r => <RouteCard key={r.token} r={r} collapsed={allCollapsed} />)}</div>
                             </div>
                         )}
 
                         {otherRoutes.length > 0 && (
                             <div>
                                 <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">Other Routes</p>
-                                <div className="space-y-3">{otherRoutes.map(r => <RouteCard key={r.token} r={r} faded />)}</div>
+                                <div className="space-y-3">{otherRoutes.map(r => <RouteCard key={r.token} r={r} faded collapsed={allCollapsed} />)}</div>
                             </div>
                         )}
 
