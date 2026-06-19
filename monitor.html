@@ -187,9 +187,7 @@
         };
 
         // Single driver route card
-        const DriverCard = ({ routeDoc, onPhotoClick, onDelete, onConfirmStop, searchTerm = '', expandAll }) => {
-            const [expanded, setExpanded] = useState(true);
-            useEffect(() => { if (expandAll !== undefined) setExpanded(expandAll); }, [expandAll]);
+        const DriverCard = ({ routeDoc, onPhotoClick, onDelete, onConfirmStop, searchTerm = '', expanded, onToggle }) => {
             const isMatch = (stop) => !searchTerm ||
                 (stop.nombre || stop.name || '').toLowerCase().includes(searchTerm) ||
                 (stop.invoices || '').toLowerCase().includes(searchTerm) ||
@@ -211,7 +209,7 @@
                     {/* Card header */}
                     <div
                         className="p-4 cursor-pointer select-none hover:bg-slate-50 transition-colors"
-                        onClick={() => setExpanded(p => !p)}
+                        onClick={onToggle}
                     >
                         <div className="flex items-start justify-between gap-3">
                             <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -342,7 +340,12 @@
             const [routes, setRoutes] = useState([]);
             const [filterDate, setFilterDate] = useState(() => new Date().toISOString().split('T')[0]);
             const [hideCompleted, setHideCompleted] = useState(() => localStorage.getItem(lsKey + '_hc') === '1');
-            const [allExpanded, setAllExpanded] = useState(true);
+            const [collapsedTokens, setCollapsedTokens] = useState(new Set());
+            const toggleCard = (token) => setCollapsedTokens(prev => {
+                const next = new Set(prev);
+                if (next.has(token)) next.delete(token); else next.add(token);
+                return next;
+            });
             const toggleHideCompleted = () => setHideCompleted(prev => {
                 const next = !prev;
                 localStorage.setItem(lsKey + '_hc', next ? '1' : '0');
@@ -489,12 +492,18 @@
                                     className="text-sm font-bold bg-white/10 text-white border border-white/20 rounded-lg px-3 py-1.5 outline-none focus:bg-white/20"
                                 />
                                 <button
-                                    onClick={() => setAllExpanded(p => !p)}
-                                    title={allExpanded ? 'Collapse all cards' : 'Expand all cards'}
+                                    onClick={() => {
+                                        if (collapsedTokens.size > 0) {
+                                            setCollapsedTokens(new Set());
+                                        } else {
+                                            setCollapsedTokens(new Set(filtered.map(r => r.token)));
+                                        }
+                                    }}
+                                    title={collapsedTokens.size > 0 ? 'Expand all' : 'Collapse all'}
                                     className="text-blue-200 hover:text-white text-xs font-bold flex items-center gap-1 px-2 py-1.5 rounded hover:bg-white/10 transition-colors"
                                 >
-                                    <Icon name={allExpanded ? 'minimize-2' : 'maximize-2'} className="h-3.5 w-3.5" />
-                                    <span className="hidden sm:inline">{allExpanded ? 'Collapse' : 'Expand'}</span>
+                                    <Icon name={collapsedTokens.size > 0 ? 'maximize-2' : 'minimize-2'} className="h-3.5 w-3.5" />
+                                    <span className="hidden sm:inline">{collapsedTokens.size > 0 ? 'Expand' : 'Collapse'}</span>
                                 </button>
                                 <button
                                     onClick={toggleHideCompleted}
@@ -590,7 +599,8 @@
                                             onDelete={token => window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), { hidden: true })}
                                             onConfirmStop={(token, stopIdx, stopName) => setConfirmModal({ token, stopIdx, stopName })}
                                             searchTerm={q}
-                                            expandAll={allExpanded}
+                                            expanded={!collapsedTokens.has(r.token)}
+                                            onToggle={() => toggleCard(r.token)}
                                         />
                                     ))
                                 }
