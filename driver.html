@@ -195,6 +195,7 @@
                     const invoiceList = (stop.invoices || '').split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
                     await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'proof_of_delivery'), {
                         invoices: invoiceList, invoicesRaw: stop.invoices || '',
+                        notes: stop.notes || '',
                         customerName: stop.nombre || stop.name || '',
                         stopAddress: stop.direccion || stop.address || '',
                         driverName: route.driverName || '', driverPhone: route.driverPhone || '',
@@ -324,10 +325,11 @@
                                                     {stop.nombre || stop.name}
                                                 </div>
                                                 <div className="text-sm text-slate-500 mt-0.5 leading-snug">{stop.direccion || stop.address}</div>
-                                                {(stop.invoices || stop.pieces) && (
+                                                {(stop.invoices || stop.pieces || stop.notes) && (
                                                     <div className="flex flex-wrap gap-2 mt-2">
                                                         {stop.invoices && <span className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded-lg border border-yellow-200 font-mono font-bold">INV {stop.invoices}</span>}
                                                         {stop.pieces && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-lg border border-blue-200 font-semibold">{stop.pieces} pcs</span>}
+                                                        {stop.notes && <span className="text-xs bg-orange-50 text-orange-700 px-2 py-1 rounded-lg border border-orange-200 font-semibold">📝 {stop.notes}</span>}
                                                     </div>
                                                 )}
                                             </div>

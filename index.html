@@ -698,6 +698,7 @@
                                         </td>
                                         <td className="border border-black p-1 text-center font-mono font-bold text-sm align-middle">{stop.invoices || '-'}</td>
                                         <td className="border border-black p-1 text-center font-bold text-sm align-middle">{stop.pieces || '-'}</td>
+                                        <td className="border border-black p-1 text-xs text-gray-700 align-middle">{stop.notes || ''}</td>
                                         <td className="border border-black p-1"></td>
                                         <td className="border border-black p-1"></td>
                                     </tr>
@@ -798,6 +799,7 @@
                                                     </td>
                                                     <td className="border border-black p-1 text-center">{stop.invoices || '-'}</td>
                                                     <td className="border border-black p-1 text-center">{stop.pieces || '-'}</td>
+                                                    <td className="border border-black p-1 text-xs text-gray-700">{stop.notes || ''}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -1108,9 +1110,10 @@
                 });
                 setTempInvoices('');
                 setTempPieces('');
+                setTempNotes('');
                 setShowAddDetailsModal(true);
             };
-            
+
             const initiateAddStopToRoute = (zoneName) => {
                 setTargetZoneForManualAdd(zoneName);
                 setNewStopName('');
@@ -1119,6 +1122,7 @@
                 setTempStopData(null);
                 setTempInvoices('');
                 setTempPieces('');
+                setTempNotes('');
                 setAddressError(''); // Resetear error
                 setShowAddDetailsModal(true);
             };
@@ -2539,7 +2543,7 @@
                                     </div>
                                 </div>
                                 <div className="mt-6 flex gap-3">
-                                    <button onClick={() => { setShowAddDetailsModal(false); setTempStopData(null); setTargetZoneForManualAdd(null); setEditingResultStop(null); setAddressError(''); }} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
+                                    <button onClick={() => { setShowAddDetailsModal(false); setTempStopData(null); setTargetZoneForManualAdd(null); setEditingResultStop(null); setAddressError(''); setTempNotes(''); setTempInvoices(''); setTempPieces(''); }} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
                                     <button onClick={confirmAddStop} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg">Save</button>
                                 </div>
                             </div>
@@ -2813,10 +2817,11 @@
                                                     <div className="truncate">
                                                         <span className="font-bold text-slate-700">{stop.name}</span>
                                                         <span className="block text-[10px] text-slate-400 truncate">{stop.address}</span>
-                                                        {(stop.invoices || stop.pieces) && (
-                                                            <div className="flex gap-2 mt-0.5 text-[9px] text-slate-500">
+                                                        {(stop.invoices || stop.pieces || stop.notes) && (
+                                                            <div className="flex gap-2 mt-0.5 text-[9px] text-slate-500 flex-wrap">
                                                                 {stop.invoices && <span className="bg-yellow-50 px-1 rounded border border-yellow-100 text-yellow-700">Inv: {stop.invoices}</span>}
                                                                 {stop.pieces && <span className="bg-blue-50 px-1 rounded border border-blue-100 text-blue-700">Pcs: {stop.pieces}</span>}
+                                                                {stop.notes && <span className="bg-orange-50 px-1 rounded border border-orange-100 text-orange-700">📝 {stop.notes}</span>}
                                                             </div>
                                                         )}
                                                     </div>
@@ -2954,10 +2959,11 @@
                                                             <div className="flex-1 leading-tight">
                                                                 <div className="font-bold text-slate-700">{stop.nombre || stop.name}</div>
                                                                 <div className="text-xs text-slate-500 truncate">{stop.direccion || stop.address}</div>
-                                                                {(stop.invoices || stop.pieces) && (
-                                                                    <div className="flex gap-2 mt-0.5 text-[9px] text-slate-500">
+                                                                {(stop.invoices || stop.pieces || stop.notes) && (
+                                                                    <div className="flex gap-2 mt-0.5 text-[9px] text-slate-500 flex-wrap">
                                                                         {stop.invoices && <span className="bg-yellow-50 px-1 rounded border border-yellow-100 text-yellow-700">Inv: {stop.invoices}</span>}
                                                                         {stop.pieces && <span className="bg-blue-50 px-1 rounded border border-blue-100 text-blue-700">Pcs: {stop.pieces}</span>}
+                                                                        {stop.notes && <span className="bg-orange-50 px-1 rounded border border-orange-100 text-orange-700">📝 {stop.notes}</span>}
                                                                     </div>
                                                                 )}
                                                             </div>
