@@ -1626,11 +1626,12 @@
                     }
                     
                     if (match) {
-                        return { 
-                            ...s, 
-                            id: match.id, 
-                            invoices: match.invoices || "", 
-                            pieces: match.pieces || "", 
+                        return {
+                            ...s,
+                            id: match.id,
+                            invoices: match.invoices || "",
+                            pieces: match.pieces || "",
+                            notes: match.notes || "",
                             nombre: match.name,
                             direccion: s.direccion || match.address
                         };
@@ -1698,11 +1699,12 @@
                                              if (p.id) freshStop = stops.find(s => s.id === p.id);
                                              if (!freshStop) freshStop = stops.find(s => (s.address || "").toLowerCase().trim() === (p.direccion || p.address || "").toLowerCase().trim());
                                              if (freshStop) {
-                                                 return { 
-                                                     ...p, 
-                                                     id: freshStop.id, 
-                                                     invoices: freshStop.invoices, 
-                                                     pieces: freshStop.pieces, 
+                                                 return {
+                                                     ...p,
+                                                     id: freshStop.id,
+                                                     invoices: freshStop.invoices,
+                                                     pieces: freshStop.pieces,
+                                                     notes: freshStop.notes || "",
                                                      nombre: freshStop.name,
                                                      direccion: freshStop.address
                                                  };
@@ -2147,6 +2149,7 @@
                         direccion: s.direccion || s.address || '',
                         invoices: s.invoices || '',
                         pieces: s.pieces || '',
+                        notes: s.notes || '',
                         delivered: prev ? (prev.delivered || false) : false,
                         ...(prev?.deliveredAt ? { deliveredAt: prev.deliveredAt } : {}),
                         ...(prev?.proofUrl   ? { proofUrl:   prev.proofUrl   } : {}),
