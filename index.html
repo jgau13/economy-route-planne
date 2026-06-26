@@ -847,6 +847,7 @@
             const [tempStopData, setTempStopData] = useState(null);
             const [tempInvoices, setTempInvoices] = useState('');
             const [tempPieces, setTempPieces] = useState('');
+            const [tempNotes, setTempNotes] = useState('');
             const [editingDraftId, setEditingDraftId] = useState(null);
             const [editingResultStop, setEditingResultStop] = useState(null); 
             
@@ -1130,6 +1131,7 @@
                 });
                 setTempInvoices(stopData.invoices || '');
                 setTempPieces(stopData.pieces || '');
+                setTempNotes(stopData.notes || '');
                 setAddressError(''); // Resetear error
                 setShowAddDetailsModal(true);
             };
@@ -1245,6 +1247,7 @@
                         const stop = newRoutes[zone].paradas[idx];
                         stop.invoices = tempInvoices;
                         stop.pieces = tempPieces;
+                        stop.notes = tempNotes;
                         return newRoutes;
                     });
 
@@ -1252,9 +1255,10 @@
                     if (stopId && window.fbDb && user) {
                         try {
                             const stopRef = window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', stopId);
-                            await window.fbUpdateDoc(stopRef, { 
-                                invoices: tempInvoices, 
-                                pieces: tempPieces 
+                            await window.fbUpdateDoc(stopRef, {
+                                invoices: tempInvoices,
+                                pieces: tempPieces,
+                                notes: tempNotes
                             });
                         } catch(e) { 
                             console.error("Error al sincronizar datos de parada con Firebase:", e); 
@@ -1289,6 +1293,7 @@
                     address: tempStopData.address,
                     invoices: tempInvoices,
                     pieces: tempPieces,
+                    notes: tempNotes,
                     latlng: finalLatLng
                 };
 
@@ -1348,6 +1353,7 @@
                 setTempStopData({ name: stop.name, address: stop.address });
                 setTempInvoices(stop.invoices || '');
                 setTempPieces(stop.pieces || '');
+                setTempNotes(stop.notes || '');
                 setShowAddDetailsModal(true);
             };
 
@@ -2520,12 +2526,16 @@
 
                                 <div className="space-y-4">
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices (Optional)</label>
-                                        <input ref={invoicesInputRef} type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} onKeyDown={(e) => handleEnter(e, () => piecesInputRef.current?.focus())} autoFocus={!targetZoneForManualAdd} />
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices</label>
+                                        <input ref={invoicesInputRef} type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => { const val = e.target.value; if (/^[\d,\s]*$/.test(val)) setTempInvoices(val); }} onKeyDown={(e) => handleEnter(e, () => piecesInputRef.current?.focus())} autoFocus={!targetZoneForManualAdd} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pieces Shipped</label>
                                         <input ref={piecesInputRef} type="number" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="0" value={tempPieces} onChange={e => setTempPieces(e.target.value)} onKeyDown={(e) => handleEnter(e, confirmAddStop)} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Notes</label>
+                                        <input type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. pickup, call before delivery" value={tempNotes} onChange={e => setTempNotes(e.target.value)} onKeyDown={(e) => handleEnter(e, confirmAddStop)} />
                                     </div>
                                 </div>
                                 <div className="mt-6 flex gap-3">

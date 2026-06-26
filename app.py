@@ -1,6 +1,8 @@
 import os
 import sqlite3
 import sys
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 import urllib.parse
 import datetime
 import random
@@ -758,5 +760,5 @@ def resolver_tsp_parcial(fixed, loose, base, dwell):
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    print(f"🚀 Servidor corriendo en puerto {port}")
+    print(f"Servidor corriendo en puerto {port}")
     app.run(host='0.0.0.0', port=port)
