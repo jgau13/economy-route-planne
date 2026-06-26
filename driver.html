@@ -132,7 +132,7 @@
                             navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000, enableHighAccuracy: true })
                         );
                         const dist = haversine(pos.coords.latitude, pos.coords.longitude, stop.lat, stop.lng);
-                        if (dist > 200) {
+                        if (dist > 500) {
                             setOutOfRange(prev => new Set([...prev, idx]));
                             setCheckingGeo(null);
                             return;
