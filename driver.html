@@ -177,21 +177,22 @@
             const handlePhotoSelected = async (e) => {
                 const file = e.target.files?.[0];
                 e.target.value = '';
-                if (!file || proofStop === null) return;
+                const stopIndex = proofStop;
+                if (!file || stopIndex === null) return;
                 setUploading(true);
                 try {
                     const compressed = await compressImage(file);
-                    const path = `artifacts/${appId}/proofs/${token}/stop_${proofStop}_${Date.now()}.jpg`;
+                    const path = `artifacts/${appId}/proofs/${token}/stop_${stopIndex}_${Date.now()}.jpg`;
                     const sRef = window.fbStorageRef(window.fbStorage, path);
                     await window.fbUploadBytes(sRef, compressed, { contentType: 'image/jpeg' });
                     const photoUrl = await window.fbGetDownloadURL(sRef);
-                    const existingUrls = route.stops[proofStop].proofUrls || (route.stops[proofStop].proofUrl ? [route.stops[proofStop].proofUrl] : []);
+                    const existingUrls = route.stops[stopIndex].proofUrls || (route.stops[stopIndex].proofUrl ? [route.stops[stopIndex].proofUrl] : []);
                     const newUrls = [...existingUrls, photoUrl];
                     const stops = route.stops.map((s, i) =>
-                        i === proofStop ? { ...s, proofUrl: newUrls[0], proofUrls: newUrls, storagePath: path } : s
+                        i === stopIndex ? { ...s, proofUrl: newUrls[0], proofUrls: newUrls, storagePath: path } : s
                     );
                     await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), { stops });
-                    const stop = route.stops[proofStop];
+                    const stop = route.stops[stopIndex];
                     const invoiceList = (stop.invoices || '').split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
                     await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'proof_of_delivery'), {
                         invoices: invoiceList, invoicesRaw: stop.invoices || '',
