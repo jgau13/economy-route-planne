@@ -511,6 +511,9 @@ def resolver_vrp(data_model, dwell_min):
 @app.route('/')
 def index(): return send_from_directory(basedir, 'index.html')
 
+@app.route('/zipcode-map.html')
+def zipcode_map(): return send_from_directory(basedir, 'zipcode-map.html')
+
 @app.route('/health')
 def health(): return jsonify({"status":"ok"}), 200
 

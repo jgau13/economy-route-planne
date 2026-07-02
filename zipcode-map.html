@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZIP Code Coverage — ESS</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0f4c6e; }
+        .screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .card { background: white; border-radius: 16px; padding: 28px; width: 320px; }
+        .logo { height: 44px; filter: brightness(0) invert(1); margin-bottom: 12px; }
+        .title { color: white; font-size: 17px; font-weight: 700; margin-bottom: 20px; }
+        input { width: 100%; padding: 12px 14px; border: 1.5px solid #e2e8f0; border-radius: 10px; font-size: 15px; margin-bottom: 10px; outline: none; transition: border .15s; }
+        input:focus { border-color: #3178a1; }
+        button { width: 100%; padding: 13px; background: #0f4c6e; color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; }
+        button:hover { background: #3178a1; }
+        button:disabled { background: #94a3b8; cursor: default; }
+        .err { color: #ef4444; font-size: 12px; margin-top: 8px; min-height: 16px; }
+
+        .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,.2); border-top-color: white; border-radius: 50%; animation: spin .8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #load-msg { color: white; font-size: 16px; font-weight: 600; margin-top: 16px; }
+        #load-sub  { color: #93c5fd; font-size: 13px; margin-top: 6px; }
+
+        #map-wrap { display: none; position: relative; width: 100vw; height: 100vh; }
+        #map { width: 100%; height: 100%; }
+
+        #panel {
+            position: absolute; top: 14px; left: 14px; z-index: 1000;
+            background: white; border-radius: 14px; padding: 18px 20px;
+            box-shadow: 0 6px 32px rgba(0,0,0,.18); min-width: 220px; max-width: 250px;
+        }
+        #panel h2 { font-size: 12px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: .5px; margin-bottom: 12px; }
+        .stat { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
+        .stat-label { font-size: 13px; color: #475569; }
+        .stat-val { font-size: 20px; font-weight: 800; color: #0f4c6e; }
+        .divider { height: 1px; background: #f1f5f9; margin: 12px 0; }
+        .zip-row { display: flex; justify-content: space-between; font-size: 12px; color: #64748b; margin-bottom: 4px; }
+        .zip-row span:last-child { font-weight: 700; color: #334155; }
+        #zip-list { max-height: 200px; overflow-y: auto; }
+
+        #legend { margin-top: 14px; }
+        #legend p { font-size: 11px; color: #94a3b8; margin-bottom: 6px; font-weight: 700; text-transform: uppercase; }
+        .legend-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 11px; color: #475569; }
+        .legend-swatch { width: 16px; height: 16px; border-radius: 3px; border: 1px solid rgba(0,0,0,.1); flex-shrink: 0; }
+
+        #fit-btn { margin-top: 12px; width: 100%; padding: 9px; background: #f1f5f9; color: #334155; border: none; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+        #fit-btn:hover { background: #e2e8f0; }
+
+        .zip-tooltip { font-size: 13px; font-weight: 700; }
+    </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="screen-login" class="screen">
+    <img class="logo" src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg">
+    <p class="title">ZIP Code Coverage Map</p>
+    <div class="card">
+        <input id="inp-email" type="email" placeholder="Email" autocomplete="email">
+        <input id="inp-pass" type="password" placeholder="Password" autocomplete="current-password">
+        <button id="btn-login">View Map</button>
+        <p class="err" id="login-err"></p>
+    </div>
+</div>
+
+<!-- LOADING -->
+<div id="screen-loading" class="screen" style="display:none">
+    <div class="spinner"></div>
+    <p id="load-msg">Connecting…</p>
+    <p id="load-sub"></p>
+</div>
+
+<!-- MAP -->
+<div id="map-wrap">
+    <div id="map"></div>
+    <div id="panel">
+        <h2>ZIP Code Coverage</h2>
+        <div class="stat"><span class="stat-label">Total clients</span><span class="stat-val" id="st-total">—</span></div>
+        <div class="stat"><span class="stat-label">ZIP codes</span><span class="stat-val" id="st-zips">—</span></div>
+        <div class="divider"></div>
+        <div id="zip-list"></div>
+        <div id="legend">
+            <p>Clients per ZIP</p>
+            <div class="legend-row"><div class="legend-swatch" style="background:#dbeafe"></div> 1–2</div>
+            <div class="legend-row"><div class="legend-swatch" style="background:#93c5fd"></div> 3–5</div>
+            <div class="legend-row"><div class="legend-swatch" style="background:#3b82f6"></div> 6–10</div>
+            <div class="legend-row"><div class="legend-swatch" style="background:#1d4ed8"></div> 11–20</div>
+            <div class="legend-row"><div class="legend-swatch" style="background:#1e3a8a"></div> 21+</div>
+        </div>
+        <button id="fit-btn">Fit all zones</button>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module">
+    import { initializeApp }                         from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword }   from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getFirestore, collection, getDocs }     from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const appId = 'default-app-id';
+    let db, auth;
+
+    const $ = id => document.getElementById(id);
+    const show = id => $(id).style.display = '';
+    const hide = id => $(id).style.display = 'none';
+
+    $('btn-login').addEventListener('click', async () => {
+        const email = $('inp-email').value.trim();
+        const pass  = $('inp-pass').value;
+        if (!email || !pass) return;
+        $('btn-login').disabled = true;
+        $('login-err').textContent = '';
+        try {
+            hide('screen-login');
+            show('screen-loading');
+            $('load-msg').textContent = 'Connecting…';
+
+            const res = await fetch('/config');
+            const cfg = await res.json();
+
+            const app = initializeApp(cfg.firebaseConfig);
+            auth = getAuth(app);
+            db   = getFirestore(app);
+
+            $('load-msg').textContent = 'Signing in…';
+            await signInWithEmailAndPassword(auth, email, pass);
+            await loadAndRender();
+        } catch(e) {
+            hide('screen-loading');
+            show('screen-login');
+            $('login-err').textContent = e.message || 'Login failed';
+            $('btn-login').disabled = false;
+        }
+    });
+
+    function extractZip(address) {
+        if (!address) return null;
+        const m = address.match(/\b(\d{5})(?:-\d{4})?\b/);
+        return m ? m[1] : null;
+    }
+
+    function getColor(count) {
+        if (count >= 21) return '#1e3a8a';
+        if (count >= 11) return '#1d4ed8';
+        if (count >= 6)  return '#3b82f6';
+        if (count >= 3)  return '#93c5fd';
+        return '#dbeafe';
+    }
+
+    async function loadAndRender() {
+        const uid = auth.currentUser.uid;
+        $('load-msg').textContent = 'Loading clients…';
+
+        const snap = await getDocs(collection(db, 'artifacts', appId, 'users', uid, 'clients'));
+        const clients = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.address);
+
+        // Count by ZIP
+        const zipCount = {};
+        let withZip = 0;
+        clients.forEach(c => {
+            const zip = extractZip(c.address);
+            if (zip) { zipCount[zip] = (zipCount[zip] || 0) + 1; withZip++; }
+        });
+
+        const zips = Object.keys(zipCount);
+        $('st-total').textContent = clients.length;
+        $('st-zips').textContent  = zips.length;
+
+        // Add mapped stat
+        const mappedEl = document.createElement('div');
+        mappedEl.className = 'stat';
+        mappedEl.innerHTML = `<span class="stat-label">Mapped</span><span class="stat-val" style="font-size:16px;color:#16a34a">${withZip}</span>`;
+        $('st-zips').closest('.stat').after(mappedEl);
+
+        const noZipEl = document.createElement('div');
+        noZipEl.style = 'font-size:11px;color:#94a3b8;margin-bottom:8px';
+        noZipEl.textContent = `${clients.length - withZip} clients sin ZIP en dirección`;
+        mappedEl.after(noZipEl);
+
+        // Top ZIPs panel
+        const top = Object.entries(zipCount).sort((a,b) => b[1]-a[1]).slice(0, 20);
+        $('zip-list').innerHTML = top.map(([zip, n]) =>
+            `<div class="zip-row"><span>${zip}</span><span>${n} clients</span></div>`
+        ).join('');
+
+        // Load Florida ZIP GeoJSON
+        $('load-msg').textContent = 'Loading ZIP boundaries…';
+        $('load-sub').textContent = 'This may take a moment';
+
+        let geoData;
+        try {
+            const geoRes = await fetch('https://raw.githubusercontent.com/OpenDataDE/State-zip-code-GeoJSON/master/fl_florida_zip_codes_geo.min.json');
+            geoData = await geoRes.json();
+        } catch(e) {
+            $('load-sub').textContent = 'Failed to load ZIP boundaries';
+            return;
+        }
+
+        // Filter only ZIPs we have clients in
+        const filtered = {
+            type: 'FeatureCollection',
+            features: geoData.features.filter(f => zipCount[f.properties.ZCTA5CE10])
+        };
+
+        hide('screen-loading');
+        $('map-wrap').style.display = 'block';
+
+        const map = L.map('map').setView([28.5, -81.4], 8);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        const geoLayer = L.geoJSON(filtered, {
+            style: feature => {
+                const zip   = feature.properties.ZCTA5CE10;
+                const count = zipCount[zip] || 0;
+                return {
+                    fillColor:   getColor(count),
+                    fillOpacity: 0.7,
+                    color:       '#1e40af',
+                    weight:      1.5,
+                    opacity:     0.8
+                };
+            },
+            onEachFeature: (feature, layer) => {
+                const zip   = feature.properties.ZCTA5CE10;
+                const count = zipCount[zip] || 0;
+                layer.bindTooltip(
+                    `<div class="zip-tooltip">ZIP ${zip}<br>${count} client${count !== 1 ? 's' : ''}</div>`,
+                    { sticky: true }
+                );
+                layer.on('mouseover', function() { this.setStyle({ fillOpacity: 0.9, weight: 2.5 }); });
+                layer.on('mouseout',  function() { geoLayer.resetStyle(this); });
+            }
+        }).addTo(map);
+
+        if (filtered.features.length > 0) map.fitBounds(geoLayer.getBounds(), { padding: [30, 30] });
+
+        $('fit-btn').addEventListener('click', () => map.fitBounds(geoLayer.getBounds(), { padding: [30, 30] }));
+    }
+</script>
+</body>
+</html>
