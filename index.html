@@ -3009,31 +3009,21 @@
                                                         <Icon name="printer" className="h-4 w-4" /> Print Sheet
                                                     </button>
 
-                                                    {consolidatedRoutes[zoneName] ? (
-                                                        <div className="col-span-2 flex gap-2">
-                                                            <a
-                                                                href={consolidatedRoutes[zoneName]}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="flex-1 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
-                                                            >
-                                                                <Icon name="message-circle" className="h-4 w-4" /> Send via WhatsApp
-                                                            </a>
-                                                            <button
-                                                                onClick={() => consolidateRoute(zoneName, routeData, driver)}
-                                                                className="px-3 py-3 bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold rounded-lg text-xs flex items-center gap-1 shadow-sm transition-colors"
-                                                                title="Re-consolidate"
-                                                            >
-                                                                <Icon name="refresh-cw" className="h-3.5 w-3.5" />
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <button
-                                                            onClick={() => consolidateRoute(zoneName, routeData, driver)}
+                                                    <button
+                                                        onClick={() => consolidateRoute(zoneName, routeData, driver)}
+                                                        className="col-span-2 bg-ess-blue hover:bg-sky-700 text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                    >
+                                                        <Icon name="check-circle" className="h-4 w-4" /> Consolidate
+                                                    </button>
+                                                    {consolidatedRoutes[zoneName] && (
+                                                        <a
+                                                            href={consolidatedRoutes[zoneName]}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
                                                             className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
                                                         >
-                                                            <Icon name="message-circle" className="h-4 w-4" /> Consolidate & Send
-                                                        </button>
+                                                            <Icon name="message-circle" className="h-4 w-4" /> Send via WhatsApp
+                                                        </a>
                                                     )}
                                                 </div>
                                             </div>
