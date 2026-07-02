@@ -911,6 +911,15 @@
             const [monitorPin, setMonitorPin] = useState('1234');
             const [showMonitorPin, setShowMonitorPin] = useState(false);
             const [consolidatedRoutes, setConsolidatedRoutes] = useState({});
+            const invalidateConsolidation = (zoneName) => {
+                if (!zoneName) return;
+                const base = zoneName.split(' - Route')[0];
+                setConsolidatedRoutes(prev => {
+                    const next = { ...prev };
+                    Object.keys(next).forEach(k => { if (k === base || k.startsWith(base + ' - Route')) delete next[k]; });
+                    return next;
+                });
+            };
             const fileInputRef = useRef(null);
 
             // RESULTS
@@ -1246,6 +1255,7 @@
                     stopId = currentRouteStop.id || findStopId(currentRouteStop);
 
                     // 1. Actualizar estado visual local
+                    invalidateConsolidation(zone);
                     setOptimizedRoutes(prev => {
                         const newRoutes = JSON.parse(JSON.stringify(prev));
                         const stop = newRoutes[zone].paradas[idx];
@@ -1338,6 +1348,7 @@
                             }
                         };
                     });
+                    invalidateConsolidation(targetZoneForManualAdd);
                     setTargetZoneForManualAdd(null);
                 } else if (editingDraftId) {
                     await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', editingDraftId), data);
@@ -2000,6 +2011,8 @@
                 
                 setOptimizedRoutes(newRoutes);
                 setSelectedResultStops(new Set());
+                invalidateConsolidation(sourceZone);
+                if (sourceZone !== targetZoneName) invalidateConsolidation(targetZoneName);
 
                 if (movedStop.id) {
                     setStopGroups(gs => (gs || []).map(g => {
@@ -2831,7 +2844,7 @@
                                                 </div>
                                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button onClick={() => handleEditStop(stop)} className="text-blue-400 hover:text-blue-600 p-0.5"><Icon name="pencil" className="h-3 w-3" /></button>
-                                                    <button onClick={() => removeStop(stop.id)} className="text-red-400 hover:text-red-600 p-0.5"><Icon name="trash-2" className="h-3 w-3" /></button>
+                                                    <button onClick={() => { removeStop(stop.id); invalidateConsolidation(zoneName); }} className="text-red-400 hover:text-red-600 p-0.5"><Icon name="trash-2" className="h-3 w-3" /></button>
                                                 </div>
                                             </div>
                                         ))}
