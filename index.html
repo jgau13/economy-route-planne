@@ -1020,8 +1020,33 @@
                     }
                 }, onErr);
 
+                // Load persisted zone groups for this user (one-time read to avoid write-echo loop)
+                window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'zone_groups'))
+                    .then(docSnap => {
+                        if (docSnap.exists()) {
+                            const data = docSnap.data();
+                            if (Array.isArray(data.groups)) setStopGroups(data.groups);
+                        }
+                        zoneGroupsReadyRef.current = true;
+                    }).catch(onErr);
+
                 return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); };
             }, [user, dbReady, syncKey]);
+
+            // Clear zone groups when user logs out (prevents leaking zones between users)
+            const zoneGroupsReadyRef = React.useRef(false);
+            useEffect(() => {
+                zoneGroupsReadyRef.current = false;
+                setStopGroups([]);
+            }, [user]);
+
+            // Persist zone groups to Firestore whenever they change (skip during initial load)
+            useEffect(() => {
+                if (!user || !window.fbDb || !window.fbSetDoc) return;
+                if (!zoneGroupsReadyRef.current) return;
+                const ref = window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'settings', 'zone_groups');
+                window.fbSetDoc(ref, { groups: stopGroups }, { merge: false }).catch(() => {});
+            }, [stopGroups, user]);
 
             // Load monitor PIN (separate effect)
             useEffect(() => {

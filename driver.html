@@ -207,7 +207,11 @@
                     });
                 } catch (err) {
                     console.error('Upload error:', err);
-                    alert('Could not upload photo.');
+                    const isStorage = err?.code === 'storage/unknown' || err?.message?.includes('storage');
+                    const msg = isStorage
+                        ? 'Could not upload photo. Please check your phone storage — you may be running low on space.'
+                        : 'Could not upload photo. Check your internet connection and try again.';
+                    alert(msg);
                 } finally { setUploading(false); setProofStop(null); }
             };
 
