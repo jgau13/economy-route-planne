@@ -2187,6 +2187,7 @@
                     ? `https://maps.apple.com/?saddr=${encode(baseAddress)}&daddr=${paradas.map(s => encode(s.direccion || s.address)).join('+to:')}+to:${encode(baseAddress)}&dirflg=d`
                     : '';
                 try {
+                    const safeStops = JSON.parse(JSON.stringify(stops));
                     await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), {
                         driverName: driver.name,
                         driverPhone: driver.phone || '',
@@ -2195,7 +2196,7 @@
                         date: today,
                         createdAt: now.toISOString(),
                         expireAt,
-                        stops,
+                        stops: safeStops,
                         dispatcherUid: user.uid,
                         link: googleLink,
                         appleLink
