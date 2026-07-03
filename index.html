@@ -2138,7 +2138,7 @@
                 });
             });
 
-            const consolidateRoute = async (zoneName, routeData, driver) => {
+            const consolidateRoute = async (zoneName, routeData, driver, vehicleName = '') => {
                 if (!driver) return alert('Assign a driver first.');
                 if (!window.fbDb) return alert('Firebase not ready.');
                 const now = new Date();
@@ -2216,6 +2216,7 @@
                     await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), {
                         driverName: driver.name,
                         driverPhone: driver.phone || '',
+                        vehicleName: vehicleName || '',
                         zoneName,
                         trip,
                         date: today,
@@ -3049,7 +3050,7 @@
                                                     </button>
 
                                                     <button
-                                                        onClick={() => consolidateRoute(zoneName, routeData, driver)}
+                                                        onClick={() => consolidateRoute(zoneName, routeData, driver, currentVehicleName)}
                                                         className="col-span-2 bg-ess-blue hover:bg-sky-700 text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
                                                     >
                                                         <Icon name="check-circle" className="h-4 w-4" /> Consolidate

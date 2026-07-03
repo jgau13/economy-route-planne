@@ -192,7 +192,7 @@
                 (stop.nombre || stop.name || '').toLowerCase().includes(searchTerm) ||
                 (stop.invoices || '').toLowerCase().includes(searchTerm) ||
                 (stop.direccion || stop.address || '').toLowerCase().includes(searchTerm);
-            const { driverName, driverPhone, zoneName, trip, date, stops = [], status } = routeDoc;
+            const { driverName, driverPhone, vehicleName, zoneName, trip, date, stops = [], status } = routeDoc;
             const delivered = stops.filter(s => s.delivered).length;
             const total = stops.length;
             const pct = total > 0 ? Math.round((delivered / total) * 100) : 0;
@@ -217,7 +217,10 @@
                                     <Icon name="truck" className={`h-5 w-5 ${allDone ? 'text-green-600' : 'text-ess-blue'}`} />
                                 </div>
                                 <div className="min-w-0">
-                                    <div className="font-bold text-slate-800 truncate">{driverName}</div>
+                                    <div className="font-bold text-slate-800 truncate flex items-center gap-2">
+                                        {driverName}
+                                        {vehicleName && <span className="text-xs font-semibold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{vehicleName}</span>}
+                                    </div>
                                     <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
                                         <span className="font-semibold text-slate-500 uppercase">{zoneName}</span>
                                         {trip && (
