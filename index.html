@@ -2121,7 +2121,7 @@
                 const today = now.toISOString().split('T')[0];
                 const tokenBase = `${user.uid}-${driver.name}-${zoneName}-${today}-${trip}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
                 const token = tokenBase.slice(0, 64);
-                const expireAt = new Date(now.getTime() + 72 * 60 * 60 * 1000);
+                const expireAt = new Date(now.getTime() + 72 * 60 * 60 * 1000).toISOString();
 
                 // Fetch existing route to preserve delivered status on re-consolidate
                 let existingStopsMap = {};

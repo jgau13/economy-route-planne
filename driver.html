@@ -203,7 +203,7 @@
                         date: route.date || new Date().toISOString().split('T')[0],
                         timestamp: Date.now(), photoUrl, photoUrls: newUrls, storagePath: path, routeToken: token,
                         zoneName: route.zoneName || '',
-                        expireAt: new Date(Date.now() + 120 * 24 * 60 * 60 * 1000)
+                        expireAt: new Date(Date.now() + 120 * 24 * 60 * 60 * 1000).toISOString()
                     });
                 } catch (err) {
                     console.error('Upload error:', err);
