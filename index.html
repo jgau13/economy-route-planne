@@ -929,6 +929,11 @@
             const [printData, setPrintData] = useState(null);
             const [showBulkManifestPrint, setShowBulkManifestPrint] = useState(false);
             const [viewingDriver, setViewingDriver] = useState(null);
+            const [reportZone, setReportZone] = useState('');
+            const [reportFrom, setReportFrom] = useState('');
+            const [reportTo, setReportTo] = useState('');
+            const [reportHistory, setReportHistory] = useState(null);
+            const [reportLoading, setReportLoading] = useState(false);
             const [showGlobalPrint, setShowGlobalPrint] = useState(false);
             const [viewingGlobalMap, setViewingGlobalMap] = useState(false);
             const [selectedResultStops, setSelectedResultStops] = useState(new Set());
@@ -1267,6 +1272,24 @@
                 // Also remove the group from Planning
                 setStopGroups(prev => (prev || []).filter(g => g.name !== zoneName));
                 setSelectedResultStops(new Set());
+
+                // Delete the active_route from Firestore if it was consolidated
+                if (window.fbDb && user) {
+                    try {
+                        const now = new Date();
+                        const today = now.toISOString().split('T')[0];
+                        const assignedDriverId = driverAssignments[zoneName];
+                        const driver = (drivers || []).find(d => d.id === assignedDriverId);
+                        if (driver) {
+                            for (const trip of ['AM', 'PM']) {
+                                const tokenBase = `${user.uid}-${driver.name}-${zoneName}-${today}-${trip}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+                                const token = tokenBase.slice(0, 64);
+                                const ref = window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token);
+                                window.fbDeleteDoc(ref).catch(() => {});
+                            }
+                        }
+                    } catch(e) { console.error('Error removing active route:', e); }
+                }
             };
 
             const confirmAddStop = async () => {
@@ -2227,6 +2250,17 @@
                         link: googleLink,
                         appleLink
                     });
+                    // Save permanent history record
+                    window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'route_history'), {
+                        zoneName,
+                        driverName: driver.name,
+                        vehicleName: vehicleName || '',
+                        trip,
+                        date: today,
+                        createdAt: now.toISOString(),
+                        stopCount: safeStops.length,
+                        stops: safeStops.map(s => ({ name: s.nombre || s.name || '', address: s.direccion || s.address || '', invoices: s.invoices || '' }))
+                    }).catch(e => console.error('route_history write failed:', e));
                 } catch (err) {
                     console.error('[consolidateRoute] Firestore write failed:', err);
                     alert('Error saving route: ' + (err.message || err.code || err));
@@ -2609,6 +2643,7 @@
                                 <button onClick={() => setView('planning')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'planning' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
                                 <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
                                 <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Fleet</button>
+                                <button onClick={() => setView('reports')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'reports' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="bar-chart-2" className="h-4 w-4" /> Reports</button>
                                 <button onClick={() => setView('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Config</button>
                                 <div className="w-px h-6 bg-slate-300 mx-1"></div>
                                 <button onClick={handleLogout} className="text-sm font-medium text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 px-3 py-2 rounded-lg flex items-center gap-2 ml-2"><Icon name="log-out" className="h-4 w-4" /> Exit</button>
@@ -3348,6 +3383,95 @@
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {view === 'reports' && (
+                            <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <h2 className="text-lg font-bold text-slate-800 mb-4">Zone History</h2>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                                        <div>
+                                            <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Zone</label>
+                                            <select value={reportZone} onChange={e => setReportZone(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ess-blue">
+                                                <option value="">All zones</option>
+                                                {[...new Set([...(zones||[]).map(z=>z.name), ...(reportHistory||[]).map(r=>r.zoneName)])].sort().map(z => (
+                                                    <option key={z} value={z}>{z}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">From</label>
+                                            <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ess-blue" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">To</label>
+                                            <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-ess-blue" />
+                                        </div>
+                                    </div>
+                                    <button onClick={async () => {
+                                        setReportLoading(true); setReportHistory(null);
+                                        try {
+                                            const snap = await window.fbGetDocs(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'route_history'));
+                                            let data = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                                            if (reportZone) data = data.filter(r => r.zoneName === reportZone);
+                                            if (reportFrom) data = data.filter(r => r.date >= reportFrom);
+                                            if (reportTo)   data = data.filter(r => r.date <= reportTo);
+                                            data.sort((a,b) => b.date.localeCompare(a.date));
+                                            setReportHistory(data);
+                                        } catch(e) { alert('Error loading history: ' + e.message); }
+                                        setReportLoading(false);
+                                    }} disabled={reportLoading} className="w-full py-2 bg-ess-blue text-white rounded-lg font-bold text-sm hover:bg-sky-700 disabled:opacity-50">
+                                        {reportLoading ? 'Loading…' : 'Search'}
+                                    </button>
+                                </div>
+
+                                {reportHistory && reportHistory.length === 0 && (
+                                    <div className="text-center text-slate-400 py-12 text-sm">No records found for the selected filters.</div>
+                                )}
+
+                                {reportHistory && reportHistory.length > 0 && (() => {
+                                    const byZone = {};
+                                    reportHistory.forEach(r => { if(!byZone[r.zoneName]) byZone[r.zoneName] = []; byZone[r.zoneName].push(r); });
+                                    return Object.entries(byZone).map(([zone, runs]) => (
+                                        <div key={zone} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                            <div className="bg-ess-blue px-5 py-3 flex items-center justify-between">
+                                                <span className="font-bold text-white text-sm uppercase">{zone}</span>
+                                                <span className="text-sky-200 text-xs font-semibold">{runs.length} run{runs.length !== 1 ? 's' : ''}</span>
+                                            </div>
+                                            <div className="divide-y divide-slate-100">
+                                                {runs.map(run => (
+                                                    <details key={run.id} className="group">
+                                                        <summary className="flex items-center justify-between px-5 py-3 cursor-pointer hover:bg-slate-50 list-none">
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="text-sm font-semibold text-slate-700">{run.date}</span>
+                                                                <span className={`text-xs font-bold px-2 py-0.5 rounded ${run.trip === 'AM' ? 'bg-sky-100 text-sky-700' : 'bg-orange-100 text-orange-700'}`}>{run.trip}</span>
+                                                                <span className="text-xs text-slate-500">{run.driverName}{run.vehicleName ? ` · ${run.vehicleName}` : ''}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs text-slate-400">{run.stopCount} stops</span>
+                                                                <Icon name="chevron-down" className="h-4 w-4 text-slate-400 group-open:rotate-180 transition-transform" />
+                                                            </div>
+                                                        </summary>
+                                                        <div className="px-5 pb-3 pt-1">
+                                                            <table className="w-full text-xs">
+                                                                <thead><tr className="text-slate-400 uppercase"><th className="text-left pb-1 font-semibold">Client</th><th className="text-left pb-1 font-semibold">Invoices</th></tr></thead>
+                                                                <tbody className="divide-y divide-slate-50">
+                                                                    {(run.stops||[]).map((s,i) => (
+                                                                        <tr key={i} className="text-slate-600">
+                                                                            <td className="py-1 pr-4 font-medium">{s.name}</td>
+                                                                            <td className="py-1 text-slate-400">{s.invoices || '—'}</td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </details>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ));
+                                })()}
                             </div>
                         )}
 
