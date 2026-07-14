@@ -315,7 +315,14 @@
                         });
                     }
                 });
-                setResults(hits);
+                // Deduplicate: keep only the most recent entry per client+invoice+date combo
+                const seen = new Set();
+                const unique = [];
+                for (const h of hits) {
+                    const key = `${(h.client||'').toLowerCase()}|${(h.invoices||'').toLowerCase()}|${h.date}`;
+                    if (!seen.has(key)) { seen.add(key); unique.push(h); }
+                }
+                setResults(unique);
             };
 
             const handleKeyDown = (e) => {
