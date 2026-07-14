@@ -110,6 +110,7 @@
             const [proofStop, setProofStop] = useState(null);
             const [uploading, setUploading] = useState(false);
             const [lightboxUrl, setLightboxUrl] = useState(null);
+            const [navStop, setNavStop] = useState(null);
             const fileInputRef = useRef(null);
             const [checkingGeo, setCheckingGeo] = useState(null);
             const [outOfRange, setOutOfRange] = useState(new Set());
@@ -230,6 +231,28 @@
                     <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoSelected} />
 
                     {/* Lightbox */}
+                    {navStop && (
+                        <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center" onClick={() => setNavStop(null)}>
+                            <div className="bg-white rounded-t-2xl w-full max-w-md p-6 pb-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+                                <div className="flex justify-between items-start mb-1">
+                                    <p className="font-bold text-slate-800 text-base leading-tight pr-4">{navStop.name}</p>
+                                    <button onClick={() => setNavStop(null)} className="text-slate-400 hover:text-slate-600 flex-shrink-0"><Icon name="x" className="h-5 w-5" /></button>
+                                </div>
+                                <p className="text-sm text-slate-500 mb-5">{navStop.address}</p>
+                                <div className="flex flex-col gap-3">
+                                    <a href={`https://maps.apple.com/?daddr=${encodeURIComponent(navStop.address)}&dirflg=d`} target="_blank" rel="noopener noreferrer"
+                                        className="flex items-center justify-center gap-3 w-full py-4 bg-slate-800 text-white rounded-xl font-bold text-base active:scale-95 transition-transform">
+                                        <Icon name="navigation" className="h-5 w-5" /> Apple Maps
+                                    </a>
+                                    <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(navStop.address)}&travelmode=driving`} target="_blank" rel="noopener noreferrer"
+                                        className="flex items-center justify-center gap-3 w-full py-4 bg-ess-blue text-white rounded-xl font-bold text-base active:scale-95 transition-transform">
+                                        <Icon name="map-pin" className="h-5 w-5" /> Google Maps
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {lightboxUrl && (
                         <div className="fixed inset-0 z-50 bg-black flex items-center justify-center" onClick={() => setLightboxUrl(null)}>
                             <img src={lightboxUrl} alt="proof" className="max-w-full max-h-full object-contain zoom-in" />
@@ -326,8 +349,14 @@
                                                 {done ? <Icon name="check" className="h-5 w-5" /> : idx + 1}
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <div className={`font-bold text-base leading-tight ${done ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
-                                                    {stop.nombre || stop.name}
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className={`font-bold text-base leading-tight ${done ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                                        {stop.nombre || stop.name}
+                                                    </div>
+                                                    <button onClick={() => setNavStop({ name: stop.nombre || stop.name, address: stop.direccion || stop.address })}
+                                                        className="flex-shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-ess-blue hover:bg-blue-50 active:scale-90 transition-all">
+                                                        <Icon name="navigation" className="h-4 w-4" />
+                                                    </button>
                                                 </div>
                                                 <div className="text-sm text-slate-500 mt-0.5 leading-snug">{stop.direccion || stop.address}</div>
                                                 {(stop.invoices || stop.pieces || stop.notes) && (
