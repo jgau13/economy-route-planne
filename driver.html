@@ -347,8 +347,9 @@
                                                         {stop.nombre || stop.name}
                                                     </div>
                                                     <button onClick={() => openNav(stop.direccion || stop.address)}
-                                                        className="flex-shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-ess-blue hover:bg-blue-50 active:scale-90 transition-all">
-                                                        <Icon name="navigation" className="h-4 w-4" />
+                                                        className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-slate-400 hover:text-ess-blue hover:bg-blue-50 active:scale-90 transition-all">
+                                                        <span className="text-xs font-bold">Go</span>
+                                                        <Icon name="map-pin" className="h-4 w-4" />
                                                     </button>
                                                 </div>
                                                 <div className="text-sm text-slate-500 mt-0.5 leading-snug">{stop.direccion || stop.address}</div>
