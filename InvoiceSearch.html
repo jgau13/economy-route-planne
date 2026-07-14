@@ -111,6 +111,88 @@
             </div>
         );
 
+        const ProofModal = ({ hit, onClose }) => {
+            const [proof, setProof] = React.useState(null);
+            const [loading, setLoading] = React.useState(true);
+            const [photoOpen, setPhotoOpen] = React.useState(false);
+
+            React.useEffect(() => {
+                const search = async () => {
+                    try {
+                        const invoices = (hit.invoices || '').split(/[^a-z0-9]+/i).filter(Boolean);
+                        const col = window.fbCollection(window.fbDb, 'artifacts', 'default-app-id', 'proof_of_delivery');
+                        let found = null;
+                        for (const inv of invoices) {
+                            const q = window.fbQuery(col,
+                                window.fbWhere('invoices', 'array-contains', inv),
+                                window.fbLimit(1)
+                            );
+                            const snap = await window.fbGetDocs(q);
+                            if (!snap.empty) { found = { id: snap.docs[0].id, ...snap.docs[0].data() }; break; }
+                        }
+                        if (!found) {
+                            // fallback: search by customerName + date
+                            const dateStr = hit.date; // e.g. "7/14/2026"
+                            const q2 = window.fbQuery(col, window.fbWhere('customerName', '==', hit.client), window.fbLimit(5));
+                            const snap2 = await window.fbGetDocs(q2);
+                            if (!snap2.empty) found = { id: snap2.docs[0].id, ...snap2.docs[0].data() };
+                        }
+                        setProof(found);
+                    } catch(e) { console.error(e); }
+                    setLoading(false);
+                };
+                search();
+            }, []);
+
+            return (
+                <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+                    {photoOpen && proof?.photoUrl && <PhotoModal url={proof.photoUrl} onClose={() => setPhotoOpen(false)} />}
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                            <div>
+                                <h2 className="font-bold text-slate-800">{hit.client}</h2>
+                                <p className="text-xs text-slate-400">{hit.address}</p>
+                            </div>
+                            <button onClick={onClose} className="text-slate-400 hover:text-red-500 p-1"><Icon name="x" className="h-5 w-5" /></button>
+                        </div>
+                        <div className="p-5">
+                            {loading && <div className="flex justify-center py-8"><div className="border-2 border-slate-200 border-t-ess-blue rounded-full w-8 h-8 animate-spin" /></div>}
+                            {!loading && !proof && (
+                                <div className="text-center py-8 text-slate-400">
+                                    <Icon name="camera-off" className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                                    <p className="text-sm font-medium">No proof of delivery found for this invoice.</p>
+                                </div>
+                            )}
+                            {!loading && proof && (
+                                <div className="space-y-4">
+                                    {proof.photoUrl ? (
+                                        <button onClick={() => setPhotoOpen(true)} className="w-full group relative overflow-hidden rounded-xl border-2 border-slate-200 hover:border-ess-blue transition-colors">
+                                            <img src={proof.photoUrl} alt="proof" className="w-full object-cover max-h-64" />
+                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                                                <div className="opacity-0 group-hover:opacity-100 bg-white rounded-full p-2 shadow-lg transition-opacity">
+                                                    <Icon name="zoom-in" className="h-5 w-5 text-ess-blue" />
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ) : (
+                                        <div className="w-full h-32 rounded-xl bg-slate-100 flex items-center justify-center border-2 border-dashed border-slate-200">
+                                            <Icon name="camera-off" className="h-8 w-8 text-slate-300" />
+                                        </div>
+                                    )}
+                                    <div className="grid grid-cols-3 gap-3 text-xs">
+                                        <div><span className="text-slate-400 font-bold uppercase block mb-0.5">Date</span><span className="font-bold text-slate-700">{proof.date}</span></div>
+                                        <div><span className="text-slate-400 font-bold uppercase block mb-0.5">Driver</span><span className="font-bold text-green-600">{proof.driverName || '–'}</span></div>
+                                        <div><span className="text-slate-400 font-bold uppercase block mb-0.5">Zone</span><span className="font-bold text-slate-700">{proof.zoneName || '–'}</span></div>
+                                    </div>
+                                    {proof.notes && <div className="bg-orange-50 rounded-lg px-3 py-2 text-xs text-orange-700"><span className="font-bold">Notes: </span>{proof.notes}</div>}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const InvoiceSearchApp = () => {
             const [user, setUser] = useState(null);
             const [initializing, setInitializing] = useState(true);
@@ -129,6 +211,7 @@
             const [proofLoading, setProofLoading] = useState(false);
             const [proofSearched, setProofSearched] = useState(false);
             const [photoModal, setPhotoModal] = useState(null);
+            const [proofModalHit, setProofModalHit] = useState(null);
             
             // Initial Config Load & Auth Check
             useEffect(() => {
@@ -295,6 +378,7 @@
             return (
                 <div className="max-w-4xl mx-auto p-6">
                     {photoModal && <PhotoModal url={photoModal} onClose={() => setPhotoModal(null)} />}
+                    {proofModalHit && <ProofModal hit={proofModalHit} onClose={() => setProofModalHit(null)} />}
 
                     {/* Header */}
                     <div className="flex justify-between items-center mb-6">
@@ -349,7 +433,7 @@
 
                             <div className="space-y-3">
                                 {results.length > 0 ? results.map((hit, idx) => (
-                                    <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+                                    <div key={idx} onClick={() => setProofModalHit(hit)} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:shadow-md hover:border-ess-blue transition-all cursor-pointer">
                                         <div className="flex justify-between items-start mb-2">
                                             <div>
                                                 <h3 className="font-bold text-lg text-slate-800">{hit.client}</h3>
