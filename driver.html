@@ -116,9 +116,9 @@
             const openNav = (address) => {
                 const enc = encodeURIComponent(address);
                 if (gpsPreference === 'apple') {
-                    window.open(`https://maps.apple.com/?daddr=${enc}&dirflg=d`, '_blank');
+                    window.location.href = `https://maps.apple.com/?daddr=${enc}&dirflg=d`;
                 } else {
-                    window.open(`https://www.google.com/maps/dir/?api=1&destination=${enc}&travelmode=driving`, '_blank');
+                    window.location.href = `https://www.google.com/maps/dir/?api=1&destination=${enc}&travelmode=driving`;
                 }
             };
             const fileInputRef = useRef(null);
