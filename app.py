@@ -61,6 +61,8 @@ FIREBASE_CONFIG = {
     "appId": os.environ.get("FIREBASE_APP_ID")
 }
 
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
+
 ALMACEN_COORD = "28.450324,-81.405368" 
 
 if not GOOGLE_MAPS_API_KEY:
@@ -522,7 +524,8 @@ def health(): return jsonify({"status":"ok"}), 200
 def config():
     return jsonify({
         "googleApiKey": GOOGLE_MAPS_API_KEY,
-        "firebaseConfig": FIREBASE_CONFIG
+        "firebaseConfig": FIREBASE_CONFIG,
+        "vapidKey": VAPID_PUBLIC_KEY
     })
 
 @app.route('/sw.js')

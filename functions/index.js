@@ -31,7 +31,7 @@ exports.notifyDriver = onDocumentCreated(
                         icon: 'https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg',
                     },
                     fcmOptions: {
-                        link: 'https://economy-route-planne.onrender.com/driver.html',
+                        link: (process.env.APP_URL || 'https://economy-route-planne.onrender.com') + '/driver.html',
                     },
                 },
             });
