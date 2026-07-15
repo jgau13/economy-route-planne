@@ -911,6 +911,8 @@
             const [monitorPin, setMonitorPin] = useState('1234');
             const [showMonitorPin, setShowMonitorPin] = useState(false);
             const [consolidatedRoutes, setConsolidatedRoutes] = useState({});
+            const [consolidatingZone, setConsolidatingZone] = useState(null);
+            const [consolidateDone, setConsolidateDone] = useState({});
             const invalidateConsolidation = (zoneName) => {
                 if (!zoneName) return;
                 const base = zoneName.split(' - Route')[0];
@@ -2164,6 +2166,7 @@
             const consolidateRoute = async (zoneName, routeData, driver, vehicleName = '') => {
                 if (!driver) return alert('Assign a driver first.');
                 if (!window.fbDb) return alert('Firebase not ready.');
+                setConsolidatingZone(zoneName);
                 const now = new Date();
                 const trip = now.getHours() < 12 ? 'AM' : 'PM';
                 const today = now.toISOString().split('T')[0];
@@ -2263,6 +2266,7 @@
                     }).catch(e => console.error('route_history write failed:', e));
                 } catch (err) {
                     console.error('[consolidateRoute] Firestore write failed:', err);
+                    setConsolidatingZone(null);
                     alert('Error saving route: ' + (err.message || err.code || err));
                     return;
                 }
@@ -2273,6 +2277,9 @@
                 const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
                 setConsolidatedRoutes(prev => ({ ...prev, [zoneName]: waUrl }));
                 setSyncKey(k => k + 1);
+                setConsolidatingZone(null);
+                setConsolidateDone(prev => ({ ...prev, [zoneName]: true }));
+                setTimeout(() => setConsolidateDone(prev => ({ ...prev, [zoneName]: false })), 2500);
             };
             const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setClientFormLatLng(c.latlng || null); setEditingClientId(c.id); };
 
@@ -3086,9 +3093,15 @@
 
                                                     <button
                                                         onClick={() => consolidateRoute(zoneName, routeData, driver, currentVehicleName)}
-                                                        className="col-span-2 bg-ess-blue hover:bg-sky-700 text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                        disabled={consolidatingZone === zoneName}
+                                                        className={`col-span-2 text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors ${consolidateDone[zoneName] ? 'bg-ess-green' : consolidatingZone === zoneName ? 'bg-sky-400 cursor-not-allowed' : 'bg-ess-blue hover:bg-sky-700'}`}
                                                     >
-                                                        <Icon name="check-circle" className="h-4 w-4" /> Consolidate
+                                                        {consolidatingZone === zoneName
+                                                            ? <><span className="loader h-4 w-4 border-2 border-white/30 border-t-white" style={{width:'16px',height:'16px'}} /> Saving…</>
+                                                            : consolidateDone[zoneName]
+                                                                ? <><Icon name="check-circle" className="h-4 w-4" /> Sent!</>
+                                                                : <><Icon name="check-circle" className="h-4 w-4" /> Consolidate</>
+                                                        }
                                                     </button>
                                                     {consolidatedRoutes[zoneName] && (
                                                         <a
