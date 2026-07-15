@@ -22,6 +22,7 @@
         import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc, addDoc, collection } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
         import { getAuth, signInAnonymously, setPersistence, inMemoryPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getMessaging, getToken } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js";
 
         window.initFirebaseDriver = (config) => {
             try {
@@ -29,6 +30,7 @@
                 const db = getFirestore(app);
                 const storage = getStorage(app);
                 const auth = getAuth(app);
+                const messaging = getMessaging(app);
                 window.fbDb = db;
                 window.fbStorage = storage;
                 window.fbAuth = auth;
@@ -43,6 +45,7 @@
                 window.fbUploadBytes = uploadBytes;
                 window.fbGetDownloadURL = getDownloadURL;
                 window.fbSignInAnon = () => setPersistence(auth, inMemoryPersistence).then(() => signInAnonymously(auth));
+                window.fbGetFcmToken = async (vapidKey, swReg) => getToken(messaging, { vapidKey, serviceWorkerRegistration: swReg });
                 window.firebaseDriverReady = true;
                 return true;
             } catch (e) { console.error("Firebase init error:", e); return false; }
@@ -125,6 +128,27 @@
             const [checkingGeo, setCheckingGeo] = useState(null);
             const [outOfRange, setOutOfRange] = useState(new Set());
             const [gpsBlocked, setGpsBlocked] = useState(new Set());
+
+            const VAPID_KEY = 'BBIfgJC2mZClcdnAVI_fL3UJ4yb8Co-Y-W-m1YEX6iICSuT5K7CLhFj9UDuklIYqBuqvdxaT3lTWH3dg_uwIwXI';
+            useEffect(() => {
+                if (!route?.driverName || !window.fbGetFcmToken || !window.fbDb) return;
+                (async () => {
+                    try {
+                        if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+                        const perm = await Notification.requestPermission();
+                        if (perm !== 'granted') return;
+                        const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                        const token = await window.fbGetFcmToken(VAPID_KEY, reg);
+                        if (!token) return;
+                        const key = route.driverName.toLowerCase().replace(/\s+/g, '_');
+                        await window.fbSetDoc(
+                            window.fbDoc(window.fbDb, 'driver_fcm_tokens', key),
+                            { token, driverName: route.driverName, updatedAt: new Date().toISOString() },
+                            { merge: true }
+                        );
+                    } catch(e) { console.log('Push setup skipped:', e.message); }
+                })();
+            }, [route?.driverName]);
 
             const haversine = (lat1, lng1, lat2, lng2) => {
                 const R = 6371000;

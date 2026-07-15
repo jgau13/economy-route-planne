@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import json
 import sys
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
@@ -520,8 +521,34 @@ def health(): return jsonify({"status":"ok"}), 200
 @app.route('/config')
 def config():
     return jsonify({
-        "googleApiKey": GOOGLE_MAPS_API_KEY, 
+        "googleApiKey": GOOGLE_MAPS_API_KEY,
         "firebaseConfig": FIREBASE_CONFIG
+    })
+
+@app.route('/sw.js')
+def service_worker():
+    from flask import Response
+    cfg = json.dumps(FIREBASE_CONFIG)
+    js = f"""importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
+firebase.initializeApp({cfg});
+const messaging = firebase.messaging();
+messaging.onBackgroundMessage(payload => {{
+    const n = payload.notification || {{}};
+    self.registration.showNotification(n.title || 'ESS Route Planner', {{
+        body: n.body || 'Your route is ready.',
+        icon: 'https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg',
+        data: {{ url: (payload.fcmOptions && payload.fcmOptions.link) || '/driver.html' }}
+    }});
+}});
+self.addEventListener('notificationclick', event => {{
+    event.notification.close();
+    const url = (event.notification.data && event.notification.data.url) || '/driver.html';
+    event.waitUntil(clients.openWindow(url));
+}});"""
+    return Response(js, mimetype='application/javascript', headers={
+        'Service-Worker-Allowed': '/',
+        'Cache-Control': 'no-cache'
     })
 
 def procesar_geocoding(s):
