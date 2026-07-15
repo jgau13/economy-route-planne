@@ -801,11 +801,12 @@
                 const pct = total > 0 ? Math.round((delivered / total) * 100) : 0;
                 const done = delivered === total && total > 0;
                 const [showGpsModal, setShowGpsModal] = useState(false);
+                const WAREHOUSE = '8070 NW 64th St, Miami, FL 33166';
                 const appleLink = stops.length > 0
-                    ? `https://maps.apple.com/?${stops.map(s => `daddr=${encodeURIComponent(s.direccion || s.nombre || '')}`).join('&')}&dirflg=d`
+                    ? `https://maps.apple.com/?${stops.map(s => `daddr=${encodeURIComponent(s.direccion || s.nombre || '')}`).join('&')}&daddr=${encodeURIComponent(WAREHOUSE)}&dirflg=d`
                     : null;
                 const googleLink = stops.length > 0
-                    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(stops[stops.length - 1].direccion || stops[stops.length - 1].nombre || '')}${stops.length > 1 ? '&waypoints=' + stops.slice(0, -1).map(s => encodeURIComponent(s.direccion || s.nombre || '')).join('|') : ''}&travelmode=driving`
+                    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(WAREHOUSE)}&waypoints=${stops.map(s => encodeURIComponent(s.direccion || s.nombre || '')).join('|')}&travelmode=driving`
                     : null;
                 const hasGps = !!(googleLink || appleLink);
                 return (
