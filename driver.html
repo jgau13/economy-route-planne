@@ -801,10 +801,13 @@
                 const pct = total > 0 ? Math.round((delivered / total) * 100) : 0;
                 const done = delivered === total && total > 0;
                 const [showGpsModal, setShowGpsModal] = useState(false);
-                const appleLink = r.appleLink || (stops.length > 0
+                const appleLink = stops.length > 0
                     ? `https://maps.apple.com/?${stops.map(s => `daddr=${encodeURIComponent(s.direccion || s.nombre || '')}`).join('&')}&dirflg=d`
-                    : null);
-                const hasGps = !!(r.link || appleLink);
+                    : null;
+                const googleLink = stops.length > 0
+                    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(stops[stops.length - 1].direccion || stops[stops.length - 1].nombre || '')}${stops.length > 1 ? '&waypoints=' + stops.slice(0, -1).map(s => encodeURIComponent(s.direccion || s.nombre || '')).join('|') : ''}&travelmode=driving`
+                    : null;
+                const hasGps = !!(googleLink || appleLink);
                 return (
                     <div className={`bg-white rounded-2xl shadow-sm border p-4 fade-in ${faded ? 'border-slate-100 opacity-60' : 'border-slate-200'}`}>
                         <div className="flex items-center justify-between mb-3">
@@ -846,8 +849,8 @@
                                     <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-5" />
                                     <p className="text-center font-black text-slate-700 text-base mb-4">Open with...</p>
                                     <div className="space-y-3">
-                                        {r.link && (
-                                            <a href={r.link} target="_blank" rel="noopener noreferrer" onClick={() => setShowGpsModal(false)}
+                                        {googleLink && (
+                                            <a href={googleLink} onClick={e => { setShowGpsModal(false); window.location.href = googleLink; e.preventDefault(); }}
                                                 className="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 hover:bg-slate-50 active:scale-95 transition-all">
                                                 <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
                                                     <Icon name="map" className="h-5 w-5 text-blue-600" />
@@ -860,7 +863,7 @@
                                             </a>
                                         )}
                                         {appleLink && (
-                                            <a href={appleLink} target="_blank" rel="noopener noreferrer" onClick={() => setShowGpsModal(false)}
+                                            <a href={appleLink} onClick={e => { setShowGpsModal(false); window.location.href = appleLink; e.preventDefault(); }}
                                                 className="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 hover:bg-slate-50 active:scale-95 transition-all">
                                                 <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
                                                     <Icon name="navigation" className="h-5 w-5 text-slate-700" />
