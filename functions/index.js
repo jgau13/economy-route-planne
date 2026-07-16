@@ -24,14 +24,14 @@ exports.notifyDriver = onDocumentCreated(
                 token,
                 notification: {
                     title: 'ESS Route Planner',
-                    body: 'Your route is ready. Go to dispatch to get started.',
+                    body: `Hi ${driverName}, your route is ready. Go to dispatch to get started.`,
                 },
                 webpush: {
                     notification: {
                         icon: 'https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg',
                     },
                     fcmOptions: {
-                        link: (process.env.APP_URL || 'https://economy-route-planne.onrender.com') + '/driver.html',
+                        link: (process.env.APP_URL || 'https://economy-route-planne.onrender.com') + '/driver.html?r=' + event.params.routeToken,
                     },
                 },
             });
