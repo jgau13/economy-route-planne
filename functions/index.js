@@ -44,51 +44,7 @@ exports.notifyDriver = onDocumentCreated(
     }
 );
 
-exports.warnDriversPending = onSchedule({ schedule: '0 19 * * *', timeZone: 'America/New_York' }, async () => {
-    const db = getFirestore();
-    const messaging = getMessaging();
-    const todayDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-
-    const snap = await db.collection('artifacts/default-app-id/active_routes').get();
-
-    for (const docSnap of snap.docs) {
-        const data = docSnap.data();
-        if (!data.driverName || !data.createdAt) continue;
-
-        const createdDate = new Date(data.createdAt).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-        if (createdDate !== todayDate) continue;
-
-        const stops = data.stops || [];
-        const hasPending = stops.some(s => !s.delivered);
-        if (!hasPending) continue;
-
-        const key = data.driverName.toLowerCase().replace(/\s+/g, '_');
-        const tokenDoc = await db.doc(`driver_fcm_tokens/${key}`).get();
-        if (!tokenDoc.exists) continue;
-        const { token } = tokenDoc.data();
-        if (!token) continue;
-
-        const appUrl = process.env.APP_URL || 'https://economy-route-planne.onrender.com';
-        try {
-            await messaging.send({
-                token,
-                notification: {
-                    title: 'ESS Route Planner',
-                    body: `${data.driverName}, you have undelivered stops on your route. Please mark them before your route closes at 8 PM.`,
-                },
-                webpush: {
-                    notification: { icon: 'https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg' },
-                    fcmOptions: { link: `${appUrl}/driver.html?r=${docSnap.id}` },
-                },
-            });
-            console.log(`7pm warning sent to ${data.driverName}`);
-        } catch (e) {
-            console.error(`7pm warning failed for ${data.driverName}:`, e.message);
-        }
-    }
-});
-
-exports.autoConfirmRoutes = onSchedule({ schedule: '0 20 * * *', timeZone: 'America/New_York' }, async () => {
+exports.closeRoutes = onSchedule({ schedule: '0 19 * * *', timeZone: 'America/New_York' }, async () => {
     const db = getFirestore();
     const messaging = getMessaging();
     const todayDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
@@ -107,10 +63,10 @@ exports.autoConfirmRoutes = onSchedule({ schedule: '0 20 * * *', timeZone: 'Amer
         const hasPending = stops.some(s => !s.delivered);
         if (!hasPending) continue;
 
+        // Auto-confirm pending stops
         const updatedStops = stops.map(s =>
             s.delivered ? s : { ...s, delivered: true, autoConfirmed: true, deliveredAt: now }
         );
-
         await docSnap.ref.update({ stops: updatedStops });
         console.log(`Auto-confirmed stops for ${data.driverName}`);
 
@@ -127,7 +83,7 @@ exports.autoConfirmRoutes = onSchedule({ schedule: '0 20 * * *', timeZone: 'Amer
                 token,
                 notification: {
                     title: 'ESS Route Planner',
-                    body: `${data.driverName}, your route has been closed. Undelivered stops were auto-confirmed.`,
+                    body: `${data.driverName}, your route has been closed. Some stops were auto-confirmed.`,
                 },
                 webpush: {
                     notification: { icon: 'https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg' },
@@ -135,7 +91,7 @@ exports.autoConfirmRoutes = onSchedule({ schedule: '0 20 * * *', timeZone: 'Amer
                 },
             });
         } catch (e) {
-            console.error(`8pm auto-confirm push failed for ${data.driverName}:`, e.message);
+            console.error(`closeRoutes push failed for ${data.driverName}:`, e.message);
         }
     }
 });

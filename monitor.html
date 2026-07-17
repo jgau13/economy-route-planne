@@ -310,9 +310,16 @@
                                             </span>
                                         )}
                                         {stop.autoConfirmed && (
-                                            <span className="text-xs font-bold text-red-500 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                Auto-confirmed – Driver did not mark
-                                            </span>
+                                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                <span className="text-xs font-bold text-red-500 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                    Auto-confirmed – Driver did not mark
+                                                </span>
+                                                <button
+                                                    onClick={() => revertAutoConfirm(routeDoc.token, i)}
+                                                    className="text-xs text-slate-400 hover:text-red-500 font-bold underline whitespace-nowrap"
+                                                    title="Revert and confirm manually"
+                                                >Revert</button>
+                                            </div>
                                         )}
                                         {stop.proofUrl ? (
                                             <button onClick={() => onPhotoClick(stop.proofUrl)} className="group" title="View proof">
@@ -371,10 +378,19 @@
                 const route = routes.find(r => r.token === token);
                 if (!route) return;
                 const stops = route.stops.map((s, i) =>
-                    i === stopIdx ? { ...s, delivered: true, deliveredAt, confirmedByMonitor: true } : s
+                    i === stopIdx ? { ...s, delivered: true, deliveredAt, confirmedByMonitor: true, autoConfirmed: false } : s
                 );
                 await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), { stops });
                 setConfirmModal(null);
+            };
+
+            const revertAutoConfirm = async (token, stopIdx) => {
+                const route = routes.find(r => r.token === token);
+                if (!route) return;
+                const stops = route.stops.map((s, i) =>
+                    i === stopIdx ? { ...s, delivered: false, autoConfirmed: false, deliveredAt: null } : s
+                );
+                await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), { stops });
             };
 
             // Init Firebase + anonymous auth + load PIN
