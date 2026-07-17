@@ -304,9 +304,14 @@
 
                                     {/* Right side: time + photo */}
                                     <div className="flex items-center gap-2 flex-shrink-0">
-                                        {stop.delivered && stop.deliveredAt && (
+                                        {stop.delivered && stop.deliveredAt && !stop.autoConfirmed && (
                                             <span className="text-xs text-green-600 font-bold whitespace-nowrap">
                                                 {fmtTime(stop.deliveredAt)}
+                                            </span>
+                                        )}
+                                        {stop.autoConfirmed && (
+                                            <span className="text-xs font-bold text-red-500 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                Auto-confirmed – Driver did not mark
                                             </span>
                                         )}
                                         {stop.proofUrl ? (
@@ -317,9 +322,9 @@
                                                     className="w-10 h-10 rounded-lg object-cover border-2 border-green-200 group-hover:border-green-400 transition-colors shadow-sm"
                                                 />
                                             </button>
-                                        ) : stop.delivered ? (
+                                        ) : stop.delivered && !stop.autoConfirmed ? (
                                             <span className="text-xs text-slate-300 italic">No photo</span>
-                                        ) : (
+                                        ) : !stop.delivered ? (
                                             <button
                                                 onClick={() => onConfirmStop(routeDoc.token, i, stop.nombre || stop.name)}
                                                 className="text-xs bg-slate-100 hover:bg-ess-blue hover:text-white text-slate-500 px-2.5 py-1.5 rounded-lg font-bold transition-colors whitespace-nowrap"
