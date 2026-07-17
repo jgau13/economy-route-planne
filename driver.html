@@ -194,16 +194,19 @@
 
             const compressImage = (file) => new Promise((resolve) => {
                 const img = new Image();
-                const url = URL.createObjectURL(file);
+                let url;
+                try { url = URL.createObjectURL(file); } catch(e) { resolve(file); return; }
+                img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
                 img.onload = () => {
                     URL.revokeObjectURL(url);
-                    const MAX = 1200;
+                    const MAX = 900;
                     let w = img.width, h = img.height;
                     if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+                    else if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
                     const canvas = document.createElement('canvas');
                     canvas.width = w; canvas.height = h;
                     canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                    canvas.toBlob(resolve, 'image/jpeg', 0.75);
+                    canvas.toBlob(blob => resolve(blob || file), 'image/jpeg', 0.55);
                 };
                 img.src = url;
             });
@@ -261,7 +264,7 @@
             return (
                 <div className="min-h-screen bg-slate-100 pb-12">
                 <div className="max-w-lg mx-auto">
-                    <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoSelected} />
+                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} />
 
                     {/* Lightbox */}
                     {lightboxUrl && (
@@ -890,14 +893,12 @@
                 <div className="max-w-lg mx-auto">
                     {/* Header */}
                     <div className="bg-ess-dark px-4 pt-10 pb-6 relative">
-                        <div className="flex justify-center mb-4">
-                            <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" style={{ height: '32px', filter: 'brightness(0) invert(1)' }} />
-                        </div>
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-white/60 text-sm">{greeting},</p>
                                 <p className="text-white font-black text-2xl">{selectedDriver?.name?.split(' ')[0]}</p>
                             </div>
+                            <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" style={{ height: '24px', filter: 'brightness(0) invert(1)', opacity: 0.85 }} />
                             <button onClick={() => setShowMenu(m => !m)} className="w-11 h-11 rounded-2xl flex items-center justify-center text-white text-lg font-black shadow-lg" style={{ backgroundColor: color }}>
                                 {initials}
                             </button>
