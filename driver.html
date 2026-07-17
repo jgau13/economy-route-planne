@@ -121,7 +121,12 @@
                 if (gpsPreference === 'apple') {
                     window.location.href = `https://maps.apple.com/?daddr=${enc}&dirflg=d`;
                 } else {
-                    window.location.href = `https://www.google.com/maps/dir/?api=1&destination=${enc}&travelmode=driving`;
+                    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                    if (isIOS) {
+                        window.location.href = `comgooglemaps://?daddr=${enc}&directionsmode=driving`;
+                    } else {
+                        window.location.href = `geo:0,0?q=${enc}`;
+                    }
                 }
             };
             const fileInputRef = useRef(null);
