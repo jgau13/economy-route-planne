@@ -135,6 +135,7 @@
                 }
             };
             const fileInputRef = useRef(null);
+            const galleryInputRef = useRef(null);
             const [checkingGeo, setCheckingGeo] = useState(null);
             const [outOfRange, setOutOfRange] = useState(new Set());
             const [gpsBlocked, setGpsBlocked] = useState(new Set());
@@ -301,7 +302,8 @@
             return (
                 <div className="min-h-screen bg-slate-100 pb-12">
                 <div className="max-w-lg mx-auto">
-                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} />
+                    <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoSelected} />
+                    <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} />
 
                     {/* Lightbox */}
                     {lightboxUrl && (
@@ -334,6 +336,9 @@
                                     <div className="space-y-3">
                                         <button onClick={() => fileInputRef.current?.click()} className="w-full py-4 bg-ess-green text-white font-bold rounded-2xl text-lg flex items-center justify-center gap-3 shadow-md active:scale-95 transition-transform">
                                             <Icon name="camera" className="h-6 w-6" /> Take Photo
+                                        </button>
+                                        <button onClick={() => galleryInputRef.current?.click()} className="w-full py-4 bg-slate-200 text-slate-700 font-bold rounded-2xl text-base flex items-center justify-center gap-3 active:scale-95 transition-transform">
+                                            <Icon name="image" className="h-5 w-5" /> Choose from Gallery
                                         </button>
                                         <button onClick={() => setProofStop(null)} className="w-full py-4 bg-slate-100 text-slate-600 font-semibold rounded-2xl text-base active:scale-95 transition-transform">
                                             {proofStopPhotos.length > 0 ? 'Cancel' : 'Skip'}
