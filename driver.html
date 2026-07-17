@@ -387,19 +387,24 @@
                                                     </div>
                                                 )}
                                             </div>
-                                            {photos.length > 0 && (
-                                                <div className="flex gap-1.5 flex-shrink-0">
-                                                    {photos.map((url, pi) => (
-                                                        <img key={pi} src={url} alt="proof" onClick={() => setLightboxUrl(url)} className="w-14 h-14 rounded-xl object-cover border-2 border-ess-green/30 cursor-pointer active:scale-95 transition-transform" />
-                                                    ))}
-                                                    {done && photos.length < 3 && (
-                                                        <button onClick={() => setProofStop(idx)} className="w-14 h-14 rounded-xl border-2 border-dashed border-ess-green/40 flex items-center justify-center text-ess-green active:scale-95 transition-transform">
-                                                            <Icon name="plus" className="h-5 w-5" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
                                         </div>
+                                        {done && (
+                                            <div className="flex gap-1.5 flex-wrap mt-3">
+                                                {(() => {
+                                                    const sz = photos.length <= 1 ? 'w-20 h-20' : photos.length <= 2 ? 'w-16 h-16' : photos.length <= 3 ? 'w-14 h-14' : photos.length <= 4 ? 'w-12 h-12' : 'w-10 h-10';
+                                                    return (<>
+                                                        {photos.map((url, pi) => (
+                                                            <img key={pi} src={url} alt="proof" onClick={() => setLightboxUrl(url)} className={`${sz} rounded-xl object-cover border-2 border-ess-green/30 cursor-pointer active:scale-95 transition-transform`} />
+                                                        ))}
+                                                        {photos.length < 6 && (
+                                                            <button onClick={() => setProofStop(idx)} className={`${sz} rounded-xl border-2 border-dashed border-ess-green/40 flex items-center justify-center text-ess-green/60 hover:text-ess-green active:scale-95 transition-all`}>
+                                                                <Icon name="plus" className="h-5 w-5" />
+                                                            </button>
+                                                        )}
+                                                    </>);
+                                                })()}
+                                            </div>
+                                        )}
                                         {done ? (
                                             <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 text-xs text-ess-green font-bold">
                                                 <Icon name="check-circle" className="h-4 w-4" />
