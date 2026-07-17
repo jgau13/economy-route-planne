@@ -321,14 +321,18 @@
                                                 >Revert</button>
                                             </div>
                                         )}
-                                        {stop.proofUrl ? (
-                                            <button onClick={() => onPhotoClick(stop.proofUrl)} className="group" title="View proof">
-                                                <img
-                                                    src={stop.proofUrl}
-                                                    alt="proof"
-                                                    className="w-10 h-10 rounded-lg object-cover border-2 border-green-200 group-hover:border-green-400 transition-colors shadow-sm"
-                                                />
-                                            </button>
+                                        {(stop.proofUrls?.length > 0 || stop.proofUrl) ? (
+                                            <div className="flex gap-1 flex-wrap justify-end">
+                                                {(stop.proofUrls || [stop.proofUrl]).map((url, pi) => (
+                                                    <button key={pi} onClick={() => onPhotoClick(url)} className="group" title="View proof">
+                                                        <img
+                                                            src={url}
+                                                            alt="proof"
+                                                            className="w-10 h-10 rounded-lg object-cover border-2 border-green-200 group-hover:border-green-400 transition-colors shadow-sm"
+                                                        />
+                                                    </button>
+                                                ))}
+                                            </div>
                                         ) : stop.delivered && !stop.autoConfirmed ? (
                                             <span className="text-xs text-slate-300 italic">No photo</span>
                                         ) : !stop.delivered ? (
