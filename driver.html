@@ -819,13 +819,13 @@
                 const hasGps = !!(googleLink || appleLink);
                 return (
                     <div className={`bg-white rounded-2xl shadow-sm border p-4 fade-in ${faded ? 'border-slate-100 opacity-60' : 'border-slate-200'}`}>
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                                <span className={`font-black text-base ${faded ? 'line-through text-slate-400' : 'text-slate-800'}`}>{r.zoneName}</span>
-                                {r.trip && <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${r.trip === 'AM' ? 'bg-sky-100 text-sky-700' : 'bg-orange-100 text-orange-700'}`}>{r.trip}</span>}
-                                {done && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Done</span>}
+                        <div className="flex items-center justify-between mb-3 gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className={`font-black text-base truncate ${faded ? 'line-through text-slate-400' : 'text-slate-800'}`}>{r.zoneName}</span>
+                                {r.trip && <span className={`flex-shrink-0 text-xs font-bold px-2 py-0.5 rounded-full ${r.trip === 'AM' ? 'bg-sky-100 text-sky-700' : 'bg-orange-100 text-orange-700'}`}>{r.trip}</span>}
+                                {done && <span className="flex-shrink-0 text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Done</span>}
                             </div>
-                            <span className={`text-xs ${faded ? 'line-through text-slate-300' : 'text-slate-400'}`}>{r.date}</span>
+                            <span className={`flex-shrink-0 text-xs ${faded ? 'line-through text-slate-300' : 'text-slate-400'}`}>{r.date}</span>
                         </div>
 
                         <div className="space-y-1.5 mb-3">
@@ -898,15 +898,19 @@
                 <div className="max-w-lg mx-auto">
                     {/* Header */}
                     <div className="bg-ess-dark px-4 pt-10 pb-6 relative">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-white/60 text-sm">{greeting},</p>
-                                <p className="text-white font-black text-2xl">{selectedDriver?.name?.split(' ')[0]}</p>
+                        <div className="grid grid-cols-3 items-center">
+                            <div className="flex items-center">
+                                <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" style={{ height: '28px', filter: 'brightness(0) invert(1)' }} />
                             </div>
-                            <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" style={{ height: '24px', filter: 'brightness(0) invert(1)', opacity: 0.85 }} />
-                            <button onClick={() => setShowMenu(m => !m)} className="w-11 h-11 rounded-2xl flex items-center justify-center text-white text-lg font-black shadow-lg" style={{ backgroundColor: color }}>
-                                {initials}
-                            </button>
+                            <div className="text-center">
+                                <p className="text-white/60 text-sm">{greeting},</p>
+                                <p className="text-white font-black text-2xl leading-tight">{selectedDriver?.name?.split(' ')[0]}</p>
+                            </div>
+                            <div className="flex justify-end">
+                                <button onClick={() => setShowMenu(m => !m)} className="w-11 h-11 rounded-2xl flex items-center justify-center text-white text-lg font-black shadow-lg" style={{ backgroundColor: color }}>
+                                    {initials}
+                                </button>
+                            </div>
                         </div>
                         {showMenu && (
                             <div className="absolute right-4 top-full mt-1 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-50 w-48 fade-in">
