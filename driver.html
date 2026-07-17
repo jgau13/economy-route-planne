@@ -111,8 +111,13 @@
         // ── Shared stop list view ────────────────────────────────────────────────
         function RouteStopList({ route, token, onBack }) {
             const [proofStop, setProofStop] = useState(null);
-            const [uploading, setUploading] = useState(false);
+            const [uploading] = useState(false); // kept for modal compat; upload now runs in background
             const [lightboxUrl, setLightboxUrl] = useState(null);
+            const [pendingPhotos, setPendingPhotos] = useState({}); // {stopIndex: [{localUrl, path}]}
+            const uploadQueueRef = useRef([]);
+            const processingRef = useRef(false);
+            const routeRef = useRef(route);
+            useEffect(() => { routeRef.current = route; }, [route]);
             const [navStop, setNavStop] = useState(null);
             const [gpsPreference, setGpsPreference] = useState(() => localStorage.getItem('gpsPreference') || 'apple');
             const saveGpsPreference = (val) => { setGpsPreference(val); localStorage.setItem('gpsPreference', val); };
@@ -216,45 +221,72 @@
                 img.src = url;
             });
 
-            const handlePhotoSelected = async (e) => {
-                const file = e.target.files?.[0];
-                e.target.value = '';
-                const stopIndex = proofStop;
-                if (!file || stopIndex === null) return;
-                setUploading(true);
+            const processUploadQueue = async () => {
+                if (processingRef.current || uploadQueueRef.current.length === 0) return;
+                processingRef.current = true;
+                const item = uploadQueueRef.current[0];
                 try {
-                    const compressed = await compressImage(file);
-                    const path = `artifacts/${appId}/proofs/${token}/stop_${stopIndex}_${Date.now()}.jpg`;
-                    const sRef = window.fbStorageRef(window.fbStorage, path);
-                    await window.fbUploadBytes(sRef, compressed, { contentType: 'image/jpeg' });
+                    const sRef = window.fbStorageRef(window.fbStorage, item.path);
+                    await window.fbUploadBytes(sRef, item.blob, { contentType: 'image/jpeg' });
                     const photoUrl = await window.fbGetDownloadURL(sRef);
-                    const existingUrls = route.stops[stopIndex].proofUrls || (route.stops[stopIndex].proofUrl ? [route.stops[stopIndex].proofUrl] : []);
-                    const newUrls = [...existingUrls, photoUrl];
-                    const stops = route.stops.map((s, i) =>
-                        i === stopIndex ? { ...s, proofUrl: newUrls[0], proofUrls: newUrls, storagePath: path } : s
+                    const currentRoute = routeRef.current;
+                    const existingUrls = currentRoute.stops[item.stopIndex].proofUrls || (currentRoute.stops[item.stopIndex].proofUrl ? [currentRoute.stops[item.stopIndex].proofUrl] : []);
+                    const newUrls = [...existingUrls.filter(u => !u.startsWith('blob:')), photoUrl];
+                    const stops = currentRoute.stops.map((s, i) =>
+                        i === item.stopIndex ? { ...s, proofUrl: newUrls[0], proofUrls: newUrls, storagePath: item.path } : s
                     );
                     await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), { stops });
-                    const stop = route.stops[stopIndex];
+                    const stop = currentRoute.stops[item.stopIndex];
                     const invoiceList = (stop.invoices || '').split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
                     await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'proof_of_delivery'), {
                         invoices: invoiceList, invoicesRaw: stop.invoices || '',
                         notes: stop.notes || '',
                         customerName: stop.nombre || stop.name || '',
                         stopAddress: stop.direccion || stop.address || '',
-                        driverName: route.driverName || '', driverPhone: route.driverPhone || '',
-                        date: route.date || new Date().toISOString().split('T')[0],
-                        timestamp: Date.now(), photoUrl, photoUrls: newUrls, storagePath: path, routeToken: token,
-                        zoneName: route.zoneName || '',
+                        driverName: currentRoute.driverName || '', driverPhone: currentRoute.driverPhone || '',
+                        date: currentRoute.date || new Date().toISOString().split('T')[0],
+                        timestamp: Date.now(), photoUrl, photoUrls: newUrls, storagePath: item.path, routeToken: token,
+                        zoneName: currentRoute.zoneName || '',
                         expireAt: new Date(Date.now() + 120 * 24 * 60 * 60 * 1000).toISOString()
                     });
+                    uploadQueueRef.current.shift();
+                    URL.revokeObjectURL(item.localUrl);
+                    setPendingPhotos(prev => {
+                        const arr = (prev[item.stopIndex] || []).filter(p => p.localUrl !== item.localUrl);
+                        return { ...prev, [item.stopIndex]: arr };
+                    });
+                    processingRef.current = false;
+                    processUploadQueue();
                 } catch (err) {
-                    console.error('Upload error:', err);
-                    const isStorage = err?.code === 'storage/unknown' || err?.message?.includes('storage');
-                    const msg = isStorage
-                        ? 'Could not upload photo. Please check your phone storage — you may be running low on space.'
-                        : 'Could not upload photo. Check your internet connection and try again.';
-                    alert(msg);
-                } finally { setUploading(false); setProofStop(null); }
+                    console.log('Upload queued for retry:', err.message);
+                    processingRef.current = false;
+                    item.retries = (item.retries || 0) + 1;
+                    const delay = Math.min(8000 * item.retries, 60000);
+                    setTimeout(processUploadQueue, delay);
+                }
+            };
+
+            useEffect(() => {
+                const onOnline = () => processUploadQueue();
+                window.addEventListener('online', onOnline);
+                return () => window.removeEventListener('online', onOnline);
+            }, []);
+
+            const handlePhotoSelected = async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                const stopIndex = proofStop;
+                if (!file || stopIndex === null) return;
+                setProofStop(null); // close modal immediately so driver can continue
+                const compressed = await compressImage(file);
+                const localUrl = URL.createObjectURL(compressed);
+                const path = `artifacts/${appId}/proofs/${token}/stop_${stopIndex}_${Date.now()}.jpg`;
+                setPendingPhotos(prev => ({
+                    ...prev,
+                    [stopIndex]: [...(prev[stopIndex] || []), { localUrl, path }]
+                }));
+                uploadQueueRef.current.push({ stopIndex, blob: compressed, path, localUrl, retries: 0 });
+                processUploadQueue();
             };
 
             const stops = route.stops || [];
@@ -364,7 +396,9 @@
                     <div className="px-4 mt-4 space-y-3">
                         {stops.map((stop, idx) => {
                             const done = stop.delivered;
-                            const photos = stop.proofUrls || (stop.proofUrl ? [stop.proofUrl] : []);
+                            const uploadedPhotos = stop.proofUrls || (stop.proofUrl ? [stop.proofUrl] : []);
+                            const pending = pendingPhotos[idx] || [];
+                            const photos = [...uploadedPhotos, ...pending.map(p => p.localUrl)];
                             return (
                                 <div key={idx} className={`bg-white rounded-2xl shadow-sm border-2 overflow-hidden transition-all fade-in ${done ? 'border-ess-green/30' : 'border-slate-200'}`}>
                                     <div className="p-4">
@@ -398,9 +432,19 @@
                                                 {(() => {
                                                     const sz = photos.length <= 1 ? 'w-20 h-20' : photos.length <= 2 ? 'w-16 h-16' : photos.length <= 3 ? 'w-14 h-14' : photos.length <= 4 ? 'w-12 h-12' : 'w-10 h-10';
                                                     return (<>
-                                                        {photos.map((url, pi) => (
-                                                            <img key={pi} src={url} alt="proof" onClick={() => setLightboxUrl(url)} className={`${sz} rounded-xl object-cover border-2 border-ess-green/30 cursor-pointer active:scale-95 transition-transform`} />
-                                                        ))}
+                                                        {photos.map((url, pi) => {
+                                                            const isPending = url.startsWith('blob:');
+                                                            return (
+                                                                <div key={pi} className={`${sz} relative flex-shrink-0`}>
+                                                                    <img src={url} alt="proof" onClick={() => !isPending && setLightboxUrl(url)} className={`w-full h-full rounded-xl object-cover border-2 ${isPending ? 'border-slate-300 opacity-70' : 'border-ess-green/30 cursor-pointer active:scale-95 transition-transform'}`} />
+                                                                    {isPending && (
+                                                                        <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/20">
+                                                                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
                                                         {photos.length < 6 && (
                                                             <button onClick={() => setProofStop(idx)} className={`${sz} rounded-xl border-2 border-dashed border-ess-green/40 flex items-center justify-center text-ess-green/60 hover:text-ess-green active:scale-95 transition-all`}>
                                                                 <Icon name="plus" className="h-5 w-5" />
