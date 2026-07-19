@@ -210,14 +210,14 @@
                 img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
                 img.onload = () => {
                     URL.revokeObjectURL(url);
-                    const MAX = 900;
+                    const MAX = 700;
                     let w = img.width, h = img.height;
                     if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
                     else if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
                     const canvas = document.createElement('canvas');
                     canvas.width = w; canvas.height = h;
                     canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                    canvas.toBlob(blob => resolve(blob || file), 'image/jpeg', 0.55);
+                    canvas.toBlob(blob => resolve(blob || file), 'image/jpeg', 0.45);
                 };
                 img.src = url;
             });
@@ -585,12 +585,13 @@
                         const driverList = snap.data().drivers || [];
                         setDrivers(driverList);
 
-                        // Restore saved driver session
+                        // Restore saved driver session — skip PIN if already authenticated
                         try {
                             const saved = JSON.parse(localStorage.getItem(lsKey));
                             if (saved && driverList.some(d => d.id === saved.id)) {
                                 setSelectedDriver(saved);
-                                setScreen('pin');
+                                subscribeRoutes(saved);
+                                setScreen('routes');
                                 return;
                             }
                         } catch {}
