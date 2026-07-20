@@ -172,6 +172,8 @@
             const prev = (e) => { e.stopPropagation(); changePhoto((idx - 1 + total) % total); };
             const next = (e) => { e.stopPropagation(); changePhoto((idx + 1) % total); };
 
+            const containerRef = React.useRef(null);
+
             React.useEffect(() => {
                 const onKey = (e) => {
                     if (e.key === 'ArrowLeft') changePhoto((idx - 1 + total) % total);
@@ -181,6 +183,23 @@
                 window.addEventListener('keydown', onKey);
                 return () => window.removeEventListener('keydown', onKey);
             }, [idx, total]);
+
+            // Block page scroll while modal is open; register wheel with passive:false
+            React.useEffect(() => {
+                document.body.style.overflow = 'hidden';
+                const el = containerRef.current;
+                const wheelHandler = (e) => {
+                    e.preventDefault();
+                    st.current.scale = Math.min(Math.max(st.current.scale * (e.deltaY < 0 ? 1.1 : 0.9), 1), 5);
+                    if (st.current.scale === 1) { st.current.tx = 0; st.current.ty = 0; }
+                    applyTransform();
+                };
+                if (el) el.addEventListener('wheel', wheelHandler, { passive: false });
+                return () => {
+                    document.body.style.overflow = '';
+                    if (el) el.removeEventListener('wheel', wheelHandler);
+                };
+            }, []);
 
             // Mouse events
             const onMouseDown = (e) => { e.preventDefault(); st.current.dragging = true; st.current.lastX = e.clientX; st.current.lastY = e.clientY; };
@@ -193,12 +212,6 @@
                 applyTransform();
             };
             const onMouseUp = () => { st.current.dragging = false; };
-            const onWheel = (e) => {
-                e.preventDefault();
-                st.current.scale = Math.min(Math.max(st.current.scale * (e.deltaY < 0 ? 1.1 : 0.9), 1), 5);
-                if (st.current.scale === 1) { st.current.tx = 0; st.current.ty = 0; }
-                applyTransform();
-            };
             const onDblClick = (e) => {
                 e.stopPropagation();
                 if (st.current.scale > 1) { resetZoom(); } else { st.current.scale = 2.5; applyTransform(true); }
@@ -240,7 +253,7 @@
                             </button>
                         )}
                         <div className="flex-1 relative overflow-hidden rounded-xl" style={{touchAction:'none', cursor: zoomed ? 'grab' : 'zoom-in'}}
-                            onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+                            ref={containerRef} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
                             onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
                             <img ref={imgRef} src={urls[idx]} alt="Proof of delivery"
                                 onDoubleClick={onDblClick}
