@@ -147,40 +147,92 @@
             );
         };
 
-        // Photo lightbox modal with carousel
+        // Photo lightbox modal with carousel and pinch/scroll zoom
         const PhotoModal = ({ urls, index: initialIndex, onClose }) => {
             const [idx, setIdx] = React.useState(initialIndex);
+            const [scale, setScale] = React.useState(1);
+            const [translate, setTranslate] = React.useState({ x: 0, y: 0 });
+            const lastPinchDist = React.useRef(null);
+            const isDragging = React.useRef(false);
+            const dragStart = React.useRef(null);
             const total = urls.length;
-            const prev = (e) => { e.stopPropagation(); setIdx(i => (i - 1 + total) % total); };
-            const next = (e) => { e.stopPropagation(); setIdx(i => (i + 1) % total); };
+
+            const resetZoom = () => { setScale(1); setTranslate({ x: 0, y: 0 }); };
+            const prev = (e) => { e.stopPropagation(); resetZoom(); setIdx(i => (i - 1 + total) % total); };
+            const next = (e) => { e.stopPropagation(); resetZoom(); setIdx(i => (i + 1) % total); };
+
             React.useEffect(() => {
                 const onKey = (e) => {
-                    if (e.key === 'ArrowLeft') setIdx(i => (i - 1 + total) % total);
-                    if (e.key === 'ArrowRight') setIdx(i => (i + 1) % total);
+                    if (e.key === 'ArrowLeft') { resetZoom(); setIdx(i => (i - 1 + total) % total); }
+                    if (e.key === 'ArrowRight') { resetZoom(); setIdx(i => (i + 1) % total); }
                     if (e.key === 'Escape') onClose();
                 };
                 window.addEventListener('keydown', onKey);
                 return () => window.removeEventListener('keydown', onKey);
             }, [total]);
+
+            const onWheel = (e) => {
+                e.preventDefault();
+                setScale(s => Math.min(Math.max(s - e.deltaY * 0.001, 1), 5));
+            };
+
+            const onTouchStart = (e) => {
+                if (e.touches.length === 2) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    lastPinchDist.current = Math.hypot(dx, dy);
+                } else if (e.touches.length === 1 && scale > 1) {
+                    isDragging.current = true;
+                    dragStart.current = { x: e.touches[0].clientX - translate.x, y: e.touches[0].clientY - translate.y };
+                }
+            };
+            const onTouchMove = (e) => {
+                e.preventDefault();
+                if (e.touches.length === 2 && lastPinchDist.current) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const dist = Math.hypot(dx, dy);
+                    const delta = dist / lastPinchDist.current;
+                    lastPinchDist.current = dist;
+                    setScale(s => Math.min(Math.max(s * delta, 1), 5));
+                } else if (e.touches.length === 1 && isDragging.current && dragStart.current) {
+                    setTranslate({ x: e.touches[0].clientX - dragStart.current.x, y: e.touches[0].clientY - dragStart.current.y });
+                }
+            };
+            const onTouchEnd = () => { lastPinchDist.current = null; isDragging.current = false; };
+            const onDblClick = (e) => { e.stopPropagation(); scale > 1 ? resetZoom() : setScale(2.5); };
+
             return (
-                <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={onClose}>
+                <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={scale > 1 ? null : onClose}>
                     <div className="relative max-w-lg w-full flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                        {total > 1 && (
+                        {total > 1 && scale === 1 && (
                             <button onClick={prev} className="flex-shrink-0 bg-black/50 hover:bg-black/70 text-white rounded-full p-2">
                                 <Icon name="chevron-left" className="h-6 w-6" />
                             </button>
                         )}
-                        <div className="flex-1 relative">
-                            <img src={urls[idx]} alt="Proof of delivery" className="w-full rounded-xl shadow-2xl" />
-                            {total > 1 && (
+                        <div className="flex-1 relative overflow-hidden rounded-xl" style={{touchAction:'none'}}
+                            onWheel={onWheel} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+                            <img
+                                src={urls[idx]} alt="Proof of delivery"
+                                onDoubleClick={onDblClick}
+                                style={{ transform: `scale(${scale}) translate(${translate.x/scale}px, ${translate.y/scale}px)`, transformOrigin: 'center', transition: isDragging.current ? 'none' : 'transform 0.15s', cursor: scale > 1 ? 'grab' : 'zoom-in', userSelect: 'none' }}
+                                className="w-full shadow-2xl"
+                                draggable={false}
+                            />
+                            {total > 1 && scale === 1 && (
                                 <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
                                     {urls.map((_, i) => (
-                                        <button key={i} onClick={() => setIdx(i)} className={`w-2 h-2 rounded-full transition-colors ${i === idx ? 'bg-white' : 'bg-white/40'}`} />
+                                        <button key={i} onClick={() => { resetZoom(); setIdx(i); }} className={`w-2 h-2 rounded-full transition-colors ${i === idx ? 'bg-white' : 'bg-white/40'}`} />
                                     ))}
                                 </div>
                             )}
+                            {scale > 1 && (
+                                <button onClick={resetZoom} className="absolute top-2 left-2 bg-black/50 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                    Reset zoom
+                                </button>
+                            )}
                         </div>
-                        {total > 1 && (
+                        {total > 1 && scale === 1 && (
                             <button onClick={next} className="flex-shrink-0 bg-black/50 hover:bg-black/70 text-white rounded-full p-2">
                                 <Icon name="chevron-right" className="h-6 w-6" />
                             </button>
