@@ -1439,10 +1439,12 @@
                 if (existingStop) {
                     await removeStop(existingStop.id);
                 } else {
-                    // Always geocode the specific address — stored latlng may be stale/wrong (e.g. client with multiple addresses)
-                    let finalLatLng = await getLatLngForAddress(client.address);
-                    if (finalLatLng && client.id && window.fbDb && user) {
-                        window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', client.id), { latlng: finalLatLng }).catch(()=>{});
+                    let finalLatLng = client.latlng || null;
+                    if (!finalLatLng) {
+                        finalLatLng = await getLatLngForAddress(client.address);
+                        if (finalLatLng && client.id && window.fbDb && user) {
+                            window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', client.id), { latlng: finalLatLng }).catch(()=>{});
+                        }
                     }
 
                     await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops'), {
@@ -2133,12 +2135,10 @@
             const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers', id)); };
             const updateDriver = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers', id), data); setEditingDriverId(null); };
             
-            const saveClient = async () => { 
-                if(clientFormName && clientFormAddress) { 
-                    let finalLatLng = clientFormLatLng;
-                    if (!finalLatLng) {
-                        finalLatLng = await getLatLngForAddress(clientFormAddress);
-                    }
+            const saveClient = async () => {
+                if(clientFormName && clientFormAddress) {
+                    // Always geocode the typed address — clientFormLatLng may be stale if user edited after autocomplete
+                    let finalLatLng = await getLatLngForAddress(clientFormAddress);
                     const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients');
                     const data = { name: clientFormName, address: clientFormAddress, latlng: finalLatLng };
 
