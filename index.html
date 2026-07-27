@@ -545,7 +545,11 @@
                     const isOptimized = !!routeData.duracion_estimada;
 
                     if (isOptimized && routeData.paradas.length > 0) {
-                        const waypoints = routeData.paradas.map(stop => ({ location: stop.direccion || stop.address, stopover: true }));
+                        const waypoints = routeData.paradas.map(stop => {
+                            const coord = parseCoord(stop.coord || stop.latlng);
+                            const location = coord ? new window.google.maps.LatLng(coord.lat, coord.lng) : (stop.direccion || stop.address);
+                            return { location, stopover: true };
+                        });
                         if (waypoints.length <= 25) {
                             directionsService.route({ 
                                 origin: baseAddress, destination: baseAddress, waypoints: waypoints, 
