@@ -1439,13 +1439,10 @@
                 if (existingStop) {
                     await removeStop(existingStop.id);
                 } else {
-                    let finalLatLng = client.latlng || null;
-                    if (!finalLatLng) {
-                        finalLatLng = await getLatLngForAddress(client.address);
-                        // Repara silenciosamente el cliente en la BBDD para que la proxima vez sea instantaneo
-                        if (finalLatLng && client.id && window.fbDb && user) {
-                            window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', client.id), { latlng: finalLatLng }).catch(()=>{});
-                        }
+                    // Always geocode the specific address — stored latlng may be stale/wrong (e.g. client with multiple addresses)
+                    let finalLatLng = await getLatLngForAddress(client.address);
+                    if (finalLatLng && client.id && window.fbDb && user) {
+                        window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', client.id), { latlng: finalLatLng }).catch(()=>{});
                     }
 
                     await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops'), {
