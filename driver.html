@@ -868,7 +868,7 @@
                 const pct = total > 0 ? Math.round((delivered / total) * 100) : 0;
                 const done = delivered === total && total > 0;
                 const [showGpsModal, setShowGpsModal] = useState(false);
-                const WAREHOUSE = '8070 NW 64th St, Miami, FL 33166';
+                const WAREHOUSE = r.base_address || '8350 Parkline Blvd, Orlando, FL 32809, USA';
                 const appleLink = stops.length > 0
                     ? `https://maps.apple.com/?${stops.map(s => `daddr=${encodeURIComponent(s.direccion || s.nombre || '')}`).join('&')}&daddr=${encodeURIComponent(WAREHOUSE)}&dirflg=d`
                     : null;
