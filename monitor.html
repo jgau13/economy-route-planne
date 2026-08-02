@@ -564,7 +564,7 @@
                         window.fbOnAuthStateChanged(window.fbAuth, async user => {
                             if (user && user.isAnonymous === false) {
                                 try {
-                                    const snap = await window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_users', user.uid));
+                                    const snap = await window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', dispatcherUid, 'monitor_users', user.uid));
                                     if (snap.exists() && snap.data().active === true) {
                                         setCurrentUser(user);
                                         setAccessRevoked(false);

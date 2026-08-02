@@ -1080,7 +1080,7 @@
             useEffect(() => {
                 if (!user || !window.fbDb || !window.fbOnSnapshot) return;
                 const unsub = window.fbOnSnapshot(
-                    window.fbCollection(window.fbDb, 'artifacts', appId, 'monitor_users'),
+                    window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users'),
                     snap => setMonitorUsers(snap.docs.map(d => ({ uid: d.id, ...d.data() })))
                 );
                 return () => unsub();
@@ -2344,7 +2344,7 @@
                 try {
                     const uid = await window.fbCreateMonitorUser(newMonitorEmail.trim(), newMonitorPassword);
                     await window.fbSetDoc(
-                        window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_users', uid),
+                        window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users', uid),
                         { email: newMonitorEmail.trim(), createdAt: new Date().toISOString(), active: true }
                     );
                     setNewMonitorEmail('');
@@ -2364,12 +2364,12 @@
 
             const revokeMonitorUser = async (uid) => {
                 if (!confirm('Revoke monitor access for this user?')) return;
-                await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_users', uid), { active: false });
+                await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users', uid), { active: false });
                 setMonitorUserMsg('Access revoked.');
             };
 
             const restoreMonitorUser = async (uid) => {
-                await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_users', uid), { active: true });
+                await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users', uid), { active: true });
                 setMonitorUserMsg('Access restored.');
             };
             const handleBackup = () => {
