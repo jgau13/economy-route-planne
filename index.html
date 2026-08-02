@@ -18,8 +18,8 @@
     <script src="https://unpkg.com/lucide@0.447.0/dist/umd/lucide.min.js"></script>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, getDocs, getDoc, setDoc, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         window.initializeFirebaseGlobally = (config) => {
@@ -54,7 +54,19 @@
                 window.fbLimit = limit;
                 window.fbWriteBatch = writeBatch;
                 
-                window.firebaseReady = true; 
+                window.fbCreateMonitorUser = async (email, password) => {
+                    const secondaryApp = initializeApp(config, `mu-${Date.now()}`);
+                    const secondaryAuth = getAuth(secondaryApp);
+                    try {
+                        const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+                        await signOut(secondaryAuth);
+                        return cred.user.uid;
+                    } finally {
+                        await deleteApp(secondaryApp);
+                    }
+                };
+
+                window.firebaseReady = true;
                 return true;
             } catch (e) {
                 console.error("❌ Firebase Initialization Error:", e);
@@ -914,8 +926,11 @@
             const [companyConfig, setCompanyConfig] = useState({ companyName: "ECONOMY SIGN SUPPLY", phone: "407-901-0900", address: "8350 PARKLINE BLVD, ORLANDO, FL" });
             const [newPin, setNewPin] = useState('');
             const [settingsMsg, setSettingsMsg] = useState('');
-            const [monitorPin, setMonitorPin] = useState('1234');
-            const [showMonitorPin, setShowMonitorPin] = useState(false);
+            const [monitorUsers, setMonitorUsers] = useState([]);
+            const [newMonitorEmail, setNewMonitorEmail] = useState('');
+            const [newMonitorPassword, setNewMonitorPassword] = useState('');
+            const [monitorUserMsg, setMonitorUserMsg] = useState('');
+            const [addingMonitorUser, setAddingMonitorUser] = useState(false);
             const [consolidatedRoutes, setConsolidatedRoutes] = useState({});
             const [consolidatingZone, setConsolidatingZone] = useState(null);
             const [consolidateDone, setConsolidateDone] = useState({});
@@ -1061,12 +1076,14 @@
                 window.fbSetDoc(ref, { groups: stopGroups }, { merge: false }).catch(() => {});
             }, [stopGroups, user]);
 
-            // Load monitor PIN (separate effect)
+            // Subscribe to monitor users
             useEffect(() => {
-                if (!user || !window.fbDb || !window.fbGetDoc) return;
-                window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', user.uid))
-                    .then(snap => { if (snap.exists() && snap.data().pin) setMonitorPin(snap.data().pin); })
-                    .catch(() => {});
+                if (!user || !window.fbDb || !window.fbOnSnapshot) return;
+                const unsub = window.fbOnSnapshot(
+                    window.fbCollection(window.fbDb, 'artifacts', appId, 'monitor_users'),
+                    snap => setMonitorUsers(snap.docs.map(d => ({ uid: d.id, ...d.data() })))
+                );
+                return () => unsub();
             }, [user, dbReady]);
 
             // --- FUNCIÓN DE UTILIDAD PARA OBTENER COORDENADAS UNA SOLA VEZ AL GUARDAR ---
@@ -2316,11 +2333,44 @@
             const saveSettings = async () => {
                 if (window.fbDb) {
                     await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'settings', 'config'), { companyConfig, baseAddress }, { merge: true });
-                    if (monitorPin.trim().length >= 4) {
-                        await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', user.uid), { pin: monitorPin.trim() }, { merge: true });
-                    }
                     alert("Settings saved!");
                 }
+            };
+
+            const addMonitorUser = async () => {
+                if (!newMonitorEmail || !newMonitorPassword) return;
+                setAddingMonitorUser(true);
+                setMonitorUserMsg('');
+                try {
+                    const uid = await window.fbCreateMonitorUser(newMonitorEmail.trim(), newMonitorPassword);
+                    await window.fbSetDoc(
+                        window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_users', uid),
+                        { email: newMonitorEmail.trim(), createdAt: new Date().toISOString(), active: true }
+                    );
+                    setNewMonitorEmail('');
+                    setNewMonitorPassword('');
+                    setMonitorUserMsg('User added successfully.');
+                } catch (e) {
+                    const map = {
+                        'auth/email-already-in-use': 'That email already has an account.',
+                        'auth/invalid-email':         'Invalid email address.',
+                        'auth/weak-password':         'Password must be at least 6 characters.',
+                    };
+                    setMonitorUserMsg(map[e.code] || ('Error: ' + e.message));
+                } finally {
+                    setAddingMonitorUser(false);
+                }
+            };
+
+            const revokeMonitorUser = async (uid) => {
+                if (!confirm('Revoke monitor access for this user?')) return;
+                await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_users', uid), { active: false });
+                setMonitorUserMsg('Access revoked.');
+            };
+
+            const restoreMonitorUser = async (uid) => {
+                await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_users', uid), { active: true });
+                setMonitorUserMsg('Access restored.');
             };
             const handleBackup = () => {
                 const data = { clients: clientDB, drivers, vehicles, stops: currentStops, settings: { companyConfig, baseAddress }, date: new Date().toISOString() };
@@ -3353,34 +3403,74 @@
 
                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                                     <h2 className="text-xl font-bold mb-4 border-b pb-2">Delivery Monitor Access</h2>
-                                    <div className="space-y-3">
-                                        <p className="text-sm text-slate-500">PIN that sales staff enter to access the Live Delivery Monitor.</p>
+                                    <div className="space-y-4">
+
+                                        {/* Monitor link */}
                                         <div>
-                                            <label className="block text-sm font-bold text-slate-500 mb-1">Monitor PIN (4+ digits)</label>
-                                            <div className="relative">
-                                                <input
-                                                    type={showMonitorPin ? 'text' : 'password'}
-                                                    inputMode="numeric"
-                                                    maxLength="8"
-                                                    className="w-full p-2 pr-10 border rounded font-mono text-lg tracking-widest"
-                                                    placeholder="1234"
-                                                    value={monitorPin}
-                                                    onChange={e => setMonitorPin(e.target.value.replace(/\D/g, ''))}
-                                                />
-                                                <button type="button" onClick={() => setShowMonitorPin(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                                                    <Icon name={showMonitorPin ? 'eye-off' : 'eye'} className="h-4 w-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <button onClick={saveSettings} className="bg-ess-blue text-white px-4 py-2 rounded font-bold w-full">Save Monitor PIN</button>
-                                        <div className="mt-3">
                                             <label className="block text-sm font-bold text-slate-500 mb-1">Monitor Link (share with sales staff)</label>
                                             <div className="flex gap-2 items-center">
                                                 <input readOnly value={`${window.location.origin}/monitor.html?d=${user?.uid || ''}`} className="flex-1 p-2 border rounded text-xs font-mono bg-slate-50 text-slate-600" onClick={e => e.target.select()} />
                                                 <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/monitor.html?d=${user?.uid || ''}`)} className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold text-slate-600 whitespace-nowrap">Copy</button>
                                             </div>
                                         </div>
-                                        <div className="mt-3 pt-3 border-t border-slate-100">
+
+                                        {/* Users list */}
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-500 mb-2">Monitor Users</label>
+                                            {monitorUsers.length === 0 ? (
+                                                <p className="text-xs text-slate-400 italic py-2">No monitor users yet. Add one below.</p>
+                                            ) : (
+                                                <div className="space-y-2 mb-1">
+                                                    {monitorUsers.map(u => (
+                                                        <div key={u.uid} className={`flex items-center justify-between px-3 py-2 rounded-lg border text-sm ${u.active ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-slate-50'}`}>
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${u.active ? 'bg-green-500' : 'bg-slate-300'}`} />
+                                                                <span className="font-medium text-slate-700 truncate">{u.email}</span>
+                                                                {!u.active && <span className="text-xs text-red-500 font-bold flex-shrink-0">Revoked</span>}
+                                                            </div>
+                                                            {u.active
+                                                                ? <button onClick={() => revokeMonitorUser(u.uid)} className="text-xs text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded hover:bg-red-50 flex-shrink-0 ml-2">Revoke</button>
+                                                                : <button onClick={() => restoreMonitorUser(u.uid)} className="text-xs text-green-600 hover:text-green-700 font-bold px-2 py-1 rounded hover:bg-green-50 flex-shrink-0 ml-2">Restore</button>
+                                                            }
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Add user form */}
+                                        <div className="pt-3 border-t border-slate-100 space-y-2">
+                                            <label className="block text-sm font-bold text-slate-500">Add New Monitor User</label>
+                                            <input
+                                                type="email"
+                                                placeholder="Email address"
+                                                value={newMonitorEmail}
+                                                onChange={e => { setNewMonitorEmail(e.target.value); setMonitorUserMsg(''); }}
+                                                className="w-full p-2 border rounded text-sm"
+                                            />
+                                            <input
+                                                type="password"
+                                                placeholder="Password (min. 6 characters)"
+                                                value={newMonitorPassword}
+                                                onChange={e => { setNewMonitorPassword(e.target.value); setMonitorUserMsg(''); }}
+                                                className="w-full p-2 border rounded text-sm"
+                                            />
+                                            <button
+                                                onClick={addMonitorUser}
+                                                disabled={addingMonitorUser || !newMonitorEmail || !newMonitorPassword}
+                                                className="bg-ess-blue text-white px-4 py-2 rounded font-bold w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {addingMonitorUser ? 'Adding…' : 'Add Monitor User'}
+                                            </button>
+                                            {monitorUserMsg && (
+                                                <p className={`text-xs font-bold ${monitorUserMsg.startsWith('Error') || monitorUserMsg.includes('already') || monitorUserMsg.includes('Invalid') || monitorUserMsg.includes('least') ? 'text-red-500' : 'text-green-600'}`}>
+                                                    {monitorUserMsg}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        {/* Driver URL */}
+                                        <div className="pt-3 border-t border-slate-100">
                                             <label className="block text-sm font-bold text-slate-500 mb-1">Driver App URL (drivers save this to their phone)</label>
                                             <p className="text-xs text-slate-400 mb-2">Share this once — drivers bookmark it as a PWA on their home screen and see their routes automatically.</p>
                                             <div className="flex gap-2 items-center">
@@ -3388,6 +3478,7 @@
                                                 <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/driver.html?company=${user?.uid || ''}`)} className="px-3 py-2 bg-ess-blue hover:bg-blue-700 text-white rounded text-xs font-bold whitespace-nowrap">Copy</button>
                                             </div>
                                         </div>
+
                                     </div>
                                 </div>
 

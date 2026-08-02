@@ -80,7 +80,7 @@
             return <span dangerouslySetInnerHTML={{ __html: svg }} style={{ display: 'contents' }} />;
         };
 
-        const LoginScreen = ({ onLogin, loading }) => {
+        const LoginScreen = ({ onLogin, loading, accessRevoked }) => {
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
             const [error, setError] = useState('');
@@ -143,12 +143,17 @@
                                 />
                             </div>
 
+                            {accessRevoked && !error && (
+                                <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-2.5 text-orange-700 text-xs font-bold text-center">
+                                    Your monitor access has been revoked. Contact the dispatcher.
+                                </div>
+                            )}
                             {error && (
                                 <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-red-600 text-xs font-bold text-center">
                                     {error}
                                 </div>
                             )}
-                            {loading && !error && (
+                            {loading && !error && !accessRevoked && (
                                 <p className="text-center text-slate-400 text-xs">Connecting…</p>
                             )}
 
@@ -499,6 +504,7 @@
             const lsKey = `ess_monitor_${dispatcherUid || 'default'}`;
             const [currentUser, setCurrentUser] = useState(null);
             const [authChecked, setAuthChecked] = useState(false);
+            const [accessRevoked, setAccessRevoked] = useState(false);
             const [firebaseReady, setFirebaseReady] = useState(false);
             const [configError, setConfigError] = useState(false);
             const [routes, setRoutes] = useState([]);
@@ -555,8 +561,24 @@
                             const t = setInterval(() => { if (window.firebaseMonitorReady) { clearInterval(t); r(); } }, 80);
                         });
 
-                        window.fbOnAuthStateChanged(window.fbAuth, user => {
-                            setCurrentUser(user && user.isAnonymous === false ? user : null);
+                        window.fbOnAuthStateChanged(window.fbAuth, async user => {
+                            if (user && user.isAnonymous === false) {
+                                try {
+                                    const snap = await window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_users', user.uid));
+                                    if (snap.exists() && snap.data().active === true) {
+                                        setCurrentUser(user);
+                                        setAccessRevoked(false);
+                                    } else {
+                                        await window.fbSignOut(window.fbAuth);
+                                        setCurrentUser(null);
+                                        setAccessRevoked(true);
+                                    }
+                                } catch {
+                                    setCurrentUser(user);
+                                }
+                            } else {
+                                setCurrentUser(null);
+                            }
                             setAuthChecked(true);
                         });
 
@@ -629,7 +651,7 @@
                 </div>
             );
 
-            if (!currentUser) return <LoginScreen onLogin={handleLogin} loading={!firebaseReady} />;
+            if (!currentUser) return <LoginScreen onLogin={handleLogin} loading={!firebaseReady} accessRevoked={accessRevoked} />;
 
             return (
                 <div className="min-h-screen bg-slate-100">
