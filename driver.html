@@ -81,6 +81,13 @@
 
         const AVATAR_COLORS = ['#3178A1','#74B745','#e67e22','#9b59b6','#e74c3c','#1abc9c','#c0392b','#2980b9'];
 
+        async function hashPin(pin) {
+            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin));
+            return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+        // PINs migrados tienen 64 chars hex; los viejos son exactamente 4 dígitos
+        const isPinPlainText = (stored) => /^\d{4}$/.test(stored);
+
         const Icon = ({ name, className = "" }) => {
             const [svg, setSvg] = useState(null);
             useEffect(() => {
@@ -615,13 +622,31 @@
                 setScreen('pin');
             };
 
-            const handlePin = (d) => {
+            const handlePin = async (d) => {
                 if (pinRef.current.length >= 4) return;
                 const next = pinRef.current + d;
                 pinRef.current = next;
                 setPinDigits(next);
                 if (next.length === 4) {
-                    if (next === (selectedDriver.pin || '0000')) {
+                    const stored = selectedDriver.pin || '0000';
+                    const plain  = isPinPlainText(stored);
+                    const match  = plain ? next === stored : (await hashPin(next)) === stored;
+                    if (match) {
+                        // Migrar PIN en texto plano → hash en Firestore
+                        if (plain) {
+                            hashPin(next).then(async hashed => {
+                                try {
+                                    const docRef = window.fbDoc(window.fbDb, 'artifacts', appId, 'driver_access', companyUid);
+                                    const snap = await window.fbGetDoc(docRef);
+                                    if (snap.exists()) {
+                                        const updated = (snap.data().drivers || []).map(dr =>
+                                            dr.id === selectedDriver.id ? { ...dr, pin: hashed } : dr
+                                        );
+                                        await window.fbSetDoc(docRef, { drivers: updated });
+                                    }
+                                } catch(e) { /* migración no bloquea el login */ }
+                            });
+                        }
                         localStorage.setItem(lsKey, JSON.stringify(selectedDriver));
                         pinRef.current = '';
                         setPinDigits('');
@@ -696,16 +721,17 @@
                     setNewPinB(next);
                     if (next.length === 4) {
                         if (next === newPinARef.current) {
-                            // Save new PIN
+                            // Save new PIN as SHA-256 hash
                             try {
+                                const hashed = await hashPin(next);
                                 const docRef = window.fbDoc(window.fbDb, 'artifacts', appId, 'driver_access', companyUid);
                                 const snap = await window.fbGetDoc(docRef);
                                 if (snap.exists()) {
                                     const updated = (snap.data().drivers || []).map(dr =>
-                                        dr.id === selectedDriver.id ? { ...dr, pin: next } : dr
+                                        dr.id === selectedDriver.id ? { ...dr, pin: hashed } : dr
                                     );
                                     await window.fbSetDoc(docRef, { drivers: updated });
-                                    const updatedDriver = { ...selectedDriver, pin: next };
+                                    const updatedDriver = { ...selectedDriver, pin: hashed };
                                     setSelectedDriver(updatedDriver);
                                     localStorage.setItem(lsKey, JSON.stringify(updatedDriver));
                                 }
