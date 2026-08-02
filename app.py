@@ -27,7 +27,24 @@ load_dotenv()
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__, static_folder=basedir, static_url_path='')
-CORS(app)
+
+ALLOWED_ORIGINS = [
+    "https://ess-route-planner.onrender.com",
+    "https://routes.economysignsupply.com",  # subdominio futuro
+    "https://economysignsupply.com",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+]
+CORS(app, origins=ALLOWED_ORIGINS)
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Frame-Options']        = 'SAMEORIGIN'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-XSS-Protection']       = '1; mode=block'
+    response.headers['Referrer-Policy']        = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy']     = 'geolocation=(self), camera=(self), microphone=()'
+    return response
 
 # =============================================================================
 # MANEJADORES DE ERROR
