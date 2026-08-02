@@ -2342,9 +2342,15 @@
                 setAddingMonitorUser(true);
                 setMonitorUserMsg('');
                 try {
-                    const uid = await window.fbCreateMonitorUser(newMonitorEmail.trim(), newMonitorPassword);
+                    // Try to create the auth account; if it already exists, that's fine
+                    try {
+                        await window.fbCreateMonitorUser(newMonitorEmail.trim(), newMonitorPassword);
+                    } catch (authErr) {
+                        if (authErr.code !== 'auth/email-already-in-use') throw authErr;
+                    }
+                    // Use email as doc key so existing accounts can still be added
                     await window.fbSetDoc(
-                        window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users', uid),
+                        window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users', newMonitorEmail.trim()),
                         { email: newMonitorEmail.trim(), createdAt: new Date().toISOString(), active: true }
                     );
                     setNewMonitorEmail('');
@@ -2352,9 +2358,8 @@
                     setMonitorUserMsg('User added successfully.');
                 } catch (e) {
                     const map = {
-                        'auth/email-already-in-use': 'That email already has an account.',
-                        'auth/invalid-email':         'Invalid email address.',
-                        'auth/weak-password':         'Password must be at least 6 characters.',
+                        'auth/invalid-email':  'Invalid email address.',
+                        'auth/weak-password':  'Password must be at least 6 characters.',
                     };
                     setMonitorUserMsg(map[e.code] || ('Error: ' + e.message));
                 } finally {
