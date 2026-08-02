@@ -15,7 +15,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signOut, setPersistence, inMemoryPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, onSnapshot, query, orderBy, doc, getDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         window.initFirebaseMonitor = (config) => {
@@ -26,7 +26,7 @@
 
                 window.fbAuth = auth;
                 window.fbDb = db;
-                window.fbSignInAnon = () => setPersistence(auth, inMemoryPersistence).then(() => signInAnonymously(auth));
+                window.fbSignInWithEmail = (email, password) => setPersistence(auth, browserLocalPersistence).then(() => signInWithEmailAndPassword(auth, email, password));
                 window.fbSignOut = signOut;
                 window.fbOnAuthStateChanged = onAuthStateChanged;
                 window.fbCollection = collection;
@@ -80,68 +80,87 @@
             return <span dangerouslySetInnerHTML={{ __html: svg }} style={{ display: 'contents' }} />;
         };
 
-        const PinScreen = ({ onUnlock, loading }) => {
-            const [digits, setDigits] = useState('');
-            const [shake, setShake] = useState(false);
+        const LoginScreen = ({ onLogin, loading }) => {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
             const [error, setError] = useState('');
+            const [busy, setBusy] = useState(false);
 
-            const press = (d) => {
-                if (digits.length >= 4) return;
-                setDigits(prev => prev + d);
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                if (!email || !password) return;
+                setBusy(true);
                 setError('');
-            };
-            const del = () => setDigits(prev => prev.slice(0, -1));
-
-            useEffect(() => {
-                if (digits.length === 4) {
-                    const result = onUnlock(digits);
-                    if (result === false) {
-                        setShake(true);
-                        setError('Incorrect PIN. Try again.');
-                        setTimeout(() => { setShake(false); setDigits(''); }, 600);
-                    }
+                try {
+                    await onLogin(email.trim(), password);
+                } catch (err) {
+                    const map = {
+                        'auth/invalid-credential':        'Incorrect email or password.',
+                        'auth/user-not-found':            'No account found with that email.',
+                        'auth/wrong-password':            'Incorrect password.',
+                        'auth/invalid-email':             'Invalid email address.',
+                        'auth/too-many-requests':         'Too many attempts. Try again later.',
+                        'auth/network-request-failed':    'Network error. Check your connection.',
+                    };
+                    setError(map[err.code] || 'Sign-in failed. Try again.');
+                } finally {
+                    setBusy(false);
                 }
-            }, [digits]);
+            };
 
             return (
                 <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-xs border border-slate-200 overflow-hidden">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm border border-slate-200 overflow-hidden">
                         <div className="bg-ess-dark px-6 pt-8 pb-6 text-center">
                             <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-10 mx-auto mb-4 brightness-0 invert" />
                             <h1 className="font-bold text-white text-lg">Delivery Monitor</h1>
-                            <p className="text-blue-200 text-xs mt-1">Enter your PIN to continue</p>
+                            <p className="text-blue-200 text-xs mt-1">Sign in to access the live monitor</p>
                         </div>
 
-                        <div className="p-6">
-                            {/* PIN dots */}
-                            <div className={`flex justify-center gap-4 mb-6 ${shake ? 'animate-bounce' : ''}`}>
-                                {[0,1,2,3].map(i => (
-                                    <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all duration-150 ${i < digits.length ? 'bg-ess-blue border-ess-blue scale-110' : 'border-slate-300 bg-white'}`} />
-                                ))}
+                        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Email</label>
+                                <input
+                                    type="email"
+                                    autoComplete="username"
+                                    value={email}
+                                    onChange={e => setEmail(e.target.value)}
+                                    placeholder="dispatcher@example.com"
+                                    required
+                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-ess-blue focus:border-transparent"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Password</label>
+                                <input
+                                    type="password"
+                                    autoComplete="current-password"
+                                    value={password}
+                                    onChange={e => setPassword(e.target.value)}
+                                    placeholder="••••••••"
+                                    required
+                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-ess-blue focus:border-transparent"
+                                />
                             </div>
 
-                            {error && <p className="text-center text-red-500 text-xs font-bold mb-4">{error}</p>}
-                            {loading && <p className="text-center text-slate-400 text-xs mb-4">Connecting…</p>}
+                            {error && (
+                                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-red-600 text-xs font-bold text-center">
+                                    {error}
+                                </div>
+                            )}
+                            {loading && !error && (
+                                <p className="text-center text-slate-400 text-xs">Connecting…</p>
+                            )}
 
-                            {/* Keypad */}
-                            <div className="grid grid-cols-3 gap-3">
-                                {[1,2,3,4,5,6,7,8,9].map(n => (
-                                    <button key={n} onClick={() => press(String(n))}
-                                        className="py-4 rounded-xl bg-slate-50 hover:bg-ess-blue hover:text-white active:scale-95 font-bold text-xl text-slate-700 transition-all border border-slate-200">
-                                        {n}
-                                    </button>
-                                ))}
-                                <div />
-                                <button onClick={() => press('0')}
-                                    className="py-4 rounded-xl bg-slate-50 hover:bg-ess-blue hover:text-white active:scale-95 font-bold text-xl text-slate-700 transition-all border border-slate-200">
-                                    0
-                                </button>
-                                <button onClick={del}
-                                    className="py-4 rounded-xl bg-slate-50 hover:bg-red-50 hover:text-red-500 active:scale-95 font-bold text-slate-400 transition-all border border-slate-200 flex items-center justify-center">
-                                    ⌫
-                                </button>
-                            </div>
-                        </div>
+                            <button
+                                type="submit"
+                                disabled={busy || loading}
+                                className="w-full py-3 rounded-xl bg-ess-blue hover:bg-ess-dark text-white font-bold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                                {busy ? <span className="loader" style={{ width: 16, height: 16, borderWidth: 2 }} /> : null}
+                                {busy ? 'Signing in…' : 'Sign In'}
+                            </button>
+                        </form>
                     </div>
                 </div>
             );
@@ -478,9 +497,9 @@
 
         function MonitorApp() {
             const lsKey = `ess_monitor_${dispatcherUid || 'default'}`;
-            const [pinUnlocked, setPinUnlocked] = useState(() => localStorage.getItem(lsKey) === '1');
+            const [currentUser, setCurrentUser] = useState(null);
+            const [authChecked, setAuthChecked] = useState(false);
             const [firebaseReady, setFirebaseReady] = useState(false);
-            const [storedPin, setStoredPin] = useState(null);
             const [configError, setConfigError] = useState(false);
             const [routes, setRoutes] = useState([]);
             const [filterDate, setFilterDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -523,7 +542,7 @@
                 await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), { stops });
             };
 
-            // Init Firebase + anonymous auth + load PIN
+            // Init Firebase then listen for auth state
             useEffect(() => {
                 const init = async () => {
                     try {
@@ -536,34 +555,29 @@
                             const t = setInterval(() => { if (window.firebaseMonitorReady) { clearInterval(t); r(); } }, 80);
                         });
 
-                        await window.fbSignInAnon();
+                        window.fbOnAuthStateChanged(window.fbAuth, user => {
+                            setCurrentUser(user && user.isAnonymous === false ? user : null);
+                            setAuthChecked(true);
+                        });
 
-                        // Load PIN from Firestore (per dispatcher uid)
-                        const pinDocId = dispatcherUid || 'settings';
-                        const snap = await window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', pinDocId));
-                        setStoredPin(snap.exists() ? (snap.data().pin || '1234') : '1234');
                         setFirebaseReady(true);
                     } catch {
                         setConfigError(true);
                         setFirebaseReady(true);
+                        setAuthChecked(true);
                     }
                 };
                 init();
             }, []);
 
-            const handlePinAttempt = (digits) => {
-                const correct = storedPin || '1234';
-                if (digits === correct) {
-                    localStorage.setItem(lsKey, '1');
-                    setPinUnlocked(true);
-                } else {
-                    return false;
-                }
+            const handleLogin = async (email, password) => {
+                await window.fbSignInWithEmail(email, password);
+                // onAuthStateChanged will update currentUser
             };
 
-            // Subscribe to active_routes when unlocked
+            // Subscribe to active_routes when logged in
             useEffect(() => {
-                if (!pinUnlocked || !firebaseReady || !window.fbDb) return;
+                if (!currentUser || !firebaseReady || !window.fbDb) return;
                 unsubRef.current?.();
 
                 const colRef = window.fbCollection(window.fbDb, 'artifacts', appId, 'active_routes');
@@ -577,11 +591,10 @@
                 });
 
                 return () => unsubRef.current?.();
-            }, [pinUnlocked, firebaseReady]);
+            }, [currentUser, firebaseReady]);
 
             const handleLogout = () => {
-                localStorage.removeItem(lsKey);
-                setPinUnlocked(false);
+                window.fbSignOut(window.fbAuth);
             };
 
             // Filter by selected date + search term
@@ -599,8 +612,8 @@
             const activeCount = filtered.filter(r => (r.stops || []).some(s => !s.delivered)).length;
             const doneCount = filtered.filter(r => (r.stops || []).length > 0 && (r.stops || []).every(s => s.delivered)).length;
 
-            // PIN gate
-            if (!firebaseReady) return (
+            // Auth gates
+            if (!firebaseReady || !authChecked) return (
                 <div className="min-h-screen flex items-center justify-center">
                     <div className="loader" />
                 </div>
@@ -616,7 +629,7 @@
                 </div>
             );
 
-            if (!pinUnlocked) return <PinScreen onUnlock={handlePinAttempt} loading={!storedPin} />;
+            if (!currentUser) return <LoginScreen onLogin={handleLogin} loading={!firebaseReady} />;
 
             return (
                 <div className="min-h-screen bg-slate-100">
