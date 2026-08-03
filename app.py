@@ -704,10 +704,10 @@ def optimizar_restantes():
     fixed = paradas[0]
     loose = paradas[1:]
 
-    new_order = resolver_tsp_parcial(fixed, loose, base, dwell)
+    new_order = resolver_tsp_parcial(fixed, loose, base, dwell)  # already includes fixed as first element
     if not new_order: return jsonify({"error": "Fallo re-optimizando"}), 500
 
-    return recalcular_ruta_internal([fixed] + new_order, base, dwell, base_latlng)
+    return recalcular_ruta_internal(new_order, base, dwell, base_latlng)
 
 def recalcular_ruta_internal(paradas_objs, base, dwell_time, base_latlng=None):
     if base_latlng and base_latlng.get('lat') and base_latlng.get('lng'):
@@ -817,7 +817,9 @@ def resolver_tsp_parcial(fixed, loose, base, dwell):
             ordered.append({
                 "nombre": info['nombre'], "direccion": info['direccion'],
                 "clean_address": info['clean_address'], "place_id": info.get('place_id'),
-                "invoices": info.get('invoices',''), "pieces": info.get('pieces','')
+                "latlng": info.get('latlng',''), "coord": info.get('coord',''),
+                "invoices": info.get('invoices',''), "pieces": info.get('pieces',''),
+                "notes": info.get('notes','')
             })
         index = sol.Value(routing.NextVar(index))
         
