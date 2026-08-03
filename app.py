@@ -382,11 +382,12 @@ def crear_modelo_datos(items, n_vans, base_addr):
     if base_addr:
         # Pasamos la conexión reutilizable; base address no requiere ZIP estricto
         c, f, i = obtener_datos_geo(base_addr, db_connection=conn, require_zip=False)
-        if c: 
+        if c:
             base_coord, base_fmt, base_id = c, f, i
         else:
-            if conn: conn.close()
-            return {"invalidas": [f"BASE: {base_addr}"]}
+            # Si falla la geocodificación de la base, usar coordenadas por defecto
+            print(f"⚠️ No se pudo geocodificar la base '{base_addr}', usando coordenadas por defecto.", file=sys.stderr)
+            base_fmt = base_addr
 
     puntos_coords = [base_coord]
     paradas_validas = []
