@@ -687,7 +687,7 @@ def optimizar():
 @app.route('/recalcular', methods=['POST'])
 def recalcular():
     req = request.json
-    return recalcular_ruta_internal(req.get('paradas', []), req.get('base_address'), int(req.get('dwell_time', 6)))
+    return recalcular_ruta_internal(req.get('paradas', []), req.get('base_address'), int(req.get('dwell_time', 6)), req.get('base_latlng'))
 
 @app.route('/optimizar_restantes', methods=['POST'])
 def optimizar_restantes():
@@ -727,7 +727,17 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time, base_latlng=None):
 
     for s in paradas_objs:
         addr = s.get('direccion') or s.get('address')
-        c, f, i = obtener_datos_geo(addr, db_connection=conn)
+        ll = s.get('latlng') or s.get('coord')
+        if ll and isinstance(ll, dict) and ll.get('lat') and ll.get('lng'):
+            c = f"{ll['lat']},{ll['lng']}"
+            f = addr
+            i = s.get('place_id', '')
+        elif ll and isinstance(ll, str) and ',' in ll:
+            c = ll
+            f = addr
+            i = s.get('place_id', '')
+        else:
+            c, f, i = obtener_datos_geo(addr, db_connection=conn)
         if c:
             coords.append(c)
             s_new = s.copy()
