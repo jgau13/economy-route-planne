@@ -713,7 +713,9 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time, base_latlng=None):
         fmt_base = base
     else:
         c_base, fmt_base, _ = obtener_datos_geo(base, require_zip=False)
-    if not c_base: return jsonify({"error": "Base invalida"}), 400
+    if not c_base:
+        c_base = ALMACEN_COORD
+        fmt_base = base or ''
     
     coords = [c_base]
     clean_stops = []
