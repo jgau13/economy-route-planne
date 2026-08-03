@@ -413,8 +413,10 @@ def crear_modelo_datos(items, n_vans, base_addr, base_latlng=None):
                 "direccion": addr,
                 "clean_address": f,
                 "place_id": i,
+                "latlng": c,
                 "invoices": it.get('invoices',''),
-                "pieces": it.get('pieces','')
+                "pieces": it.get('pieces',''),
+                "notes": it.get('notes','')
             })
         else:
             paradas_malas.append(addr)
