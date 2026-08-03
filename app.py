@@ -117,7 +117,7 @@ init_db()
 # FUNCIONES LÓGICAS
 # =============================================================================
 
-def obtener_datos_geo(direccion, db_connection=None):
+def obtener_datos_geo(direccion, db_connection=None, require_zip=True):
     """
     Obtiene Lat/Lng. 
     OPTIMIZADO: Acepta una conexión DB existente para no abrir/cerrar repetidamente.
@@ -145,11 +145,7 @@ def obtener_datos_geo(direccion, db_connection=None):
         
         if res_db:
             formatted_addr = res_db[1]
-            # Validación simple de zip code
-            if not re.search(r'\b\d{5}\b', formatted_addr):
-                # print(f"⚠️ Dirección en caché rechazada (Falta Zip): {formatted_addr}", file=sys.stderr)
-                pass
-            else:
+            if not require_zip or re.search(r'\b\d{5}\b', formatted_addr):
                 return res_db[0], res_db[1], res_db[2]
         
         # Si no está en DB, consultamos API (Solo si tenemos gmaps)
@@ -171,8 +167,7 @@ def obtener_datos_geo(direccion, db_connection=None):
             
             formatted_addr = res.get('formatted_address', direccion)
             
-            if not has_zip:
-                 # print(f"⚠️ Dirección API rechazada (Falta Zip): {formatted_addr}", file=sys.stderr)
+            if require_zip and not has_zip:
                  return None, None, None
 
             loc = res['geometry']['location']
@@ -385,8 +380,8 @@ def crear_modelo_datos(items, n_vans, base_addr):
         print("❌ Error abriendo DB en batch", file=sys.stderr)
 
     if base_addr:
-        # Pasamos la conexión reutilizable
-        c, f, i = obtener_datos_geo(base_addr, db_connection=conn)
+        # Pasamos la conexión reutilizable; base address no requiere ZIP estricto
+        c, f, i = obtener_datos_geo(base_addr, db_connection=conn, require_zip=False)
         if c: 
             base_coord, base_fmt, base_id = c, f, i
         else:
