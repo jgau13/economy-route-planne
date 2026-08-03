@@ -1,0 +1,3174 @@
+
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- CACHÉ GLOBAL DE GEOCODING ---
+        window.geocodeCache = window.geocodeCache || {};
+
+        // --- EXTENDED PALETTE FOR UNIQUE ZONES (40 Custom Colors) ---
+        const EXTENDED_PALETTE = [
+            "#E53935", "#F4511E", "#FB8C00", "#FDD835", "#C0CA33", "#7CB342", "#43A047", "#00C853",
+            "#00BFA5", "#00ACC1", "#039BE5", "#1E88E5", "#3949AB", "#5E35B1", "#8E24AA", "#D81B60",
+            "#EC407A", "#F06292", "#AD1457", "#6A1B9A", "#651FFF", "#3D5AFE", "#2979FF", "#00E5FF",
+            "#1DE9B6", "#76FF03", "#C6FF00", "#FFEA00", "#FFC400", "#FF9100", "#FF1744", "#FF6D00",
+            "#AEEA00", "#00E676", "#00B0FF", "#304FFE", "#7C4DFF", "#E040FB", "#F50057", "#FF4081"
+        ];
+        
+        // --- DETERMINISTIC COLOR GENERATOR ---
+        const getZoneColor = (name) => {
+            if (!name) return "#000000";
+            let hash = 0;
+            const str = name.toUpperCase().trim();
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const index = Math.abs(hash) % EXTENDED_PALETTE.length;
+            return EXTENDED_PALETTE[index];
+        };
+
+        const ConfigErrorScreen = ({ errorDetails }) => (
+            <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-lg border-l-4 border-red-500">
+                    <h1 className="text-2xl font-bold text-red-600 mb-2 flex items-center gap-2"><Icon name="alert-triangle" className="h-8 w-8" /> System Error</h1>
+                    <p className="text-slate-600 mb-4 font-bold">Connection failed.</p>
+                    <div className="bg-red-50 p-4 rounded-lg border border-red-200 text-sm font-mono text-red-800 mb-4 break-words">Error: {errorDetails || "Unknown Configuration Error"}</div>
+                    <button onClick={() => window.location.reload()} className="mt-6 w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-900 transition-colors">Retry Connection</button>
+                </div>
+            </div>
+        );
+
+        const LoginScreen = () => {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [showPassword, setShowPassword] = useState(false);
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleLogin = async (e) => {
+                e.preventDefault(); setLoading(true); setError('');
+                if (!window.fbSignIn) { setError("System not ready. Please refresh."); setLoading(false); return; }
+                try { await window.fbSignIn(window.fbAuth, email, password); } 
+                catch (err) { console.error(err); setError("Access Denied. Check credentials."); setLoading(false); }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-200">
+                        <div className="text-center mb-8">
+                            <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-16 mx-auto mb-4"/>
+                            <h1 className="text-2xl font-bold text-ess-blue">Route Planner</h1>
+                        </div>
+                        <form onSubmit={handleLogin} className="space-y-4">
+                            <div><label className="block text-sm font-bold text-slate-700 mb-1">Email</label><input type="email" required className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-ess-blue outline-none" value={email} onChange={e => setEmail(e.target.value)} /></div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">Password</label>
+                                <div className="relative">
+                                    <input type={showPassword ? 'text' : 'password'} required className="w-full p-3 pr-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-ess-blue outline-none" value={password} onChange={e => setPassword(e.target.value)} />
+                                    <button type="button" onClick={() => setShowPassword(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                        <Icon name={showPassword ? 'eye-off' : 'eye'} className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            </div>
+                            {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg font-medium">{error}</div>}
+                            <button type="submit" disabled={loading} className="w-full bg-ess-blue text-white py-3 rounded-lg font-bold hover:bg-sky-700 transition-colors flex justify-center">{loading ? <div className="loader"></div> : "Sign In"}</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const Icon = ({ name, className = "" }) => {
+            const [svgHtml, setSvgHtml] = useState(null);
+            useEffect(() => {
+                if (typeof lucide === 'undefined' || !lucide.icons) return;
+                const iconName = name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+                const iconData = lucide.icons[iconName] || lucide.icons[name];
+                if (iconData) { const el = lucide.createElement(iconData); el.setAttribute('class', className); setSvgHtml(el.outerHTML); }
+            }, [name, className]);
+            if (!svgHtml) return <span className={className}></span>;
+            return <span dangerouslySetInnerHTML={{ __html: svgHtml }} style={{ display: 'contents' }} />;
+        };
+
+        const GoogleAddressInput = ({ value, onChange, placeholder, className, disabled, isLoaded, onKeyDown, inputRef: propInputRef, onSelection }) => {
+            const innerRef = useRef(null);
+            const inputRef = propInputRef || innerRef;
+            const onChangeRef = useRef(onChange);
+            
+            useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+
+            useEffect(() => {
+                if (!isLoaded) return;
+                const attemptInitialization = () => {
+                    if (!window.google || !window.google.maps || !window.google.maps.places) { setTimeout(attemptInitialization, 300); return; }
+                    if (!inputRef.current) return;
+                    try {
+                        const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, { types: ['geocode', 'establishment'], componentRestrictions: { country: "us" }, fields: ['formatted_address', 'name', 'geometry'] });
+                        autocomplete.addListener("place_changed", () => { 
+                            const place = autocomplete.getPlace(); 
+                            const address = place.formatted_address || place.name;
+                            
+                            // EXTRAER Y ENVIAR COORDENADAS PARA GUARDAR EN DB
+                            let latlng = null;
+                            if (place.geometry && place.geometry.location) {
+                                latlng = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
+                            }
+
+                            if (address) { 
+                                onChangeRef.current({ target: { value: address } }); 
+                                if(onSelection) onSelection(latlng);
+                            }
+                        });
+                    } catch (e) { setTimeout(attemptInitialization, 500); }
+                };
+                attemptInitialization();
+            }, [isLoaded]);
+            
+            return <input ref={inputRef} type="text" value={value} onChange={onChange} onKeyDown={onKeyDown} className={className} placeholder={placeholder} disabled={disabled} autoComplete="off" />;
+        };
+
+        const GlobalMapView = ({ routes, baseAddress, enableDrawing = false, onStopsSelected = null, onMarkerClick = null }) => {
+            const mapRef = useRef(null);
+            const googleMapRef = useRef(null);
+            const markersRef = useRef([]); 
+            const renderersRef = useRef([]); 
+            const infoWindowRef = useRef(null); 
+            const geocoderRef = useRef(null);
+            const baseLocCache = useRef(null); // CACHÉ PERSISTENTE PARA LA BASE
+            const [mapReady, setMapReady] = useState(false);
+            const [activeDrawMode, setActiveDrawMode] = useState('lasso');
+            const activeModeRef = useRef('lasso');
+            const isDrawingRectRef = useRef(false);
+            const rectStartRef = useRef(null);
+            const drawShapeRef = useRef(null);
+            const polygonPointsRef = useRef([]);
+            const isLassoRef = useRef(false);
+            const onMarkerClickRef = useRef(onMarkerClick);
+
+            useEffect(() => {
+                onMarkerClickRef.current = onMarkerClick;
+            }, [onMarkerClick]);
+
+            const onStopsSelectedRef = useRef(onStopsSelected);
+            useEffect(() => { onStopsSelectedRef.current = onStopsSelected; }, [onStopsSelected]);
+
+            const setDrawMode = (mode) => {
+                setActiveDrawMode(mode);
+                activeModeRef.current = mode;
+                // Limpiar dibujo en progreso
+                polygonPointsRef.current = [];
+                isDrawingRectRef.current = false;
+                if (drawShapeRef.current) { drawShapeRef.current.setMap(null); drawShapeRef.current = null; }
+                if (googleMapRef.current) {
+                    const cursor = mode === 'hand' ? '' : 'crosshair';
+                    googleMapRef.current.setOptions({ draggable: true, disableDoubleClickZoom: false, draggableCursor: cursor });
+                }
+            };
+
+            // Shortcuts: Shift+H hand, Shift+P polygon, Shift+S rectangle
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (!enableDrawing || !mapReady) return;
+                    if (e.shiftKey) {
+                        switch(e.key.toLowerCase()) {
+                            case 'h': setDrawMode('hand'); break;
+                            case 'p': setDrawMode('polygon'); break;
+                            case 's': setDrawMode('rectangle'); break;
+                            case 'f': setDrawMode('lasso'); break;
+                        }
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [enableDrawing, mapReady]);
+
+            // Custom drawing via native Google Maps events (DrawingManager removido en v3.65)
+            useEffect(() => {
+                if (!window.google || !googleMapRef.current || !mapReady || !enableDrawing) return;
+                const map = googleMapRef.current;
+                map.setOptions({ draggableCursor: 'crosshair' }); // modo polygon por defecto
+
+                const listeners = [];
+
+                // MOUSEDOWN: inicia rectangle o lasso
+                listeners.push(map.addListener('mousedown', (e) => {
+                    if (activeModeRef.current === 'rectangle') {
+                        isDrawingRectRef.current = true;
+                        rectStartRef.current = e.latLng;
+                        map.setOptions({ draggable: false, disableDoubleClickZoom: true });
+                    } else if (activeModeRef.current === 'lasso') {
+                        isLassoRef.current = true;
+                        polygonPointsRef.current = [e.latLng];
+                        map.setOptions({ draggable: false, disableDoubleClickZoom: true });
+                    }
+                }));
+
+                // MOUSEMOVE: actualiza rectangle o traza lasso
+                listeners.push(map.addListener('mousemove', (e) => {
+                    if (activeModeRef.current === 'rectangle' && isDrawingRectRef.current) {
+                        if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                        const start = rectStartRef.current;
+                        drawShapeRef.current = new window.google.maps.Rectangle({
+                            bounds: new window.google.maps.LatLngBounds(
+                                { lat: Math.min(start.lat(), e.latLng.lat()), lng: Math.min(start.lng(), e.latLng.lng()) },
+                                { lat: Math.max(start.lat(), e.latLng.lat()), lng: Math.max(start.lng(), e.latLng.lng()) }
+                            ),
+                            fillColor: '#1b6e9b', fillOpacity: 0.2, strokeWeight: 2, strokeColor: '#1b6e9b', clickable: false, map
+                        });
+                    } else if (activeModeRef.current === 'lasso' && isLassoRef.current) {
+                        polygonPointsRef.current.push(e.latLng);
+                        if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                        const pts = polygonPointsRef.current;
+                        if (pts.length >= 3) {
+                            drawShapeRef.current = new window.google.maps.Polygon({
+                                paths: pts, fillColor: '#1b6e9b', fillOpacity: 0.2,
+                                strokeWeight: 2, strokeColor: '#1b6e9b', clickable: false, map
+                            });
+                        } else {
+                            drawShapeRef.current = new window.google.maps.Polyline({
+                                path: pts, strokeColor: '#1b6e9b', strokeWeight: 2, clickable: false, map
+                            });
+                        }
+                    }
+                }));
+
+                // MOUSEUP: finaliza rectangle o lasso y selecciona markers
+                listeners.push(map.addListener('mouseup', () => {
+                    map.setOptions({ draggable: true, disableDoubleClickZoom: false });
+                    if (activeModeRef.current === 'rectangle' && isDrawingRectRef.current) {
+                        isDrawingRectRef.current = false;
+                        if (drawShapeRef.current) {
+                            const bounds = drawShapeRef.current.getBounds();
+                            const selected = [];
+                            markersRef.current.forEach(m => {
+                                if (m.customInfo && bounds.contains(m.getPosition())) selected.push(m.customInfo.originalIndex);
+                            });
+                            if (onStopsSelectedRef.current) onStopsSelectedRef.current(selected.sort((a,b) => a-b));
+                            setTimeout(() => { if (drawShapeRef.current) { drawShapeRef.current.setMap(null); drawShapeRef.current = null; } }, 600);
+                        }
+                    } else if (activeModeRef.current === 'lasso' && isLassoRef.current) {
+                        isLassoRef.current = false;
+                        const pts = [...polygonPointsRef.current];
+                        polygonPointsRef.current = [];
+                        if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                        if (pts.length >= 3) {
+                            const closedPoly = new window.google.maps.Polygon({ paths: pts, map });
+                            const selected = [];
+                            markersRef.current.forEach(m => {
+                                if (m.customInfo && window.google.maps.geometry.poly.containsLocation(m.getPosition(), closedPoly)) {
+                                    selected.push(m.customInfo.originalIndex);
+                                }
+                            });
+                            if (onStopsSelectedRef.current) onStopsSelectedRef.current(selected.sort((a,b) => a-b));
+                            setTimeout(() => { closedPoly.setMap(null); drawShapeRef.current = null; }, 600);
+                        }
+                    }
+                }));
+
+                // POLYGON: click para agregar vértices, doble-click para cerrar
+                listeners.push(map.addListener('click', (e) => {
+                    if (activeModeRef.current !== 'polygon') return;
+                    polygonPointsRef.current.push(e.latLng);
+                    if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                    const pts = polygonPointsRef.current;
+                    if (pts.length >= 3) {
+                        drawShapeRef.current = new window.google.maps.Polygon({
+                            paths: pts, fillColor: '#1b6e9b', fillOpacity: 0.2,
+                            strokeWeight: 2, strokeColor: '#1b6e9b', clickable: false, map
+                        });
+                    } else {
+                        drawShapeRef.current = new window.google.maps.Polyline({
+                            path: pts, strokeColor: '#1b6e9b', strokeWeight: 2, clickable: false, map
+                        });
+                    }
+                }));
+
+                listeners.push(map.addListener('dblclick', () => {
+                    if (activeModeRef.current !== 'polygon' || polygonPointsRef.current.length < 3) return;
+                    const pts = [...polygonPointsRef.current];
+                    polygonPointsRef.current = [];
+                    if (drawShapeRef.current) drawShapeRef.current.setMap(null);
+                    const closedPoly = new window.google.maps.Polygon({ paths: pts, map });
+                    const selected = [];
+                    markersRef.current.forEach(m => {
+                        if (m.customInfo && window.google.maps.geometry.poly.containsLocation(m.getPosition(), closedPoly)) {
+                            selected.push(m.customInfo.originalIndex);
+                        }
+                    });
+                    if (onStopsSelectedRef.current) onStopsSelectedRef.current(selected.sort((a,b) => a-b));
+                    setTimeout(() => { closedPoly.setMap(null); drawShapeRef.current = null; }, 600);
+                }));
+
+                return () => {
+                    listeners.forEach(l => window.google.maps.event.removeListener(l));
+                    if (drawShapeRef.current) { drawShapeRef.current.setMap(null); drawShapeRef.current = null; }
+                };
+            }, [enableDrawing, mapReady]);
+
+            useEffect(() => {
+                if (!window.google || !mapRef.current) return;
+
+                if (!googleMapRef.current) {
+                    googleMapRef.current = new window.google.maps.Map(mapRef.current, { 
+                        zoom: 10, center: { lat: 28.5383, lng: -81.3792 }, 
+                        mapTypeControl: false, streetViewControl: false,
+                        fullscreenControl: false, gestureHandling: 'greedy'
+                    });
+                    infoWindowRef.current = new window.google.maps.InfoWindow();
+                    geocoderRef.current = new window.google.maps.Geocoder();
+                    setMapReady(true);
+                }
+                const map = googleMapRef.current;
+                const directionsService = new window.google.maps.DirectionsService();
+                const bounds = new window.google.maps.LatLngBounds();
+
+                markersRef.current.forEach(m => m.setMap(null));
+                markersRef.current = [];
+                renderersRef.current.forEach(r => r.setMap(null));
+                renderersRef.current = [];
+
+                const getPinIcon = (color) => ({
+                    path: "M 0,0 C -2,-20 -10,-22 -10,-30 A 10,10 0 1,1 10,-30 C 10,-22 2,-20 0,0 z",
+                    fillColor: color, fillOpacity: 1, strokeWeight: 1, strokeColor: "#ffffff", scale: 1.2,
+                    labelOrigin: new window.google.maps.Point(0, -30)
+                });
+
+                const addMarker = (location, title, label, color, content, originalIndex) => {
+                    const marker = new window.google.maps.Marker({
+                        position: location, map: map,
+                        label: { text: label, color: "white", fontWeight: "bold", fontSize: "11px" },
+                        icon: getPinIcon(color), title: title,
+                        zIndex: 100
+                    });
+                    marker.customInfo = { originalIndex: originalIndex };
+                    
+                    marker.addListener("click", (e) => { 
+                        if (e.domEvent && e.domEvent.shiftKey && onMarkerClickRef.current) {
+                            onMarkerClickRef.current(originalIndex);
+                        } else {
+                            infoWindowRef.current.setContent(content); 
+                            infoWindowRef.current.open(map, marker); 
+                        }
+                    });
+                    
+                    markersRef.current.push(marker);
+                    bounds.extend(location);
+                    map.fitBounds(bounds);
+                };
+
+                const parseCoord = (coordData) => {
+                    if (!coordData) return null;
+                    if (typeof coordData === 'string') {
+                        const [lat, lng] = coordData.split(',').map(Number);
+                        if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+                    } else if (typeof coordData === 'object' && coordData.lat !== undefined && coordData.lng !== undefined) {
+                        return { lat: Number(coordData.lat), lng: Number(coordData.lng) };
+                    }
+                    return null;
+                };
+
+                // FUNCIÓN DE CACHÉ INTERNA PARA REDUCIR CONSUMO DE API
+                const geocodeAddressCached = (address, callback) => {
+                    if (!address) return;
+                    if (window.geocodeCache[address]) {
+                        callback(window.geocodeCache[address]);
+                        return;
+                    }
+                    if (geocoderRef.current) {
+                        geocoderRef.current.geocode({ address }, (results, status) => {
+                            if (status === 'OK' && results[0]) {
+                                window.geocodeCache[address] = results[0].geometry.location;
+                                callback(results[0].geometry.location);
+                            } else {
+                                console.warn("No se pudo resolver la dirección:", address, status);
+                            }
+                        });
+                    }
+                };
+
+                // DIBUJAR ALMACÉN CON CACHÉ GLOBAL
+                if (baseAddress) {
+                    geocodeAddressCached(baseAddress, (location) => {
+                        const m = new window.google.maps.Marker({
+                            position: location, map: map,
+                            icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: "#000", fillOpacity: 1, strokeWeight: 2, strokeColor: "white" },
+                            title: "Warehouse", zIndex: 999
+                        });
+                        markersRef.current.push(m);
+                        bounds.extend(location);
+                        map.fitBounds(bounds);
+                    });
+                }
+
+                if (!routes) return;
+                const routeEntries = Object.entries(routes);
+                
+                routeEntries.forEach(([groupName, routeData]) => {
+                    if (!routeData || !routeData.paradas) return;
+                    
+                    let color = routeData.color || '#000000'; 
+                    const isOptimized = !!routeData.duracion_estimada;
+
+                    if (isOptimized && routeData.paradas.length > 0) {
+                        const waypoints = routeData.paradas.map(stop => ({ location: stop.direccion || stop.address, stopover: true }));
+                        if (waypoints.length <= 25) {
+                            directionsService.route({ 
+                                origin: baseAddress, destination: baseAddress, waypoints: waypoints, 
+                                optimizeWaypoints: false, travelMode: window.google.maps.TravelMode.DRIVING 
+                            }, (response, status) => {
+                                if (status === 'OK') {
+                                    const renderer = new window.google.maps.DirectionsRenderer({ 
+                                        map: map, directions: response, 
+                                        polylineOptions: { strokeColor: color, strokeOpacity: 0.7, strokeWeight: 5 }, 
+                                        suppressMarkers: true, preserveViewport: true 
+                                    });
+                                    renderersRef.current.push(renderer);
+                                    
+                                    const legs = response.routes[0].legs;
+                                    routeData.paradas.forEach((stop, i) => {
+                                        const address = stop.direccion || stop.address;
+                                        if (i < legs.length) {
+                                            const clientName = stop.nombre || stop.name || 'Client';
+                                            const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${i+1}. ${clientName}</strong><br><span style="color:#666">${address}</span></div>`;
+                                            // DirectionsService provee las coordenadas exactas de las paradas
+                                            addMarker(legs[i].end_location, clientName, (i+1).toString(), color, content, null);
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    } else {
+                        // MODO PLANIFICACIÓN: NO USAR GEOCODER AUTOMÁTICO, SOLO DIBUJAR SI TIENE LAT/LNG
+                        routeData.paradas.forEach((stop, i) => {
+                            const address = stop.direccion || stop.address;
+                            if (!address) return;
+                            
+                            // INTENTA LEER LAS COORDENADAS GUARDADAS DIRECTAMENTE
+                            const pos = parseCoord(stop.coord || stop.latlng);
+                            
+                            const label = (stop.originalIndex || i + 1).toString();
+                            const clientName = stop.nombre || stop.name || 'Client';
+                            const content = `<div style="font-family:sans-serif; padding:5px;"><strong>${label}. ${clientName}</strong><br><span style="color:#666">${address}</span><br><span style="color:${color}; font-weight:bold;">${groupName}</span></div>`;
+
+                            // SI TIENE COORDENADAS SE DIBUJA, SINO NO SE LLAMA A LA API PARA AHORRAR DINERO
+                            if (pos) {
+                                addMarker(pos, clientName, label, color, content, stop.originalIndex);
+                            }
+                        });
+                    }
+                });
+
+            }, [routes, baseAddress]);
+            
+            return (
+                <div className="w-full h-full relative">
+                    {enableDrawing && mapReady && (
+                        <div style={{position:'absolute',top:'10px',left:'50%',transform:'translateX(-50%)',zIndex:10,display:'flex',gap:'4px',background:'white',borderRadius:'8px',padding:'4px 6px',boxShadow:'0 2px 8px rgba(0,0,0,0.2)'}}>
+                            <button
+                                onClick={() => setDrawMode('lasso')}
+                                title="Lasso / Freehand (Shift+F)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='lasso' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='lasso' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
+                                Lasso <span style={{opacity:0.6,fontSize:'10px'}}>⇧F</span>
+                            </button>
+                            <button
+                                onClick={() => setDrawMode('hand')}
+                                title="Hand / Pan (Shift+H)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='hand' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='hand' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M6 14a2 2 0 0 0-2 2v0c0 1.4.5 2.7 1.3 3.7L8 23h8l1.7-2.1c.8-1 1.3-2.3 1.3-3.7v-4.3"/><path d="M6 14v-2.5"/></svg>
+                                Hand <span style={{opacity:0.6,fontSize:'10px'}}>⇧H</span>
+                            </button>
+                            <button
+                                onClick={() => setDrawMode('polygon')}
+                                title="Polygon (Shift+P)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='polygon' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='polygon' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/></svg>
+                                Polygon <span style={{opacity:0.6,fontSize:'10px'}}>⇧P</span>
+                            </button>
+                            <button
+                                onClick={() => setDrawMode('rectangle')}
+                                title="Rectangle (Shift+S)"
+                                style={{display:'flex',alignItems:'center',gap:'5px',padding:'5px 10px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'600',background: activeDrawMode==='rectangle' ? '#1b6e9b' : '#f1f5f9',color: activeDrawMode==='rectangle' ? 'white' : '#475569',transition:'all 0.15s'}}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                                Rectangle <span style={{opacity:0.6,fontSize:'10px'}}>⇧S</span>
+                            </button>
+                        </div>
+                    )}
+                    <div className="w-full h-full rounded-xl" ref={mapRef}></div>
+                </div>
+            );
+        };
+
+        const PrintableSheet = ({ routeData, driverName, vehicle, config, duration, zoneName, hideId = false, onClose = null }) => {
+            const [dateVal, setDateVal] = useState(new Date().toLocaleDateString('en-US'));
+            const hours = Math.floor((duration || 0) / 60);
+            const minutes = Math.round((duration || 0) % 60);
+
+            const isPreview = !!onClose;
+
+            // Safe guard against undefined routeData
+            const safeRouteData = routeData || [];
+
+            return (
+                <div id={hideId ? undefined : "printable-sheet"} className={`${isPreview ? "fixed inset-0 z-[200] overflow-auto flex items-start justify-center pt-10 pb-10 bg-gray-500/50" : "hidden"} print:block print:p-0 print:overflow-visible`}>
+                    <div className={`bg-white text-black p-8 font-sans text-sm page-break ${isPreview ? "max-w-3xl w-full min-h-[11in] relative print:min-h-0 print:h-auto print:shadow-none print:max-w-none print:w-full" : "w-full"}`}>
+                        
+                        {isPreview && (
+                            <div className="no-print absolute top-4 right-4 flex gap-2">
+                                <button onClick={onClose} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow">Close Preview</button>
+                                <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-ess-blue hover:bg-sky-700 text-white px-8 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-5 w-5" /> Confirm & Print</button>
+                            </div>
+                        )}
+
+                        <div className="flex justify-between items-start mb-6 border-b-2 border-black pb-4 mt-8 print:mt-0">
+                            <div className="flex items-center gap-4">
+                                <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-12 w-auto" />
+                                <div>
+                                    <h1 className="text-xl font-bold uppercase tracking-wide">Route Manifest</h1>
+                                    <div className="font-bold text-md">
+                                        <input 
+                                            type="text" 
+                                            value={dateVal} 
+                                            onChange={(e) => setDateVal(e.target.value)} 
+                                            className="bg-transparent border-b border-transparent hover:border-gray-400 focus:border-blue-500 outline-none w-40"
+                                        />
+                                    </div>
+                                    <p className="font-bold text-lg uppercase mt-1 bg-black text-white inline-block px-2 rounded-sm">{zoneName}</p>
+                                </div>
+                            </div>
+                            <div className="text-right space-y-1">
+                                <div className="text-base"><span className="font-bold">Driver:</span> {driverName}</div>
+                                <div className="text-base"><span className="font-bold">Truck:</span> {vehicle || "_______"}</div>
+                                <div className="text-base"><span className="font-bold">Est. Time:</span> {hours}h {minutes}m</div>
+                            </div>
+                        </div>
+                        <table className="w-full border-collapse border border-black mb-4">
+                            <thead>
+                                <tr className="bg-white">
+                                    <th className="border border-black p-1 w-8 text-center text-xs">#</th>
+                                    <th className="border border-black p-2 text-left w-auto">Customer / Address</th>
+                                    <th className="border border-black p-2 w-20 text-center text-xs">Invoices</th>
+                                    <th className="border border-black p-2 w-10 text-center text-xs">Pcs</th>
+                                    <th className="border border-black p-2 w-32 text-left text-xs">Print Name</th>
+                                    <th className="border border-black p-2 w-16 text-left text-xs">Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {safeRouteData.map((stop, index) => (
+                                    <tr key={index} className="h-14">
+                                        <td className="border border-black p-1 text-center font-bold">{index + 1}</td>
+                                        <td className="border border-black p-2 align-top">
+                                            <div className="font-bold text-sm truncate">{stop.nombre || stop.name}</div>
+                                            <div className="text-[10px] text-gray-600 leading-tight">{stop.direccion || stop.address}</div>
+                                        </td>
+                                        <td className="border border-black p-1 text-center font-mono font-bold text-sm align-middle">{stop.invoices || '-'}</td>
+                                        <td className="border border-black p-1 text-center font-bold text-sm align-middle">{stop.pieces || '-'}</td>
+                                        <td className="border border-black p-1"></td>
+                                        <td className="border border-black p-1"></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <div className="flex justify-between items-end mt-4 pt-4 border-t border-black">
+                            <div className="space-y-4">
+                                <div>Checked by: __________________________</div>
+                                <div>Time: __________________________</div>
+                            </div>
+                            <div className="text-right text-[10px]">
+                                <div className="font-bold text-xs">{config.companyName || "ECONOMY SIGN SUPPLY"}</div>
+                                <div>PHONE: {config.phone || "407-901-0900"}</div>
+                                <div>{config.address || "8350 PARKLINE BLVD, ORLANDO, FL"}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        
+        const GlobalManifest = ({ routes, config, driverAssignments, drivers, vehicles = [], manualVehicleAssignments = {}, onClose = null }) => {
+            const [dateVal, setDateVal] = useState(new Date().toLocaleDateString('en-US'));
+            const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+            const isPreview = !!onClose;
+
+            return (
+                <div id="global-manifest" className={`${isPreview ? "fixed inset-0 z-[200] overflow-auto flex items-start justify-center pt-10 pb-10 bg-gray-500/50" : "hidden"} print:block print:p-0 print:overflow-visible`}>
+                    <div className={`bg-white text-black p-8 font-sans ${isPreview ? "max-w-4xl w-full min-h-[11in] relative print:min-h-0 print:h-auto print:shadow-none print:max-w-none print:w-full" : "w-full"}`}>
+                        
+                        {isPreview && (
+                            <div className="no-print absolute top-4 right-4 flex gap-2">
+                                <button onClick={onClose} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow">Close Preview</button>
+                                <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-ess-blue hover:bg-sky-700 text-white px-4 py-2 rounded font-bold shadow flex items-center gap-2"><Icon name="printer" className="h-4 w-4" /> Print</button>
+                            </div>
+                        )}
+
+                        <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4 mt-8 print:mt-0">
+                            <img
+                              src="https://static.wixstatic.com/media/63d26f_c1a293a0b9cd4c379a17696a06d2a808~mv2.png"
+                              alt="Logo"
+                              className="h-10 w-auto object-contain print:h-[50px] print:max-w-[200px]"
+                            />
+                            <div className="text-right">
+                                <h1 className="text-2xl font-bold uppercase">All Routes Summary</h1>
+                                <div className="text-lg font-bold flex items-center justify-end gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={dateVal} 
+                                        onChange={(e) => setDateVal(e.target.value)} 
+                                        className="bg-transparent border-b border-transparent hover:border-gray-400 focus:border-blue-500 outline-none text-right w-32"
+                                    />
+                                    <span className="text-sm font-normal">{timeStr}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="space-y-8">
+                            {Object.entries(routes).map(([zoneName, data], idx) => {
+                                const dur = data.duracion_estimada || 0;
+                                const h = Math.floor(dur / 60);
+                                const m = Math.round(dur % 60);
+                                
+                                const assignedId = driverAssignments[zoneName];
+                                const driver = (drivers || []).find(d => d.id === assignedId);
+                                const driverName = driver ? driver.name : "Unassigned";
+
+                                const defaultVehicle = (vehicles || []).find(v => v.assignedDriver === driverName);
+                                const currentVehicleName = manualVehicleAssignments[zoneName] || (defaultVehicle ? defaultVehicle.name : "");
+                                const driverLabel = currentVehicleName ? `${driverName} - ${currentVehicleName}` : driverName;
+
+                                return (
+                                <div key={idx} className="break-inside-avoid">
+                                    <div className="bg-gray-100 border border-black p-2 font-bold text-lg mb-2 flex justify-between items-center">
+                                        <span>{zoneName} <span className="text-gray-600">({driverLabel})</span></span>
+                                        <div className="flex gap-4 text-sm">
+                                            <span>Est. Time: {h}h {m}m</span>
+                                            <span>•</span>
+                                            <span>{(data.paradas || []).length} Stops</span>
+                                        </div>
+                                    </div>
+                                    <table className="w-full border-collapse border border-black text-xs">
+                                        <thead>
+                                            <tr>
+                                                <th className="border border-black p-1 w-8">#</th>
+                                                <th className="border border-black p-1 text-left">Customer / Address</th>
+                                                <th className="border border-black p-1 w-20">Invoices</th>
+                                                <th className="border border-black p-1 w-12">Pcs</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {(data.paradas || []).map((stop, sIdx) => (
+                                                <tr key={sIdx}>
+                                                    <td className="border border-black p-1 text-center">{sIdx + 1}</td>
+                                                    <td className="border border-black p-1">
+                                                        <span className="font-bold">{stop.nombre || stop.name}</span> - {stop.direccion || stop.address}
+                                                    </td>
+                                                    <td className="border border-black p-1 text-center">{stop.invoices || '-'}</td>
+                                                    <td className="border border-black p-1 text-center">{stop.pieces || '-'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )})}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [dbReady, setDbReady] = useState(false);
+            const [syncKey, setSyncKey] = useState(0);
+            const [clientDB, setClientDB] = useState([]);
+            const [drivers, setDrivers] = useState([]);
+            const [vehicles, setVehicles] = useState([]);
+            const [googleApiKey, setGoogleApiKey] = useState(null);
+            const [scriptLoaded, setScriptLoaded] = useState(false);
+            
+            // Constantes Globales
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+            // APP STATES
+            const [view, setView] = useState('planning'); 
+            const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, USA');
+            const [currentStops, setCurrentStops] = useState([]);
+            const [stopGroups, setStopGroups] = useState([]); 
+            const [zones, setZones] = useState([]); 
+
+            // INPUTS
+            const [newStopName, setNewStopName] = useState('');
+            const [newStopAddress, setNewStopAddress] = useState('');
+            const [newStopLatLng, setNewStopLatLng] = useState(null); // NUEVO ESTADO PARA COORDENADAS
+            const [addressError, setAddressError] = useState(''); // ESTADO PARA ERROR DE ZIPCODE
+
+            const [showSuggestions, setShowSuggestions] = useState(false);
+            const [activeSuggestion, setActiveSuggestion] = useState(-1);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [recalculating, setRecalculating] = useState({});
+
+            // STOP DETAILS MODAL
+            const [showAddDetailsModal, setShowAddDetailsModal] = useState(false);
+            const [tempStopData, setTempStopData] = useState(null);
+            const [tempInvoices, setTempInvoices] = useState('');
+            const [tempPieces, setTempPieces] = useState('');
+            const [editingDraftId, setEditingDraftId] = useState(null);
+            const [editingResultStop, setEditingResultStop] = useState(null); 
+            
+            // ADD MANUAL STOP
+            const [targetZoneForManualAdd, setTargetZoneForManualAdd] = useState(null);
+            
+            // NEW ROUTE MODAL
+            const [showAddRouteModal, setShowAddRouteModal] = useState(false);
+            const [newRouteConfig, setNewRouteConfig] = useState({ zoneName: '', driverId: '' });
+
+            // FLEET
+            const [newVehicleName, setNewVehicleName] = useState('');
+            const [editingVehicleId, setEditingVehicleId] = useState(null);
+            // DRIVERS
+            const [newDriverName, setNewDriverName] = useState('');
+            const [newDriverPhone, setNewDriverPhone] = useState('');
+            const [newDriverPin, setNewDriverPin] = useState('');
+            const [editingDriverId, setEditingDriverId] = useState(null);
+
+            // CLIENTS
+            const [clientFormName, setClientFormName] = useState('');
+            const [clientFormAddress, setClientFormAddress] = useState('');
+            const [clientFormLatLng, setClientFormLatLng] = useState(null); // PARA LA PESTAÑA CLIENTS
+            const [editingClientId, setEditingClientId] = useState(null);
+
+            // ZONES
+            const [stopSelectionInput, setStopSelectionInput] = useState('');
+            const [groupNameInput, setGroupNameInput] = useState('');
+            const [numRoutesInput, setNumRoutesInput] = useState(1);
+            const [editingGroupId, setEditingGroupId] = useState(null);
+            const [newZoneName, setNewZoneName] = useState('');
+            
+            // NUEVO: BACKUP PARA DESHACER "CLEAR ALL"
+            const [lastDeletedBackup, setLastDeletedBackup] = useState(null);
+            
+            // Helper para contar paradas seleccionadas
+            const selectedStopCount = useMemo(() => {
+                if (!stopSelectionInput.trim()) return 0;
+                const parts = stopSelectionInput.split(',').map(s => s.trim());
+                const indices = new Set();
+                parts.forEach(part => {
+                    if (part.includes('-')) {
+                        const [start, end] = part.split('-').map(Number);
+                        if (!isNaN(start) && !isNaN(end)) {
+                            for (let i = Math.min(start, end); i <= Math.max(start, end); i++) indices.add(i);
+                        }
+                    } else {
+                        const num = Number(part);
+                        if (!isNaN(num)) indices.add(num);
+                    }
+                });
+                return indices.size;
+            }, [stopSelectionInput]);
+            
+            // SETTINGS
+            const [companyConfig, setCompanyConfig] = useState({ companyName: "ECONOMY SIGN SUPPLY", phone: "407-901-0900", address: "8350 PARKLINE BLVD, ORLANDO, FL" });
+            const [newPin, setNewPin] = useState('');
+            const [settingsMsg, setSettingsMsg] = useState('');
+            const [monitorPin, setMonitorPin] = useState('1234');
+            const [showMonitorPin, setShowMonitorPin] = useState(false);
+            const [consolidatedRoutes, setConsolidatedRoutes] = useState({});
+            const fileInputRef = useRef(null);
+
+            // RESULTS
+            const [optimizedRoutes, setOptimizedRoutes] = useState(null);
+            const [driverAssignments, setDriverAssignments] = useState({}); 
+            const [manualVehicleAssignments, setManualVehicleAssignments] = useState({});
+            const [printData, setPrintData] = useState(null);
+            const [showBulkManifestPrint, setShowBulkManifestPrint] = useState(false);
+            const [viewingDriver, setViewingDriver] = useState(null);
+            const [showGlobalPrint, setShowGlobalPrint] = useState(false);
+            const [viewingGlobalMap, setViewingGlobalMap] = useState(false);
+            const [selectedResultStops, setSelectedResultStops] = useState(new Set());
+            const [bulkMoveTargetZone, setBulkMoveTargetZone] = useState('');
+            
+            // SAVED PLANS
+            const [showSavePlanModal, setShowSavePlanModal] = useState(false);
+            const [showLoadPlanModal, setShowLoadPlanModal] = useState(false);
+            const [planName, setPlanName] = useState('');
+            const [savedPlans, setSavedPlans] = useState([]);
+            
+            // DRAG AND DROP
+            const [draggedResultItem, setDraggedResultItem] = useState(null);
+
+            const inputRef = useRef(null);
+            const addressInputRef = useRef(null);
+            const invoicesInputRef = useRef(null);
+            const piecesInputRef = useRef(null);
+            const ghostInputRef = useRef(null);
+
+            // INITIALIZATION
+            useEffect(() => {
+                const loadConfig = async () => {
+                    try {
+                        const response = await fetch('/config');
+                        if (!response.ok) return;
+                        const data = await response.json();
+                        if (data.firebaseConfig && window.initializeFirebaseGlobally(data.firebaseConfig)) setDbReady(true);
+                        setGoogleApiKey(data.googleApiKey);
+                    } catch (error) {
+                        console.log("Config fetch skipped:", error);
+                    }
+                };
+                loadConfig();
+                
+                const initAuth = setInterval(() => {
+                    if (window.fbOnAuthStateChanged && window.fbAuth) {
+                        window.fbOnAuthStateChanged(window.fbAuth, u => setUser(u));
+                        clearInterval(initAuth);
+                    }
+                }, 500);
+            }, []);
+
+            useEffect(() => {
+                if (!googleApiKey) return;
+                const script = document.createElement("script");
+                // Added language=en to force English UI/Tooltips
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${googleApiKey}&libraries=places,drawing,geometry&loading=async&language=en`;
+                script.async = true; script.defer = true;
+                script.onload = () => setScriptLoaded(true);
+                document.head.appendChild(script);
+            }, [googleApiKey]);
+
+            // DATA SYNC
+            useEffect(() => {
+                if (!user || !window.fbDb) return;
+                const uid = user.uid;
+                const userRef = (c) => window.fbCollection(window.fbDb, 'artifacts', appId, 'users', uid, c);
+                const onErr = (e) => console.error('[Firestore onSnapshot error]', e);
+
+                const unsub1 = window.fbOnSnapshot(window.fbQuery(userRef('clients')), s => setClientDB(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
+                const unsub2 = window.fbOnSnapshot(window.fbQuery(userRef('drivers')), s => setDrivers(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
+                const unsub3 = window.fbOnSnapshot(window.fbQuery(userRef('vehicles')), s => setVehicles(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
+
+                // ORDENAMIENTO LOCAL (Evitar Firebase orderBy)
+                const unsub4 = window.fbOnSnapshot(window.fbQuery(userRef('draft_stops')), s => {
+                    const data = s.docs.map(d => ({id: d.id, ...d.data()}));
+                    data.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+                    setCurrentStops(data);
+                }, onErr);
+
+                const unsub5 = window.fbOnSnapshot(window.fbQuery(userRef('zones')), s => {
+                    const data = s.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    data.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+                    setZones(data);
+                }, onErr);
+
+                const unsub6 = window.fbOnSnapshot(window.fbQuery(userRef('saved_plans')), s => {
+                    const data = s.docs.map(d => ({id: d.id, ...d.data()}));
+                    data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                    setSavedPlans(data);
+                }, onErr);
+
+                const unsub7 = window.fbOnSnapshot(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config'), (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        if (data.companyConfig) setCompanyConfig(data.companyConfig);
+                        if (data.baseAddress) setBaseAddress(data.baseAddress);
+                    }
+                }, onErr);
+
+                return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); };
+            }, [user, dbReady, syncKey]);
+
+            // Load monitor PIN (separate effect)
+            useEffect(() => {
+                if (!user || !window.fbDb || !window.fbGetDoc) return;
+                window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', user.uid))
+                    .then(snap => { if (snap.exists() && snap.data().pin) setMonitorPin(snap.data().pin); })
+                    .catch(() => {});
+            }, [user, dbReady]);
+
+            // --- FUNCIÓN DE UTILIDAD PARA OBTENER COORDENADAS UNA SOLA VEZ AL GUARDAR ---
+            const getLatLngForAddress = async (address) => {
+                if (!window.google || !window.google.maps) return null;
+                return new Promise((resolve) => {
+                    const geocoder = new window.google.maps.Geocoder();
+                    geocoder.geocode({ address }, (results, status) => {
+                        if (status === 'OK' && results && results[0]) {
+                            resolve({
+                                lat: results[0].geometry.location.lat(),
+                                lng: results[0].geometry.location.lng()
+                            });
+                        } else {
+                            resolve(null);
+                        }
+                    });
+                });
+            };
+
+            // --- HELPER PARA EVITAR ERRORES EN EL BACKEND PYTHON ---
+            const formatStopForBackend = (stop) => {
+                if (!stop) return stop;
+                const s = { ...stop };
+                // Si el backend de Python hace .split(',') necesita que sea un string, no un objeto
+                if (s.latlng && typeof s.latlng === 'object') {
+                    s.latlng = `${s.latlng.lat},${s.latlng.lng}`;
+                }
+                if (s.coord && typeof s.coord === 'object') {
+                    s.coord = `${s.coord.lat},${s.coord.lng}`;
+                }
+                return s;
+            };
+
+            // --- LOGIC ---
+            
+            const autoSavePlan = async () => {
+                if (!optimizedRoutes || Object.keys(optimizedRoutes).length === 0) return;
+
+                const now = Date.now();
+                const ONE_HOUR = 60 * 60 * 1000;
+                
+                // Buscar solo autoguardados y ordenar
+                const autoSavedPlansList = (savedPlans || []).filter(p => p.isAutoSave === true).sort((a, b) => b.createdAt - a.createdAt);
+                const latestPlan = autoSavedPlansList[0];
+
+                const planData = {
+                    optimizedRoutes,
+                    driverAssignments,
+                    manualVehicleAssignments,
+                    stopGroups,
+                    currentStops,
+                    zoneCount: Object.keys(optimizedRoutes).length,
+                    stopCount: currentStops.length,
+                    updatedAt: now,
+                    isAutoSave: true // Marcador
+                };
+
+                try {
+                    if (latestPlan && (now - latestPlan.createdAt < ONE_HOUR)) {
+                        await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans', latestPlan.id), planData);
+                    } else {
+                        const dateStr = new Date().toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: 'numeric' });
+                        planData.name = `Auto-Save (${dateStr})`;
+                        planData.createdAt = now;
+                        await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans'), planData);
+                    }
+                } catch (e) {
+                    console.error("Auto-save failed:", e);
+                }
+            };
+
+            const initiateAddStop = () => {
+                if (!newStopAddress.trim()) return;
+                
+                // VALIDACIÓN DE ZIPCODE
+                if (!/\b\d{5}\b/.test(newStopAddress)) {
+                    setAddressError("⚠️ Missing Zipcode: Please select a complete address.");
+                    setTimeout(() => setAddressError(''), 4000);
+                    return;
+                }
+                setAddressError('');
+
+                setTempStopData({
+                    name: newStopName.trim() || "Client",
+                    address: newStopAddress,
+                    latlng: newStopLatLng
+                });
+                setTempInvoices('');
+                setTempPieces('');
+                setShowAddDetailsModal(true);
+            };
+            
+            const initiateAddStopToRoute = (zoneName) => {
+                setTargetZoneForManualAdd(zoneName);
+                setNewStopName('');
+                setNewStopAddress('');
+                setNewStopLatLng(null);
+                setTempStopData(null);
+                setTempInvoices('');
+                setTempPieces('');
+                setAddressError(''); // Resetear error
+                setShowAddDetailsModal(true);
+            };
+            
+            const initiateEditResultStop = (zoneName, index, stopData) => {
+                setEditingResultStop({ zoneName, index });
+                setTempStopData({
+                    name: stopData.nombre || stopData.name,
+                    address: stopData.direccion || stopData.address
+                });
+                setTempInvoices(stopData.invoices || '');
+                setTempPieces(stopData.pieces || '');
+                setAddressError(''); // Resetear error
+                setShowAddDetailsModal(true);
+            };
+            
+            // Helper to find ID by address if missing
+            const findStopId = (stop) => {
+                if (stop.id) return stop.id;
+                const found = (currentStops || []).find(s => 
+                    (s.address || "").toLowerCase().trim() === (stop.direccion || stop.address || "").toLowerCase().trim()
+                );
+                return found ? found.id : null;
+            };
+
+            const deleteResultStop = (zoneName, index) => {
+                if(!confirm("Remove this stop from route?")) return;
+                
+                let stopIdToDelete = null;
+                
+                setOptimizedRoutes(prev => {
+                    const newRoutes = JSON.parse(JSON.stringify(prev));
+                    const [removed] = newRoutes[zoneName].paradas.splice(index, 1);
+                    stopIdToDelete = findStopId(removed);
+                    return newRoutes;
+                });
+                
+                if (stopIdToDelete) {
+                    setStopGroups(prev => (prev || []).map(g => {
+                        const targetBase = zoneName.split(' - Route')[0];
+                        if(g.name === targetBase) {
+                            return { ...g, stops: (g.stops || []).filter(id => id !== stopIdToDelete) };
+                        }
+                        return g;
+                    }));
+                }
+                
+                setSelectedResultStops(new Set());
+            };
+            
+            const handleDeleteRoute = async (zoneName) => {
+                // Check if it's an UNASSIGNED zone to trigger deletion
+                const isUnassignedZone = zoneName === "UNASSIGNED" || zoneName.startsWith("UNASSIGNED") || zoneName === "Ungrouped";
+
+                if (isUnassignedZone) {
+                    if (!confirm("Remove these stops from today's plan?\n\n(They will remain saved in your Client Database)")) return;
+                    
+                    const stopsToDelete = optimizedRoutes[zoneName].paradas || [];
+                    const idsToDelete = stopsToDelete.map(s => s.id || findStopId(s)).filter(Boolean);
+
+                    // 1. Delete from Firestore
+                    if (window.fbDb && user && idsToDelete.length > 0) {
+                        try {
+                            const batch = window.fbWriteBatch(window.fbDb);
+                            idsToDelete.forEach(id => {
+                                const ref = window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', id);
+                                batch.delete(ref);
+                            });
+                            await batch.commit();
+                        } catch (e) {
+                            console.error("Error deleting stops:", e);
+                            alert("Error deleting some stops.");
+                        }
+                    }
+
+                    // 2. Remove from Local State
+                    setOptimizedRoutes(prev => {
+                        const newRoutes = { ...prev };
+                        delete newRoutes[zoneName];
+                        return newRoutes;
+                    });
+                    
+                    setSelectedResultStops(new Set());
+                    return;
+                }
+
+                // Standard logic for assigned routes
+                if(!confirm("Delete this route? Stops will be moved to UNASSIGNED.")) return;
+                
+                setOptimizedRoutes(prev => {
+                    const newRoutes = {...prev};
+                    const deletedRouteStops = newRoutes[zoneName].paradas;
+                    
+                    delete newRoutes[zoneName];
+                    
+                    if (!newRoutes["UNASSIGNED"]) {
+                         newRoutes["UNASSIGNED"] = { paradas: [], color: "#000000", duracion_estimada: 0, link: '' };
+                    }
+                    
+                    if(deletedRouteStops && deletedRouteStops.length > 0) {
+                        newRoutes["UNASSIGNED"].paradas = [...newRoutes["UNASSIGNED"].paradas, ...deletedRouteStops];
+                    }
+                    
+                    return newRoutes;
+                });
+                
+                // Also remove the group from Planning
+                setStopGroups(prev => (prev || []).filter(g => g.name !== zoneName));
+                setSelectedResultStops(new Set());
+            };
+
+            const confirmAddStop = async () => {
+                if (editingResultStop) {
+                    let stopId = null;
+                    const zone = editingResultStop.zoneName;
+                    const idx = editingResultStop.index;
+
+                    // Identificar el ID antes de la actualización de estado para asegurar persistencia
+                    const currentRouteStop = optimizedRoutes[zone].paradas[idx];
+                    stopId = currentRouteStop.id || findStopId(currentRouteStop);
+
+                    // 1. Actualizar estado visual local
+                    setOptimizedRoutes(prev => {
+                        const newRoutes = JSON.parse(JSON.stringify(prev));
+                        const stop = newRoutes[zone].paradas[idx];
+                        stop.invoices = tempInvoices;
+                        stop.pieces = tempPieces;
+                        return newRoutes;
+                    });
+
+                    // 2. Persistir permanentemente en la base de datos (draft_stops)
+                    if (stopId && window.fbDb && user) {
+                        try {
+                            const stopRef = window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', stopId);
+                            await window.fbUpdateDoc(stopRef, { 
+                                invoices: tempInvoices, 
+                                pieces: tempPieces 
+                            });
+                        } catch(e) { 
+                            console.error("Error al sincronizar datos de parada con Firebase:", e); 
+                        }
+                    }
+
+                    setEditingResultStop(null);
+                    setShowAddDetailsModal(false);
+                    return;
+                }
+
+                if (!tempStopData) return;
+
+                // VALIDACIÓN DE ZIPCODE CUANDO SE AÑADE DENTRO DEL MODAL (Manual a una ruta)
+                if (targetZoneForManualAdd) {
+                    if (!tempStopData.address || !/\b\d{5}\b/.test(tempStopData.address)) {
+                        setAddressError("⚠️ Missing Zipcode: Please select a complete address.");
+                        setTimeout(() => setAddressError(''), 4000);
+                        return;
+                    }
+                }
+                
+                // REPARACIÓN EN TIEMPO REAL SI FALTA LAT/LNG
+                let finalLatLng = tempStopData.latlng || null;
+                if (!finalLatLng) {
+                    finalLatLng = await getLatLngForAddress(tempStopData.address);
+                }
+
+                // GUARDAR ESTRICTAMENTE LAS COORDENADAS OBTENIDAS
+                const data = {
+                    name: tempStopData.name,
+                    address: tempStopData.address,
+                    invoices: tempInvoices,
+                    pieces: tempPieces,
+                    latlng: finalLatLng
+                };
+
+                const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops');
+
+                const normalize = s => s ? s.toLowerCase().trim() : "";
+                const addressExists = (clientDB || []).some(c => normalize(c.address) === normalize(tempStopData.address));
+                
+                if (!addressExists && window.fbDb && user) {
+                    try {
+                        // Guardar en la BBDD de clientes TAMBIÉN con sus coordenadas
+                        await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients'), {
+                            name: tempStopData.name,
+                            address: tempStopData.address,
+                            latlng: finalLatLng
+                        });
+                    } catch (e) {}
+                }
+
+                if (targetZoneForManualAdd) {
+                    // 1. Save to DB so it persists
+                    const newStopData = { ...data, createdAt: Date.now() };
+                    const docRef = await window.fbAddDoc(col, newStopData);
+                    const newId = docRef.id;
+
+                    // 2. Update STOP GROUPS so generateRoutes sees it as assigned
+                    setStopGroups(prev => (prev || []).map(g => g.name === targetZoneForManualAdd ? { ...g, stops: [...g.stops, newId] } : g));
+
+                    // 3. Update Optimized Routes visual state
+                    const newStop = { ...newStopData, id: newId, nombre: data.name, direccion: data.address };
+                    setOptimizedRoutes(prev => {
+                        const route = prev[targetZoneForManualAdd];
+                        return {
+                            ...prev,
+                            [targetZoneForManualAdd]: {
+                                ...route,
+                                paradas: [...route.paradas, newStop]
+                            }
+                        };
+                    });
+                    setTargetZoneForManualAdd(null);
+                } else if (editingDraftId) {
+                    await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', editingDraftId), data);
+                    setEditingDraftId(null);
+                } else {
+                    data.createdAt = Date.now();
+                    await window.fbAddDoc(col, data);
+                }
+                
+                setNewStopName(''); setNewStopAddress(''); setNewStopLatLng(null); setShowAddDetailsModal(false); setTempStopData(null);
+                setAddressError(''); // Limpiar errores pasados
+                if(inputRef.current && !targetZoneForManualAdd) inputRef.current.focus();
+            };
+
+            const handleEditStop = (stop) => {
+                setEditingDraftId(stop.id);
+                setTempStopData({ name: stop.name, address: stop.address });
+                setTempInvoices(stop.invoices || '');
+                setTempPieces(stop.pieces || '');
+                setShowAddDetailsModal(true);
+            };
+
+            const removeStop = async (id) => {
+                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops', id));
+            };
+
+            // REPARACIÓN EN TIEMPO REAL: SI VIENE DE LA DB SIN LATLNG, BUSCARLO UNA VEZ Y GUARDAR
+            const addClientToRoute = async (client) => {
+                const normalize = s => s ? s.toLowerCase().trim() : "";
+                const clientAddr = normalize(client.address);
+                const existingStop = (currentStops || []).find(s => normalize(s.address) === clientAddr);
+                
+                if (existingStop) {
+                    await removeStop(existingStop.id);
+                } else {
+                    let finalLatLng = client.latlng || null;
+                    if (!finalLatLng) {
+                        finalLatLng = await getLatLngForAddress(client.address);
+                        // Repara silenciosamente el cliente en la BBDD para que la proxima vez sea instantaneo
+                        if (finalLatLng && client.id && window.fbDb && user) {
+                            window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', client.id), { latlng: finalLatLng }).catch(()=>{});
+                        }
+                    }
+
+                    await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops'), {
+                        name: client.name,
+                        address: client.address,
+                        latlng: finalLatLng, 
+                        createdAt: Date.now()
+                    });
+                }
+            };
+
+            const clearAllStops = async () => {
+                if (!confirm("Are you sure you want to remove ALL stops?")) return;
+                
+                // 1. GUARDAR FOTOGRAFÍA (BACKUP) ANTES DE BORRAR
+                setLastDeletedBackup({
+                    stops: [...currentStops],
+                    groups: [...stopGroups]
+                });
+
+                // 2. BORRAR DE FIREBASE
+                const q = window.fbQuery(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops'));
+                const snapshot = await window.fbGetDocs(q);
+                const batch = window.fbWriteBatch(window.fbDb);
+                snapshot.docs.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+                
+                // 3. LIMPIAR EL MAPA Y RESULTADOS
+                setStopGroups([]);
+                setOptimizedRoutes(null);
+                setSelectedResultStops(new Set());
+            };
+
+            const undoClearAllStops = async () => {
+                if (!lastDeletedBackup) return;
+                
+                const batch = window.fbWriteBatch(window.fbDb);
+                const colRef = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'draft_stops');
+
+                // Reconstruir en Firebase respetando los IDs originales
+                lastDeletedBackup.stops.forEach(stop => {
+                    const docRef = window.fbDoc(colRef, stop.id);
+                    const dataToSave = { ...stop };
+                    delete dataToSave.id; // Quitar el id como propiedad para que no ensucie Firestore
+                    batch.set(docRef, dataToSave);
+                });
+
+                await batch.commit();
+                
+                // Reconstruir los grupos visuales
+                setStopGroups(lastDeletedBackup.groups);
+                
+                // Ocultar el botón
+                setLastDeletedBackup(null); 
+            };
+
+            const clearAllGroups = () => {
+                if(confirm("Clear all zones? Stops will remain as Ungrouped.")){
+                    setStopGroups([]);
+                    setEditingGroupId(null);
+                    setGroupNameInput('');
+                    setStopSelectionInput('');
+                    setNumRoutesInput(1);
+                    
+                    // LIMPIAR RESULTADOS PARA EVITAR RESIDUOS
+                    setOptimizedRoutes(null);
+                    setSelectedResultStops(new Set());
+                }
+            };
+
+            const handleMapSelection = (indices) => {
+                const selectionStr = indices.join(', ');
+                setStopSelectionInput(selectionStr);
+            };
+
+            const handleMarkerClick = (stopIndex) => {
+                const parts = stopSelectionInput.split(',').map(s => s.trim()).filter(s => s);
+                const indices = new Set();
+                parts.forEach(p => {
+                    if (p.includes('-')) {
+                        const [s, e] = p.split('-').map(Number);
+                        if (!isNaN(s) && !isNaN(e)) {
+                            const min = Math.min(s, e);
+                            const max = Math.max(s, e);
+                            for (let i = min; i <= max; i++) indices.add(i);
+                        }
+                    } else {
+                        const n = Number(p);
+                        if (!isNaN(n)) indices.add(n);
+                    }
+                });
+                if (indices.has(stopIndex)) indices.delete(stopIndex);
+                else indices.add(stopIndex);
+                const sorted = Array.from(indices).sort((a,b) => a-b);
+                setStopSelectionInput(sorted.join(', '));
+            };
+
+            const saveGroup = async () => {
+                if (!groupNameInput.trim() || !stopSelectionInput.trim()) return alert("Please enter a Zone Name and select stops.");
+                
+                const parts = stopSelectionInput.split(',').map(s => s.trim());
+                const selectedIndices = new Set();
+                const totalStops = (currentStops || []).length;
+                parts.forEach(part => {
+                    if (part.includes('-')) {
+                        const [start, end] = part.split('-').map(Number);
+                        if (!isNaN(start) && !isNaN(end)) {
+                            const min = Math.min(start, end);
+                            const max = Math.max(start, end);
+                            for (let i = min; i <= max; i++) {
+                                if (i > 0 && i <= totalStops) selectedIndices.add(i - 1);
+                            }
+                        }
+                    } else {
+                        const num = Number(part);
+                        if (!isNaN(num) && num > 0 && num <= totalStops) selectedIndices.add(num - 1);
+                    }
+                });
+                if (selectedIndices.size === 0) return alert("Invalid stop selection.");
+                
+                const cleanName = groupNameInput.toUpperCase().trim();
+                const numRoutes = parseInt(numRoutesInput) || 1;
+                
+                const nameExists = (stopGroups || []).some(g => g.name === cleanName && g.id !== editingGroupId);
+                if (nameExists) return alert("A zone with this name already exists.");
+
+                if (window.fbDb && user && !(zones || []).find(z => z.name === cleanName)) {
+                     window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'zones'), { name: cleanName })
+                     .catch(e => console.error("Failed to save zone", e));
+                }
+                
+                let candidateColor = getZoneColor(cleanName);
+                const otherGroups = (stopGroups || []).filter(g => g.id !== editingGroupId);
+                const usedColors = new Set(otherGroups.map(g => g.color));
+                
+                if (usedColors.has(candidateColor)) {
+                     const freeColor = EXTENDED_PALETTE.find(c => !usedColors.has(c));
+                     if (freeColor) candidateColor = freeColor;
+                }
+
+                const selectedIds = Array.from(selectedIndices).map(i => currentStops[i]?.id).filter(Boolean);
+
+                if (editingGroupId) {
+                    setStopGroups((stopGroups || []).map(g => g.id === editingGroupId ? { 
+                        ...g, 
+                        name: cleanName, 
+                        numRoutes, 
+                        color: candidateColor, 
+                        stops: selectedIds 
+                    } : g));
+                    setEditingGroupId(null);
+                } else {
+                    const newGroup = { id: Date.now(), name: cleanName, numRoutes, stops: selectedIds, color: candidateColor };
+                    setStopGroups([...(stopGroups || []), newGroup]);
+                }
+                setStopSelectionInput('');
+                setGroupNameInput('');
+                setNumRoutesInput(1);
+            };
+            
+            const handleCreateNewRoute = () => {
+                if (!newRouteConfig.zoneName) return alert("Enter a zone name");
+                const zoneName = newRouteConfig.zoneName.toUpperCase();
+                
+                if (optimizedRoutes && optimizedRoutes[zoneName]) return alert("Zone already exists");
+                
+                const usedColors = new Set(Object.values(optimizedRoutes || {}).map(r => r.color));
+                let color = getZoneColor(zoneName);
+                if (usedColors.has(color)) {
+                     const free = EXTENDED_PALETTE.find(c => !usedColors.has(c));
+                     if(free) color = free;
+                }
+                
+                setOptimizedRoutes(prev => ({
+                    ...prev,
+                    [zoneName]: {
+                        paradas: [],
+                        duracion_estimada: 0,
+                        link: '',
+                        color: color
+                    }
+                }));
+
+                // Sincronizar con el Planner creando un nuevo grupo
+                setStopGroups(prev => [...(prev || []), { id: Date.now(), name: zoneName, numRoutes: 1, stops: [], color: color }]);
+                
+                if (newRouteConfig.driverId) {
+                    setDriverAssignments(prev => ({ ...prev, [zoneName]: newRouteConfig.driverId }));
+                }
+                
+                setShowAddRouteModal(false);
+                setNewRouteConfig({ driverId: '', zoneName: '' });
+            };
+
+            const startEditGroup = (group) => {
+                setEditingGroupId(group.id);
+                setGroupNameInput(group.name);
+                setNumRoutesInput(group.numRoutes || 1);
+                const indices = (group.stops || []).map(id => (currentStops || []).findIndex(s => s.id === id)).filter(i => i !== -1).map(i => i + 1).sort((a,b)=>a-b);
+                setStopSelectionInput(indices.join(', '));
+            };
+
+            const deleteGroup = (id) => setStopGroups((stopGroups || []).filter(g => g.id !== id));
+
+            const handleEnter = (e, cb) => { if(e.key === 'Enter') cb(); };
+
+            const planningMapRoutes = useMemo(() => {
+                const mapData = {};
+                const groupedIds = new Set();
+                
+                (stopGroups || []).forEach(g => {
+                    const stops = (g.stops || []).map(id => { 
+                        const stop = (currentStops || []).find(s => s.id === id);
+                        if (stop) {
+                            groupedIds.add(id);
+                            const currentIndex = currentStops.findIndex(s => s.id === id) + 1;
+                            return { ...stop, originalIndex: currentIndex };
+                        }
+                        return null; 
+                    }).filter(Boolean); 
+                    
+                    if (stops.length > 0) mapData[g.name] = { paradas: stops, color: g.color };
+                });
+                
+                const ungrouped = (currentStops || []).map((s, i) => { 
+                    if (groupedIds.has(s.id)) return null; 
+                    return { ...s, originalIndex: i + 1 }; 
+                }).filter(Boolean);
+                
+                if (ungrouped.length > 0) mapData['Ungrouped'] = { paradas: ungrouped, color: '#000000' };
+                return mapData;
+            }, [currentStops, stopGroups]);
+
+            // Helper para re-vincular IDs y datos de facturación frescos desde la base de datos de origen
+            const enrichWithClientData = (stops) => {
+                return (stops || []).map(s => {
+                    let match = null;
+                    if (s.id) match = (currentStops || []).find(cs => cs.id === s.id);
+                    if (!match) {
+                        match = (currentStops || []).find(cs => 
+                            (cs.address || "").toLowerCase().trim() === (s.direccion || s.address || "").toLowerCase().trim()
+                        );
+                    }
+                    
+                    if (match) {
+                        return { 
+                            ...s, 
+                            id: match.id, 
+                            invoices: match.invoices || "", 
+                            pieces: match.pieces || "", 
+                            nombre: match.name,
+                            direccion: s.direccion || match.address
+                        };
+                    }
+                    return s;
+                });
+            };
+
+            const generateRoutes = async () => {
+                if ((stopGroups || []).length === 0 && (currentStops || []).length === 0) return;
+                setLoading(true); setError('');
+                try {
+                    const tasks = [];
+                    const newResults = { ...optimizedRoutes }; 
+
+                    const usedIds = new Set();
+
+                    // Limpieza previa de paradas movidas
+                    const stopOwnership = new Map();
+                    (stopGroups || []).forEach(g => (g.stops || []).forEach(id => stopOwnership.set(id, g.name)));
+                    const activeZoneNames = new Set((stopGroups || []).map(g => g.name));
+
+                    // ELIMINAR RUTAS VIEJAS Y FANTASMAS
+                    Object.keys(newResults).forEach(key => {
+                        if (key.startsWith("UNASSIGNED")) {
+                            delete newResults[key]; // Siempre regenerar UNASSIGNED
+                            return;
+                        }
+                        const keyBase = key.split(' - Route')[0];
+                        // Si la zona base ya no existe, borrar la ruta entera para evitar fantasmas
+                        if (!activeZoneNames.has(keyBase)) {
+                            delete newResults[key];
+                        }
+                    });
+
+                    // 1. Procesar Zonas Definidas
+                    (stopGroups || []).forEach(g => {
+                        const stops = (g.stops || []).map(id => {
+                            usedIds.add(id);
+                            return (currentStops || []).find(s => s.id === id);
+                        }).filter(Boolean);
+
+                        if (stops.length > 0) {
+                            let needsRecalc = true;
+                            const relatedRouteKeys = Object.keys(newResults || {}).filter(key => 
+                                key === g.name || key.startsWith(g.name + " - Route")
+                            );
+
+                            if (relatedRouteKeys.length > 0) {
+                                const currentAddresses = stops.map(s => s.address).sort();
+                                const existingStops = [];
+                                relatedRouteKeys.forEach(key => newResults[key].paradas.forEach(p => existingStops.push(p.direccion || p.address)));
+                                const existingAddressesSorted = existingStops.sort();
+                                
+                                if (currentAddresses.length > 0 && 
+                                    currentAddresses.length === existingAddressesSorted.length &&
+                                    currentAddresses.every((val, index) => val === existingAddressesSorted[index])) {
+                                    needsRecalc = false;
+                                    
+                                    // Sincronizar datos de facturación frescos incluso si no se recalcula ruta
+                                    relatedRouteKeys.forEach(key => {
+                                         newResults[key].color = g.color;
+                                         newResults[key].paradas = newResults[key].paradas.map(p => {
+                                             let freshStop = null;
+                                             if (p.id) freshStop = stops.find(s => s.id === p.id);
+                                             if (!freshStop) freshStop = stops.find(s => (s.address || "").toLowerCase().trim() === (p.direccion || p.address || "").toLowerCase().trim());
+                                             if (freshStop) {
+                                                 return { 
+                                                     ...p, 
+                                                     id: freshStop.id, 
+                                                     invoices: freshStop.invoices, 
+                                                     pieces: freshStop.pieces, 
+                                                     nombre: freshStop.name,
+                                                     direccion: freshStop.address
+                                                 };
+                                             }
+                                             return p;
+                                         });
+                                    });
+                                }
+                            }
+                            
+                            if (needsRecalc) {
+                                relatedRouteKeys.forEach(key => delete newResults[key]);
+                                tasks.push({ 
+                                    zoneName: g.name, 
+                                    color: g.color, 
+                                    body: { 
+                                        direcciones: stops.map(formatStopForBackend), 
+                                        num_vans: g.numRoutes || 1, 
+                                        base_address: baseAddress, 
+                                        dwell_time: 10 
+                                    } 
+                                });
+                            }
+                        }
+                    });
+
+                    // 2. Procesar Paradas sin asignar
+                    const ungroupedStops = (currentStops || []).filter(s => !usedIds.has(s.id));
+                    if (ungroupedStops.length > 0) {
+                         tasks.push({ 
+                             zoneName: "UNASSIGNED", 
+                             color: "#000000", 
+                             body: { 
+                                 direcciones: ungroupedStops.map(formatStopForBackend), 
+                                 num_vans: 1, 
+                                 base_address: baseAddress, 
+                                 dwell_time: 10 
+                             } 
+                          });
+                    }
+                    
+                    if (tasks.length > 0) {
+                        await Promise.all(tasks.map(async (task) => {
+                            const res = await fetch('/optimizar', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(task.body) });
+                            const data = await res.json();
+                            
+                            if (!res.ok) {
+                                throw new Error(data.error || data.message || `Error ${res.status}: Fallo de servidor`);
+                            }
+                            
+                            Object.keys(data).forEach((key, i) => {
+                                 const routeKey = task.zoneName === "UNASSIGNED" ? `UNASSIGNED ${i+1}` : (task.body.num_vans > 1 ? `${task.zoneName} - Route ${i+1}` : task.zoneName);
+                                 
+                                 const routeResponse = data[key];
+                                 const isArray = Array.isArray(routeResponse);
+                                 const paradasList = isArray ? routeResponse : (routeResponse.paradas || []);
+                                 const duracion = isArray ? 0 : (routeResponse.duracion_estimada || 0);
+                                 const link = isArray ? '' : (routeResponse.link || '');
+
+                                 const enrichedStops = enrichWithClientData(paradasList);
+                                 newResults[routeKey] = { paradas: enrichedStops, duracion_estimada: duracion, link: link, color: task.color };
+                            });
+                        }));
+                    }
+                    
+                    setOptimizedRoutes(newResults);
+                    setSelectedResultStops(new Set());
+                    setView('results');
+                } catch (e) { 
+                    alert("Error generando rutas: " + e.message); 
+                    setError("Error generating routes: " + e.message); 
+                } finally { 
+                    setLoading(false); 
+                }
+            };
+
+            const handleClientKeyDown = (e) => {
+                if (e.key === 'Tab' || e.key === 'Enter') {
+                    if (showSuggestions && activeSuggestion >= 0) {
+                        e.preventDefault();
+                        const filtered = (clientDB || []).filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
+                        const selection = filtered[activeSuggestion];
+                        setNewStopName(selection.name);
+                        setNewStopAddress(selection.address);
+                        setNewStopLatLng(selection.latlng || null);
+                        setTempStopData({name: selection.name, address: selection.address, latlng: selection.latlng || null});
+                        setShowSuggestions(false);
+                        if (addressInputRef.current) addressInputRef.current.focus();
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (addressInputRef.current) addressInputRef.current.focus();
+                    }
+                } else if (e.key === 'ArrowDown' && showSuggestions) {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => Math.min(prev + 1, 4));
+                } else if (e.key === 'ArrowUp' && showSuggestions) {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => Math.max(prev - 1, 0));
+                }
+            };
+            
+            const handleModalClientKeyDown = (e) => {
+                if (e.key === 'Tab' || e.key === 'Enter') {
+                    if (showSuggestions && activeSuggestion >= 0) {
+                        e.preventDefault();
+                        const filtered = (clientDB || []).filter(c => c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5);
+                        const selection = filtered[activeSuggestion];
+                        setNewStopName(selection.name);
+                        setNewStopAddress(selection.address);
+                        setNewStopLatLng(selection.latlng || null);
+                        setTempStopData({name: selection.name, address: selection.address, latlng: selection.latlng || null});
+                        setShowSuggestions(false);
+                        if(addressInputRef.current) addressInputRef.current.focus();
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if(addressInputRef.current) addressInputRef.current.focus();
+                    }
+                } else if (e.key === 'ArrowDown' && showSuggestions) {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => Math.min(prev + 1, 4));
+                } else if (e.key === 'ArrowUp' && showSuggestions) {
+                    e.preventDefault();
+                    setActiveSuggestion(prev => Math.max(prev - 1, 0));
+                }
+            };
+
+            const recalculateFixedRoute = async (zoneName, stops) => {
+                setRecalculating(p => ({...p, [zoneName]: true}));
+                try {
+                    const res = await fetch('/recalcular', { 
+                        method: 'POST', 
+                        headers: {'Content-Type':'application/json'}, 
+                        body: JSON.stringify({ paradas: stops.map(formatStopForBackend), base_address: baseAddress, dwell_time: 10 }) 
+                    });
+                    const d = await res.json();
+                    if (!res.ok) throw new Error(d.error || `Error ${res.status}`);
+                    
+                    const isArray = Array.isArray(d);
+                    const paradasList = isArray ? d : (d.paradas || []);
+                    const duracion = isArray ? 0 : (d.duracion_estimada || 0);
+                    const link = isArray ? '' : (d.link || '');
+
+                    const enrichedStops = enrichWithClientData(paradasList);
+                    
+                    setOptimizedRoutes(prev => ({
+                        ...prev,
+                        [zoneName]: { ...prev[zoneName], duracion_estimada: duracion, link: link, paradas: enrichedStops }
+                    }));
+                } catch(e) { console.error(e); alert("Error recalculating: "+e.message); }
+                finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
+            };
+
+            const recalculateRoute = async (zoneName, stops) => {
+                setRecalculating(p => ({...p, [zoneName]: true}));
+                try {
+                    const res = await fetch('/optimizar', { 
+                        method: 'POST', 
+                        headers: {'Content-Type':'application/json'}, 
+                        body: JSON.stringify({ direcciones: stops.map(formatStopForBackend), num_vans: 1, base_address: baseAddress, dwell_time: 10 }) 
+                    });
+                    const d = await res.json();
+                    if (!res.ok) throw new Error(d.error || `Error ${res.status}`);
+                    
+                    const firstKey = Object.keys(d)[0];
+                    const routeResponse = d[firstKey];
+                    const isArray = Array.isArray(routeResponse);
+                    const paradasList = isArray ? routeResponse : (routeResponse.paradas || []);
+                    const duracion = isArray ? 0 : (routeResponse.duracion_estimada || 0);
+                    const link = isArray ? '' : (routeResponse.link || '');
+
+                    const enrichedStops = enrichWithClientData(paradasList);
+                    
+                    setOptimizedRoutes(prev => ({
+                        ...prev,
+                        [zoneName]: { ...prev[zoneName], paradas: enrichedStops, duracion_estimada: duracion, link: link }
+                    }));
+                } catch(e) { console.error(e); alert("Error re-optimizing: "+e.message); }
+                finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
+            };
+
+            const handleOptimizeRemaining = async (zoneName) => {
+                const currentRoute = optimizedRoutes[zoneName].paradas;
+                setRecalculating(p => ({...p, [zoneName]: true}));
+                try {
+                    const res = await fetch('/optimizar_restantes', { 
+                        method: 'POST', 
+                        headers: {'Content-Type':'application/json'}, 
+                        body: JSON.stringify({ paradas: currentRoute.map(formatStopForBackend), base_address: baseAddress, dwell_time: 10 }) 
+                    });
+                    const d = await res.json();
+                    if (!res.ok) throw new Error(d.error || `Error ${res.status}`);
+                    
+                    const isArray = Array.isArray(d);
+                    const paradasList = isArray ? d : (d.paradas || []);
+                    const duracion = isArray ? 0 : (d.duracion_estimada || 0);
+                    const link = isArray ? '' : (d.link || '');
+
+                    const enrichedStops = enrichWithClientData(paradasList);
+                    
+                    setOptimizedRoutes(prev => ({
+                        ...prev,
+                        [zoneName]: { ...prev[zoneName], duracion_estimada: duracion, link: link, paradas: enrichedStops }
+                    }));
+                } catch(e) { console.error(e); alert("Error optimizing remaining: "+e.message); }
+                finally { setRecalculating(p => ({...p, [zoneName]: false})); setSelectedResultStops(new Set()); }
+            };
+
+            const reverseRoute = (zoneName) => {
+                const newRoutes = JSON.parse(JSON.stringify(optimizedRoutes));
+                newRoutes[zoneName].paradas.reverse();
+                setOptimizedRoutes(newRoutes);
+            };
+
+            const getWhatsappLink = (stops, driverName, routeLink) => {
+                let phone = '';
+                const driver = (drivers || []).find(d => d.name === driverName);
+                if (driver && driver.phone) phone = driver.phone.replace(/\D/g, '');
+                
+                const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
+                
+                // 1. Google Maps Link
+                // Usa el enlace generado por el servidor si está disponible (para rutas completas optimizadas), 
+                // o lo construye si es un chunk o el servidor no devolvió enlace.
+                const googleLink = routeLink ? routeLink : (stops && stops.length > 0 
+                    ? `https://www.google.com/maps/dir/?api=1&origin=${encode(baseAddress)}&destination=${encode(baseAddress)}&waypoints=${stops.map(s => encode(s.direccion || s.address)).join('%7C')}&travelmode=driving` 
+                    : "");
+
+                // 2. Apple Maps Link
+                // Construye el enlace multi-parada nativo de Apple: saddr=Base -> daddr=Stop1+to:Stop2+to:Base
+                let appleLink = "";
+                if (stops && stops.length > 0) {
+                    const stopsString = stops.map(s => encode(s.direccion || s.address)).join('+to:');
+                    appleLink = `https://maps.apple.com/?saddr=${encode(baseAddress)}&daddr=${stopsString}+to:${encode(baseAddress)}&dirflg=d`;
+                }
+                
+                const message = `Hello, here is your updated route:\n\n📍 *Google Maps:*\n${googleLink}\n\n🍎 *Apple Maps:*\n${appleLink}\n\nDrive safely!`;
+                
+                const encodedText = encodeURIComponent(message);
+                return phone ? `https://wa.me/${phone}?text=${encodedText}` : `https://wa.me/?text=${encodedText}`;
+            };
+
+            const openDriverMap = (name, data) => {
+                setViewingDriver({ name, data });
+            };
+
+            const handleGlobalPrint = async () => {
+                await autoSavePlan(); // TRIGGER AUTO-SAVE
+                setPrintData(null);
+                setShowBulkManifestPrint(false);
+                setShowGlobalPrint(true); 
+            };
+
+            const handleBulkManifestPrint = async () => {
+                await autoSavePlan(); // TRIGGER AUTO-SAVE
+                setPrintData(null);
+                setShowGlobalPrint(false);
+                setShowBulkManifestPrint(true);
+                setTimeout(() => {
+                    window.print();
+                    setShowBulkManifestPrint(false);
+                }, 1000);
+            };
+            
+            const handleResultDragStart = (e, zoneName, index) => {
+                setDraggedResultItem({ zoneName, index });
+                e.dataTransfer.effectAllowed = "move";
+                e.target.style.opacity = '0.5';
+            };
+            
+            const handleResultDragEnd = (e) => {
+                e.target.style.opacity = '1';
+                setDraggedResultItem(null);
+            };
+            
+            const handleResultDrop = (e, targetZoneName, targetIndex) => {
+                e.preventDefault();
+                if (!draggedResultItem) return;
+                const { zoneName: sourceZone, index: sourceIndex } = draggedResultItem;
+                const newRoutes = JSON.parse(JSON.stringify(optimizedRoutes));
+                const [movedStop] = newRoutes[sourceZone].paradas.splice(sourceIndex, 1);
+                
+                if (!movedStop.id) movedStop.id = findStopId(movedStop);
+                
+                if (targetIndex !== null) {
+                    let adjustedTarget = targetIndex;
+                    if (sourceZone === targetZoneName && sourceIndex < targetIndex) {
+                        adjustedTarget -= 1; 
+                    }
+                    newRoutes[targetZoneName].paradas.splice(adjustedTarget, 0, movedStop);
+                } else {
+                    newRoutes[targetZoneName].paradas.push(movedStop);
+                }
+                
+                setOptimizedRoutes(newRoutes);
+                setSelectedResultStops(new Set());
+
+                if (movedStop.id) {
+                    setStopGroups(gs => (gs || []).map(g => {
+                        let newStops = (g.stops || []).filter(id => id !== movedStop.id);
+                        const targetBase = targetZoneName.split(' - Route')[0];
+                        if (g.name === targetBase) {
+                             if (!newStops.includes(movedStop.id)) newStops.push(movedStop.id);
+                        }
+                        return { ...g, stops: newStops };
+                    }));
+                }
+            };
+
+            const handleSavePlan = async () => {
+                if (!planName.trim()) return alert("Enter a plan name");
+                const planData = {
+                    name: planName,
+                    createdAt: Date.now(),
+                    optimizedRoutes,
+                    driverAssignments,
+                    manualVehicleAssignments,
+                    stopGroups,
+                    currentStops,
+                    zoneCount: Object.keys(optimizedRoutes || {}).length,
+                    stopCount: (currentStops || []).length,
+                    isAutoSave: false // Explicit manual save
+                };
+                await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans'), planData);
+                setPlanName('');
+                setShowSavePlanModal(false);
+            };
+
+            const handleLoadPlan = (plan) => {
+                if(!confirm("Load this plan? Current unsaved work will be replaced.")) return;
+                setCurrentStops(plan.currentStops || []);
+                setStopGroups(plan.stopGroups || []);
+                setOptimizedRoutes(plan.optimizedRoutes || null);
+                setDriverAssignments(plan.driverAssignments || {});
+                setManualVehicleAssignments(plan.manualVehicleAssignments || {});
+                setShowLoadPlanModal(false);
+                setView('results'); 
+            };
+
+            const handleDeletePlan = async (id) => {
+                if(!confirm("Delete this saved plan?")) return;
+                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'saved_plans', id));
+            };
+
+            const addVehicle = async () => { if(newVehicleName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles'), { name: newVehicleName }); setNewVehicleName(''); } };
+            const deleteVehicle = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', id)); };
+            const updateVehicle = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', id), data); setEditingVehicleId(null); };
+            const assignVehicleDriver = async (vehicleId, driverName) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'vehicles', vehicleId), { assignedDriver: driverName }); };
+            
+            const AVATAR_COLORS = ['#3178A1','#74B745','#e67e22','#9b59b6','#e74c3c','#1abc9c','#c0392b','#2980b9'];
+            const syncDriverAccess = async (driverList) => {
+                if (!user || !window.fbDb || !window.fbSetDoc) return;
+                try {
+                    await window.fbSetDoc(
+                        window.fbDoc(window.fbDb, 'artifacts', appId, 'driver_access', user.uid),
+                        { drivers: driverList.map((d, i) => ({ id: d.id, name: d.name, pin: d.pin || '0000', color: d.color || AVATAR_COLORS[i % AVATAR_COLORS.length] })) }
+                    );
+                } catch (e) { console.error('[syncDriverAccess]', e); }
+            };
+            useEffect(() => { if (drivers && drivers.length > 0) syncDriverAccess(drivers); }, [drivers]);
+
+            const addDriver = async () => { if(newDriverName.trim()) { await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers'), { name: newDriverName, phone: newDriverPhone, pin: newDriverPin.slice(0,4) || '0000', active: true }); setNewDriverName(''); setNewDriverPhone(''); setNewDriverPin(''); } };
+            const deleteDriver = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers', id)); };
+            const updateDriver = async (id, data) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers', id), data); setEditingDriverId(null); };
+            
+            const saveClient = async () => { 
+                if(clientFormName && clientFormAddress) { 
+                    let finalLatLng = clientFormLatLng;
+                    if (!finalLatLng) {
+                        finalLatLng = await getLatLngForAddress(clientFormAddress);
+                    }
+                    const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients');
+                    const data = { name: clientFormName, address: clientFormAddress, latlng: finalLatLng };
+
+                    if(editingClientId) { await window.fbUpdateDoc(window.fbDoc(col, editingClientId), data); setEditingClientId(null); }
+                    else { await window.fbAddDoc(col, data); }
+                    setClientFormName(''); setClientFormAddress(''); setClientFormLatLng(null);
+                } 
+            };
+            const deleteClient = async (id) => { if(confirm('Delete?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients', id)); };
+
+            const consolidateRoute = async (zoneName, routeData, driver) => {
+                if (!driver) return alert('Assign a driver first.');
+                if (!window.fbDb) return alert('Firebase not ready.');
+                const now = new Date();
+                const trip = now.getHours() < 12 ? 'AM' : 'PM';
+                const today = now.toISOString().split('T')[0];
+                const tokenBase = `${user.uid}-${driver.name}-${zoneName}-${today}-${trip}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+                const token = tokenBase.slice(0, 64);
+                const expireAt = new Date(now.getTime() + 72 * 60 * 60 * 1000);
+                const stops = (routeData.paradas || []).map(s => ({
+                    nombre: s.nombre || s.name || '',
+                    direccion: s.direccion || s.address || '',
+                    invoices: s.invoices || '',
+                    pieces: s.pieces || '',
+                    delivered: false
+                }));
+                const encode = (str) => encodeURIComponent(str).replace(/%20/g, '+');
+                const paradas = routeData.paradas || [];
+                const googleLink = routeData.link || (paradas.length > 0
+                    ? `https://www.google.com/maps/dir/?api=1&origin=${encode(baseAddress)}&destination=${encode(baseAddress)}&waypoints=${paradas.map(s => encode(s.direccion || s.address)).join('%7C')}&travelmode=driving`
+                    : '');
+                const appleLink = paradas.length > 0
+                    ? `https://maps.apple.com/?saddr=${encode(baseAddress)}&daddr=${paradas.map(s => encode(s.direccion || s.address)).join('+to:')}+to:${encode(baseAddress)}&dirflg=d`
+                    : '';
+                try {
+                    await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), {
+                        driverName: driver.name,
+                        driverPhone: driver.phone || '',
+                        zoneName,
+                        trip,
+                        date: today,
+                        createdAt: now.toISOString(),
+                        expireAt,
+                        stops,
+                        dispatcherUid: user.uid,
+                        link: googleLink,
+                        appleLink
+                    });
+                } catch (err) {
+                    console.error('[consolidateRoute] Firestore write failed:', err);
+                    alert('Error saving route: ' + (err.message || err.code || err));
+                    return;
+                }
+                const baseUrl = window.location.origin;
+                const driverLink = `${baseUrl}/driver.html?r=${token}`;
+                const phone = (driver.phone || '').replace(/\D/g, '');
+                const message = `Hello, here is your updated route:\n\n📍 *Google Maps:*\n${googleLink}\n\n🍎 *Apple Maps:*\n${appleLink}\n\nYour stop tracking link is: ${driverLink}\n\nDrive safely!`;
+                const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+                setConsolidatedRoutes(prev => ({ ...prev, [zoneName]: waUrl }));
+                setSyncKey(k => k + 1);
+            };
+            const startEditingClient = (c) => { setClientFormName(c.name); setClientFormAddress(c.address); setClientFormLatLng(c.latlng || null); setEditingClientId(c.id); };
+
+            const addZoneFromSettings = async () => { 
+                if(newZoneName.trim()){ 
+                    await window.fbAddDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'zones'), { name: newZoneName.toUpperCase() }); 
+                    setNewZoneName(''); 
+                } 
+            };
+            const deleteZoneFromSettings = async (id) => { if(confirm('Delete zone?')) await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'zones', id)); };
+
+            const saveSettings = async () => {
+                if (window.fbDb) {
+                    await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'settings', 'config'), { companyConfig, baseAddress }, { merge: true });
+                    if (monitorPin.trim().length >= 4) {
+                        await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'monitor_config', user.uid), { pin: monitorPin.trim() }, { merge: true });
+                    }
+                    alert("Settings saved!");
+                }
+            };
+            const handleBackup = () => {
+                const data = { clients: clientDB, drivers, vehicles, stops: currentStops, settings: { companyConfig, baseAddress }, date: new Date().toISOString() };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a"); a.href = url; a.download = `backup_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            };
+            const handleRestoreClick = () => fileInputRef.current.click();
+            const handleFileChange = async (e) => {
+                const file = e.target.files[0]; if(!file) return;
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        if (data.clients) for (const c of data.clients) await window.fbSetDoc(window.fbDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'clients'), c.id), c);
+                        if (data.drivers) for (const d of data.drivers) await window.fbSetDoc(window.fbDoc(window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'drivers'), d.id), d);
+                        alert("Data restored!"); window.location.reload();
+                    } catch(err) { alert("Error restoring: "+err.message); }
+                };
+                reader.readAsText(file);
+            };
+            const handleChangePassword = async () => { try { await window.fbSendPasswordResetEmail(window.fbAuth, user.email); setSettingsMsg("Reset email sent!"); } catch(e) { setSettingsMsg("Error: "+e.message); } };
+
+            const assignDriver = (zoneName, driverId) => { setDriverAssignments(prev => ({ ...prev, [zoneName]: driverId })); };
+            const overrideVehicle = (zoneName, vehicleName) => { setManualVehicleAssignments(prev => ({ ...prev, [zoneName]: vehicleName })); };
+            
+            const handleLogout = () => { if(window.fbSignOut && window.fbAuth) window.fbSignOut(window.fbAuth); else window.location.reload(); };
+
+            const handleStopSelectionChange = (zoneName, index) => {
+                const key = `${zoneName}|${index}`;
+                const newSet = new Set(selectedResultStops);
+                if (newSet.has(key)) newSet.delete(key);
+                else newSet.add(key);
+                setSelectedResultStops(newSet);
+            };
+
+            const executeBulkMove = () => {
+                if (!bulkMoveTargetZone) return alert("Select a target route");
+                
+                const newRoutes = JSON.parse(JSON.stringify(optimizedRoutes));
+                const itemsToMove = [];
+                
+                const selectionList = Array.from(selectedResultStops).map(k => {
+                    const [z, i] = k.split('|');
+                    return { zone: z, index: parseInt(i) };
+                });
+
+                const grouped = {};
+                selectionList.forEach(item => {
+                    if(!grouped[item.zone]) grouped[item.zone] = [];
+                    grouped[item.zone].push(item.index);
+                });
+
+                Object.keys(grouped).forEach(zone => {
+                    grouped[zone].sort((a, b) => b - a); // Descending
+                    grouped[zone].forEach(idx => {
+                        if (newRoutes[zone] && newRoutes[zone].paradas[idx]) {
+                            const [stop] = newRoutes[zone].paradas.splice(idx, 1);
+                            if (!stop.id) stop.id = findStopId(stop);
+                            itemsToMove.push(stop);
+                        }
+                    });
+                });
+
+                if (newRoutes[bulkMoveTargetZone]) {
+                    newRoutes[bulkMoveTargetZone].paradas.push(...itemsToMove.reverse());
+                } else {
+                     alert("Target route not found.");
+                     return;
+                }
+
+                setOptimizedRoutes(newRoutes);
+                
+                setStopGroups(gs => (gs || []).map(g => {
+                    const moveIds = new Set(itemsToMove.map(m => m.id).filter(Boolean));
+                    let newStops = (g.stops || []).filter(id => !moveIds.has(id));
+                    const targetBase = bulkMoveTargetZone.split(' - Route')[0];
+                    
+                    if (g.name === targetBase) {
+                         itemsToMove.forEach(m => {
+                             if(m.id && !newStops.includes(m.id)) newStops.push(m.id);
+                         });
+                    }
+                    return { ...g, stops: newStops };
+                }));
+
+                setSelectedResultStops(new Set());
+                setBulkMoveTargetZone('');
+            };
+
+            if (!user) return <LoginScreen />;
+
+            return (
+                <div className="min-h-screen bg-slate-50 text-slate-800 pb-20">
+                    {showSavePlanModal && (
+                        <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                                <h3 className="font-bold text-lg mb-4 text-slate-800">Save Plan</h3>
+                                <input 
+                                    autoFocus
+                                    type="text" 
+                                    className="w-full p-3 border rounded-lg mb-4 outline-none focus:ring-2 focus:ring-ess-blue" 
+                                    placeholder="Name (e.g. Monday Morning)" 
+                                    value={planName}
+                                    onChange={e => setPlanName(e.target.value)}
+                                    onKeyDown={e => handleEnter(e, handleSavePlan)}
+                                />
+                                <div className="flex gap-3">
+                                    <button onClick={() => setShowSavePlanModal(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">Cancel</button>
+                                    <button onClick={handleSavePlan} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg hover:bg-sky-700">Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showLoadPlanModal && (
+                        <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md h-[500px] flex flex-col">
+                                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icon name="folder-open" className="h-5 w-5 text-ess-blue" /> Saved Plans</h3>
+                                    <button onClick={() => setShowLoadPlanModal(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-5 w-5" /></button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                                    {(savedPlans || []).length === 0 && <p className="text-slate-400 text-sm text-center py-10">No saved plans yet.</p>}
+                                    {(savedPlans || []).map((plan) => (
+                                        <div key={plan.id} className="border border-slate-200 rounded-lg p-3 hover:bg-slate-50 transition-colors">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <div className="font-bold text-slate-800">{plan.name}</div>
+                                                    <div className="text-xs text-slate-500">{new Date(plan.createdAt).toLocaleString()}</div>
+                                                </div>
+                                                <button onClick={() => handleDeletePlan(plan.id)} className="text-slate-400 hover:text-red-500 p-1"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                            </div>
+                                            <div className="flex items-center gap-4 text-xs text-slate-600 mb-3">
+                                                <span className="flex items-center gap-1"><Icon name="map" className="h-3 w-3" /> {plan.zoneCount || 0} Zones</span>
+                                                <span className="flex items-center gap-1"><Icon name="map-pin" className="h-3 w-3" /> {plan.stopCount || 0} Stops</span>
+                                            </div>
+                                            <button onClick={() => handleLoadPlan(plan)} className="w-full py-2 bg-white border border-ess-blue text-ess-blue font-bold rounded hover:bg-blue-50 transition-colors flex justify-center items-center gap-2">
+                                                Load Plan <Icon name="arrow-right" className="h-3 w-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {showAddRouteModal && (
+                        <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                                <h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center gap-2"><Icon name="plus" className="h-5 w-5 text-green-600" /> New Route</h3>
+                                <div className="space-y-4 mb-6">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Zone Name</label>
+                                        <input 
+                                            list="route-zone-options"
+                                            autoFocus
+                                            type="text" 
+                                            className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue uppercase" 
+                                            placeholder="e.g. EXTRA ROUTE" 
+                                            value={newRouteConfig.zoneName}
+                                            onChange={e => setNewRouteConfig({...newRouteConfig, zoneName: e.target.value})}
+                                        />
+                                        <datalist id="route-zone-options">
+                                            {(zones || []).map(z => <option key={z.id} value={z.name} />)}
+                                        </datalist>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Driver (Optional)</label>
+                                        <select 
+                                            className="w-full p-3 border rounded-lg outline-none bg-white"
+                                            value={newRouteConfig.driverId}
+                                            onChange={e => setNewRouteConfig({...newRouteConfig, driverId: e.target.value})}
+                                        >
+                                            <option value="">-- Select --</option>
+                                            {(drivers || []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="flex gap-3">
+                                    <button onClick={() => setShowAddRouteModal(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">Cancel</button>
+                                    <button onClick={handleCreateNewRoute} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg hover:bg-sky-700">Create</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {viewingGlobalMap && optimizedRoutes && (
+                        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden relative">
+                                <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center z-10 relative">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Icon name="map" className="h-5 w-5 text-ess-blue" /> Global Route Map</h3>
+                                    <button onClick={() => setViewingGlobalMap(false)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-6 w-6" /></button>
+                                </div>
+                                <div className="flex-1 relative w-full h-full">
+                                    <GlobalMapView 
+                                        routes={optimizedRoutes} 
+                                        baseAddress={baseAddress} 
+                                        enableDrawing={true} 
+                                        onStopsSelected={handleMapSelection}
+                                        onMarkerClick={handleMarkerClick}
+                                    />
+                                </div>
+                                <div className="p-4 bg-white border-t flex flex-wrap gap-4 text-xs">
+                                    {Object.entries(optimizedRoutes).map(([name, data]) => {
+                                        const assignedId = driverAssignments[name];
+                                        const driverObj = (drivers || []).find(d => d.id === assignedId);
+                                        const driverName = driverObj ? driverObj.name : "Unassigned";
+                                        return (
+                                            <div key={name} className="flex items-center gap-2">
+                                                <span className="w-3 h-3 rounded-full" style={{backgroundColor: data.color}}></span>
+                                                <span className="font-bold">{name} <span className="font-normal text-slate-500">({driverName})</span></span>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {viewingDriver && (
+                        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden relative">
+                                <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center z-10 relative">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Icon name="map" className="h-5 w-5 text-ess-blue" /> Route: {viewingDriver.name}</h3>
+                                    <button onClick={() => setViewingDriver(null)} className="text-slate-400 hover:text-red-500"><Icon name="x" className="h-6 w-6" /></button>
+                                </div>
+                                <div className="flex-1 relative w-full h-full">
+                                    <GlobalMapView 
+                                        key={viewingDriver ? viewingDriver.name : 'driver-map'}
+                                        routes={{ [viewingDriver.name]: viewingDriver.data }} 
+                                        baseAddress={baseAddress} 
+                                        enableDrawing={true}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showAddDetailsModal && (
+                        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print animate-fade-in">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                                <h3 className="font-bold text-lg mb-4 text-slate-800">
+                                    {targetZoneForManualAdd ? `Add Stop to ${targetZoneForManualAdd}` : 'Stop Details'}
+                                </h3>
+                                
+                                {targetZoneForManualAdd && (
+                                    <div className="mb-4 space-y-4">
+                                        <div className="relative">
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Client</label>
+                                            <input 
+                                                autoFocus
+                                                ref={inputRef}
+                                                type="text" 
+                                                className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue" 
+                                                placeholder="Name" 
+                                                value={newStopName} 
+                                                onChange={e => {
+                                                    setNewStopName(e.target.value);
+                                                    setShowSuggestions(true);
+                                                    setActiveSuggestion(-1);
+                                                }}
+                                                onKeyDown={handleModalClientKeyDown}
+                                            />
+                                            {showSuggestions && newStopName && (
+                                                <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full h-auto">
+                                                    {(clientDB || []).filter(c=>c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5).map((c, i) => (
+                                                        <div 
+                                                            key={c.id} 
+                                                            className={`p-3 cursor-pointer border-b text-sm ${i === activeSuggestion ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
+                                                            onClick={()=>{
+                                                                setNewStopName(c.name); 
+                                                                setNewStopAddress(c.address); 
+                                                                setNewStopLatLng(c.latlng || null);
+                                                                setTempStopData({name: c.name, address: c.address, latlng: c.latlng || null}); 
+                                                                setShowSuggestions(false); 
+                                                                if(addressInputRef.current) addressInputRef.current.focus();
+                                                            }}
+                                                        >
+                                                            <div className="font-bold">{c.name}</div>
+                                                            <div className="text-xs text-gray-500">{c.address}</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="relative">
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Address</label>
+                                            <GoogleAddressInput 
+                                                inputRef={addressInputRef}
+                                                value={newStopAddress} 
+                                                onChange={e => { setNewStopAddress(e.target.value); setTempStopData(prev => ({...prev, name: newStopName, address: e.target.value})); }}
+                                                className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:border-ess-blue"
+                                                placeholder="Search Google Maps"
+                                                disabled={!scriptLoaded}
+                                                isLoaded={scriptLoaded}
+                                                onSelection={(latlng) => {
+                                                     if(latlng) setNewStopLatLng(latlng);
+                                                     if(ghostInputRef.current) ghostInputRef.current.focus();
+                                                }}
+                                                onKeyDown={(e) => handleEnter(e, () => invoicesInputRef.current?.focus())}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!targetZoneForManualAdd && (
+                                    <div className="mb-4 text-sm text-slate-600">
+                                        <p><strong>Client:</strong> {tempStopData?.name}</p>
+                                        <p className="truncate"><strong>Addr:</strong> {tempStopData?.address}</p>
+                                    </div>
+                                )}
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoices (Optional)</label>
+                                        <input ref={invoicesInputRef} type="text" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="e.g. 10550, 10551" value={tempInvoices} onChange={e => setTempInvoices(e.target.value)} onKeyDown={(e) => handleEnter(e, () => piecesInputRef.current?.focus())} autoFocus={!targetZoneForManualAdd} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pieces Shipped</label>
+                                        <input ref={piecesInputRef} type="number" className="w-full p-3 border border-slate-300 rounded-lg outline-none" placeholder="0" value={tempPieces} onChange={e => setTempPieces(e.target.value)} onKeyDown={(e) => handleEnter(e, confirmAddStop)} />
+                                    </div>
+                                </div>
+                                <div className="mt-6 flex gap-3">
+                                    <button onClick={() => { setShowAddDetailsModal(false); setTempStopData(null); setTargetZoneForManualAdd(null); setEditingResultStop(null); setAddressError(''); }} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-lg font-bold">Cancel</button>
+                                    <button onClick={confirmAddStop} className="flex-1 py-3 bg-ess-blue text-white rounded-lg font-bold shadow-lg">Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* HEADER */}
+                    <div className="bg-white border-b border-slate-200 sticky top-0 z-40 no-print shadow-sm">
+                        <div className="max-w-7xl mx-auto px-6 py-3 flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <img src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg" alt="ESS" className="h-10" />
+                                <h1 className="font-bold text-slate-700 hidden sm:block">Route Planner</h1>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs text-slate-400 font-bold mr-2 hidden md:inline-block">User: {user.email}</span>
+                                <button onClick={() => setShowLoadPlanModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-slate-600 bg-white border border-slate-200 hover:text-ess-blue hover:bg-slate-50 transition-colors shadow-sm" title="Saved Plans">
+                                    <Icon name="folder-open" className="h-4 w-4" /> Saved Plans
+                                </button>
+                                <div className="h-6 w-px bg-slate-300 mx-1"></div>
+                                <button onClick={() => setView('planning')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'planning' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="layout-dashboard" className="h-4 w-4" /> Planner</button>
+                                <button onClick={() => setView('clients')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'clients' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="database" className="h-4 w-4" /> Clients</button>
+                                <button onClick={() => setView('vehicles')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'vehicles' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="truck" className="h-4 w-4" /> Fleet</button>
+                                <button onClick={() => setView('settings')} className={`text-sm font-medium px-3 py-2 rounded-lg flex items-center gap-2 ${view === 'settings' ? 'bg-ess-blue text-white shadow-sm' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:text-ess-blue'}`}><Icon name="settings" className="h-4 w-4" /> Config</button>
+                                <div className="w-px h-6 bg-slate-300 mx-1"></div>
+                                <button onClick={handleLogout} className="text-sm font-medium text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 px-3 py-2 rounded-lg flex items-center gap-2 ml-2"><Icon name="log-out" className="h-4 w-4" /> Exit</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <main className="max-w-7xl mx-auto p-4 space-y-4">
+                        
+                        {view === 'planning' && (
+                            /* ... (Planning View) ... */
+                            <div className="animate-fade-in space-y-4">
+                                <div className="col-span-12 bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                                    {/* ... Add Stop section ... */}
+                                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
+                                        <div className="bg-green-100 p-1.5 rounded-full text-green-700"><Icon name="plus" className="h-5 w-5" /></div>
+                                        Add Stop
+                                    </h2>
+                                    <div className="grid md:grid-cols-2 gap-6">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Client</label>
+                                            <div className="relative">
+                                                <input 
+                                                    ref={inputRef}
+                                                    type="text" 
+                                                    className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-ess-blue" 
+                                                    placeholder="Name" 
+                                                    value={newStopName} 
+                                                    onChange={e => {
+                                                        setNewStopName(e.target.value);
+                                                        setShowSuggestions(true);
+                                                        setActiveSuggestion(-1);
+                                                    }}
+                                                    onKeyDown={handleClientKeyDown}
+                                                />
+                                                {showSuggestions && newStopName && (
+                                                    <div className="absolute bg-white border shadow-xl z-50 rounded-lg mt-1 w-full h-auto">
+                                                        {(clientDB || []).filter(c=>c.name.toLowerCase().includes(newStopName.toLowerCase()) || c.address.toLowerCase().includes(newStopName.toLowerCase())).slice(0,5).map((c, i) => (
+                                                            <div 
+                                                                key={c.id} 
+                                                                className={`p-3 cursor-pointer border-b text-sm ${i === activeSuggestion ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
+                                                                onClick={()=>{
+                                                                    setNewStopName(c.name); 
+                                                                    setNewStopAddress(c.address); 
+                                                                    setNewStopLatLng(c.latlng || null);
+                                                                    setTempStopData({name: c.name, address: c.address, latlng: c.latlng || null}); 
+                                                                    setShowSuggestions(false); 
+                                                                    if(addressInputRef.current) addressInputRef.current.focus();
+                                                                }}
+                                                            >
+                                                                <div className="font-bold">{c.name}</div>
+                                                                <div className="text-xs text-gray-500">{c.address}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Address</label>
+                                            <div className="flex gap-2">
+                                                <div className="flex-1 relative">
+                                                    <GoogleAddressInput 
+                                                        inputRef={addressInputRef}
+                                                        value={newStopAddress} 
+                                                        onChange={e => {
+                                                            setNewStopAddress(e.target.value);
+                                                            setTempStopData(prev => ({...prev, name: newStopName, address: e.target.value}));
+                                                        }} 
+                                                        onSelection={(latlng) => {
+                                                             if(latlng) setNewStopLatLng(latlng);
+                                                             if(ghostInputRef.current) ghostInputRef.current.focus();
+                                                        }}
+                                                        className="w-full p-3 border border-slate-300 rounded-lg outline-none focus:border-ess-blue"
+                                                        placeholder="Search Google Maps"
+                                                        disabled={!scriptLoaded}
+                                                        isLoaded={scriptLoaded}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                e.preventDefault();
+                                                                initiateAddStop();
+                                                            }
+                                                        }}
+                                                    />
+                                                    {addressError && !showAddDetailsModal && <p className="text-red-500 text-xs font-bold mt-1 animate-fade-in">{addressError}</p>}
+                                                    <input 
+                                                        ref={ghostInputRef}
+                                                        className="opacity-0 w-0 h-0 absolute top-0 left-0"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                e.preventDefault();
+                                                                initiateAddStop();
+                                                            }
+                                                        }}
+                                                    />
+                                                </div>
+                                                <button onClick={initiateAddStop} className="px-6 bg-ess-blue text-white font-bold rounded-lg hover:bg-sky-700 shadow-md flex items-center gap-2">
+                                                    Next <Icon name="arrow-right" className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid md:grid-cols-12 gap-4 h-[650px]">
+                                    <div className="md:col-span-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                                        <div className="p-4 bg-slate-50 border-b border-slate-200">
+                                            <h3 className="text-xs font-bold text-slate-500 uppercase mb-3">{editingGroupId ? 'Edit Zone' : 'Create New Zone'}</h3>
+                                            
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <input 
+                                                        type="text" 
+                                                        className="w-full p-2 border border-slate-300 rounded text-sm focus:border-ess-blue outline-none"
+                                                        placeholder="Stops (e.g. 1-5, 8, 11-13)"
+                                                        value={stopSelectionInput}
+                                                        onChange={e => setStopSelectionInput(e.target.value)}
+                                                    />
+                                                    <div className="flex justify-between items-center mt-1">
+                                                        <p className="text-[10px] text-slate-400">Use commas for individual stops and dashes for ranges.</p>
+                                                        <span className="text-[10px] font-bold text-ess-blue bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                                                            # stops: {selectedStopCount}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <input 
+                                                        list="zone-options"
+                                                        type="text" 
+                                                        className="w-full p-2 border border-slate-300 rounded text-sm focus:border-ess-blue outline-none uppercase font-bold"
+                                                        placeholder="ZONE NAME (E.G. MIAMI)"
+                                                        value={groupNameInput}
+                                                        onChange={e => setGroupNameInput(e.target.value)}
+                                                        onKeyDown={e => handleEnter(e, saveGroup)}
+                                                    />
+                                                    <datalist id="zone-options">
+                                                        {(zones || []).map(z => <option key={z.id} value={z.name} />)}
+                                                    </datalist>
+                                                    
+                                                    <div className="flex gap-2 items-center justify-between">
+                                                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded border border-slate-200">
+                                                            <span className="text-xs font-bold text-slate-500">Routes:</span>
+                                                            <input 
+                                                                type="number" 
+                                                                min="1" 
+                                                                max="10"
+                                                                className="w-12 p-1 border border-slate-300 rounded text-sm text-center outline-none"
+                                                                value={numRoutesInput}
+                                                                onChange={e => setNumRoutesInput(e.target.value)}
+                                                            />
+                                                        </div>
+                                                        <button onClick={saveGroup} className={`flex-1 py-2 text-white font-bold rounded text-sm ${editingGroupId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-ess-blue hover:bg-sky-700'}`}>
+                                                            {editingGroupId ? 'Update' : 'Create Zone'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                {editingGroupId && <button onClick={() => { setEditingGroupId(null); setGroupNameInput(''); setStopSelectionInput(''); setNumRoutesInput(1); }} className="text-xs text-slate-500 hover:underline">Cancel edit</button>}
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/30">
+                                            {(stopGroups || []).map(group => (
+                                                <div key={group.id} className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-3 h-3 rounded-full" style={{backgroundColor: group.color}}></div>
+                                                            <div>
+                                                                <h4 className="font-bold text-slate-700">{group.name}</h4>
+                                                                <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 border border-slate-200">{group.numRoutes || 1} Route(s)</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={() => startEditGroup(group)} className="text-slate-400 hover:text-ess-blue"><Icon name="pencil" className="h-4 w-4" /></button>
+                                                            <button onClick={() => deleteGroup(group.id)} className="text-slate-400 hover:text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-xs text-slate-500">
+                                                        Stops: {(group.stops || []).map(id => {
+                                                            const idx = (currentStops || []).findIndex(s => s.id === id);
+                                                            return idx !== -1 ? (idx + 1) : '?';
+                                                        }).join(', ')}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {(stopGroups || []).length === 0 && (
+                                                <div className="text-center py-8 text-slate-400 text-sm italic">
+                                                    No zones. Draw on map or create above.
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        <div className="p-4 border-t border-slate-200 bg-white space-y-3">
+                                            {optimizedRoutes && (
+                                                <button onClick={() => setView('results')} className="w-full py-2 bg-white border border-green-600 text-green-600 rounded-lg font-bold shadow-sm flex justify-center items-center gap-2 hover:bg-green-50 transition-all text-sm">
+                                                    <Icon name="check-circle" className="h-4 w-4" /> Go to Results
+                                                </button>
+                                            )}
+                                            <button onClick={generateRoutes} disabled={loading || ((stopGroups || []).length === 0 && (currentStops || []).length === 0)} className="w-full py-3 bg-green-600 text-white rounded-lg font-bold shadow-lg hover:bg-green-700 flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                                                {loading ? <div className="loader w-4 h-4 border-white"></div> : <><Icon name="play" className="h-4 w-4" /> GENERATE ROUTES</>}
+                                            </button>
+                                            {(stopGroups || []).length > 0 && (
+                                                <button onClick={clearAllGroups} className="w-full py-2 text-xs text-red-500 hover:text-red-700 font-bold">Clear All Zones</button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="md:col-span-8 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden relative flex flex-col">
+                                        <div className="flex-1 relative">
+                                            <GlobalMapView 
+                                                routes={planningMapRoutes} 
+                                                baseAddress={baseAddress} 
+                                                enableDrawing={true}
+                                                onStopsSelected={handleMapSelection}
+                                                onMarkerClick={handleMarkerClick}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm relative">
+                                    <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                        <h3 className="font-bold text-sm text-slate-500 uppercase flex items-center gap-2"><Icon name="list" className="h-4 w-4" /> Reference List</h3>
+                                        <div className="flex gap-2">
+                                            {/* BOTÓN DESHACER (Solo aparece si hay un backup) */}
+                                            {lastDeletedBackup && (
+                                                <button onClick={undoClearAllStops} className="text-xs bg-orange-100 hover:bg-orange-200 text-orange-700 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors" title="Undo Clear All">
+                                                    <Icon name="undo" className="h-3 w-3" /> Undo Clear
+                                                </button>
+                                            )}
+                                            
+                                            {/* BOTONES NORMALES */}
+                                            {(currentStops || []).length > 0 && (
+                                                <>
+                                                    <button onClick={() => setShowSavePlanModal(true)} className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors" title="Save current stops and zones">
+                                                        <Icon name="save" className="h-3 w-3" /> Save
+                                                    </button>
+                                                    <button onClick={clearAllStops} className="text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors">
+                                                        <Icon name="trash-2" className="h-3 w-3" /> Clear All
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2">
+                                        {(currentStops || []).map((stop, idx) => (
+                                            <div key={stop.id} className="text-xs flex items-center justify-between gap-2 border-b border-slate-50 pb-1 group hover:bg-slate-50 p-1 rounded">
+                                                <div className="flex items-start gap-2 overflow-hidden">
+                                                    <span className="font-bold text-slate-400 w-5 flex-shrink-0">{idx + 1}.</span>
+                                                    <div className="truncate">
+                                                        <span className="font-bold text-slate-700">{stop.name}</span>
+                                                        <span className="block text-[10px] text-slate-400 truncate">{stop.address}</span>
+                                                        {(stop.invoices || stop.pieces) && (
+                                                            <div className="flex gap-2 mt-0.5 text-[9px] text-slate-500">
+                                                                {stop.invoices && <span className="bg-yellow-50 px-1 rounded border border-yellow-100 text-yellow-700">Inv: {stop.invoices}</span>}
+                                                                {stop.pieces && <span className="bg-blue-50 px-1 rounded border border-blue-100 text-blue-700">Pcs: {stop.pieces}</span>}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={() => handleEditStop(stop)} className="text-blue-400 hover:text-blue-600 p-0.5"><Icon name="pencil" className="h-3 w-3" /></button>
+                                                    <button onClick={() => removeStop(stop.id)} className="text-red-400 hover:text-red-600 p-0.5"><Icon name="trash-2" className="h-3 w-3" /></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {(currentStops || []).length === 0 && <span className="text-xs text-slate-400 italic">No stops.</span>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'results' && optimizedRoutes && (
+                            /* ... (Results View) ... */
+                            <div className="animate-fade-in space-y-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <button onClick={() => setView('planning')} className="px-4 py-2 border bg-white rounded-lg font-bold hover:bg-slate-50 text-sm flex items-center gap-2 shadow-sm">
+                                        <Icon name="arrow-left" className="h-4 w-4" /> Back to Planning
+                                    </button>
+                                    <div className="flex gap-3">
+                                        <button onClick={() => setShowAddRouteModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-slate-600 hover:bg-slate-800 transition-colors shadow-sm">
+                                            <Icon name="plus-circle" className="h-4 w-4" /> Add New Route
+                                        </button>
+                                        <button onClick={() => setShowSavePlanModal(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-green-600 hover:bg-green-700 transition-colors shadow-sm">
+                                            <Icon name="save" className="h-4 w-4" /> Save Plan
+                                        </button>
+                                        <button onClick={() => setViewingGlobalMap(true)} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-slate-600 bg-white border border-slate-200 hover:text-ess-blue hover:bg-slate-50 transition-colors shadow-sm">
+                                            <Icon name="map" className="h-4 w-4" /> Global Map
+                                        </button>
+                                        <button onClick={handleGlobalPrint} className="text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-2 text-white bg-slate-800 hover:bg-black transition-colors shadow-sm">
+                                            <Icon name="printer" className="h-4 w-4" /> Summary
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {Object.entries(optimizedRoutes).map(([zoneName, routeData]) => {
+                                        const assignedDriverId = driverAssignments[zoneName];
+                                        const driver = (drivers || []).find(d => d.id === assignedDriverId);
+                                        const defaultVehicle = (vehicles || []).find(v => v.assignedDriver === driver?.name);
+                                        const currentVehicleName = manualVehicleAssignments[zoneName] || (defaultVehicle ? defaultVehicle.name : "");
+
+                                        return (
+                                            <div 
+                                                key={zoneName} 
+                                                className="bg-white rounded-xl border-t-4 shadow-md overflow-hidden flex flex-col" 
+                                                style={{borderColor: routeData.color}}
+                                                onDragOver={(e) => e.preventDefault()}
+                                                onDrop={(e) => handleResultDrop(e, zoneName, null)}
+                                            >
+                                                <div className="p-4 bg-slate-50 border-b border-slate-200">
+                                                    <div className="flex justify-between items-start mb-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <button 
+                                                                onClick={() => initiateAddStopToRoute(zoneName)}
+                                                                className="bg-green-100 hover:bg-green-200 text-green-700 p-1 rounded transition-colors shadow-sm"
+                                                                title="Add Manual Stop"
+                                                            >
+                                                                <Icon name="plus" className="h-4 w-4" />
+                                                            </button>
+                                                            <h2 className="font-bold text-lg text-slate-800 uppercase">{zoneName}</h2>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-bold bg-white border px-2 py-1 rounded shadow-sm">{(routeData.paradas || []).length} Stops</span>
+                                                            <button onClick={() => handleDeleteRoute(zoneName)} className="text-red-400 hover:text-red-600 p-1 rounded-full hover:bg-red-50" title="Delete Route"><Icon name="x" className="h-4 w-4" /></button>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="relative mb-2">
+                                                        <select 
+                                                            className={`w-full p-2.5 rounded-lg border-2 font-bold text-sm outline-none appearance-none cursor-pointer ${assignedDriverId ? 'border-ess-green bg-green-50 text-green-800' : 'border-slate-300 bg-white text-slate-500'}`}
+                                                            value={assignedDriverId || ""}
+                                                            onChange={(e) => assignDriver(zoneName, e.target.value)}
+                                                        >
+                                                            <option value="">-- Assign Driver --</option>
+                                                            {(drivers || []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                                        </select>
+                                                        <div className="absolute right-3 top-3 pointer-events-none">
+                                                            <Icon name="chevron-down" className="h-4 w-4 text-slate-400" />
+                                                        </div>
+                                                    </div>
+
+                                                    {driver && (
+                                                        <div className="relative mb-3">
+                                                            <div className="absolute left-3 top-2.5 pointer-events-none text-slate-400"><Icon name="truck" className="h-4 w-4" /></div>
+                                                            <select 
+                                                                className="w-full pl-9 p-2 rounded border border-slate-300 text-xs text-slate-600 bg-white outline-none appearance-none cursor-pointer"
+                                                                value={currentVehicleName}
+                                                                onChange={(e) => overrideVehicle(zoneName, e.target.value)}
+                                                            >
+                                                                <option value="">No Truck</option>
+                                                                {(vehicles || []).map(v => <option key={v.id} value={v.name}>{v.name} {v.assignedDriver === driver.name ? '(Default)' : ''}</option>)}
+                                                            </select>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
+                                                        <div className="bg-white p-2 rounded border border-slate-200 flex items-center gap-2 shadow-sm">
+                                                            {recalculating[zoneName] ? <span className="text-ess-blue font-bold animate-pulse">Loading...</span> : <><Icon name="clock" className="h-4 w-4 text-ess-green" /> {Math.floor(routeData.duracion_estimada / 60)}h {Math.round(routeData.duracion_estimada % 60)}m</>}
+                                                        </div>
+                                                        <div className="flex gap-1 justify-end">
+                                                            <button onClick={() => reverseRoute(zoneName)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200 shadow-sm" title="Reverse"><Icon name="arrow-up-down" className="h-4 w-4" /></button>
+                                                            <button onClick={() => handleOptimizeRemaining(zoneName)} className="bg-white hover:bg-purple-50 text-slate-600 hover:text-purple-600 p-1.5 rounded border border-slate-200 shadow-sm font-bold" title="Optimize Remaining (Keep 1st)"><Icon name="wand-2" className="h-4 w-4" /></button>
+                                                            <button onClick={() => recalculateRoute(zoneName, routeData.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 p-1.5 rounded border border-slate-200 shadow-sm font-bold" title="Full Optimization"><Icon name="shuffle" className="h-4 w-4" /></button>
+                                                            <button onClick={() => recalculateFixedRoute(zoneName, routeData.paradas)} className="bg-white hover:bg-blue-50 text-slate-600 p-1.5 rounded border border-slate-200 shadow-sm" title="Refresh Time"><Icon name="refresh-cw" className="h-4 w-4" /></button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex-1 overflow-y-auto p-0 bg-white">
+                                                    {(routeData.paradas || []).map((stop, i) => (
+                                                        <div 
+                                                            key={i} 
+                                                            className="flex gap-3 p-3 border-b border-slate-100 text-sm hover:bg-slate-50 transition-colors cursor-grab active:cursor-grabbing group"
+                                                            draggable="true"
+                                                            onDragStart={(e) => handleResultDragStart(e, zoneName, i)}
+                                                            onDragEnd={handleResultDragEnd}
+                                                            onDrop={(e) => { e.stopPropagation(); handleResultDrop(e, zoneName, i); }}
+                                                            onDragOver={(e) => e.preventDefault()}
+                                                        >
+                                                            <div className="flex items-center justify-center mr-2">
+                                                               <input 
+                                                                    type="checkbox" 
+                                                                    className="w-4 h-4 text-ess-blue rounded border-gray-300 focus:ring-ess-blue cursor-pointer"
+                                                                    checked={selectedResultStops.has(`${zoneName}|${i}`)}
+                                                                    onChange={() => handleStopSelectionChange(zoneName, i)}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                               />
+                                                            </div>
+                                                            <span className="font-bold text-slate-400 text-xs mt-0.5 w-5 text-right">{i+1}.</span>
+                                                            <div className="flex-1 leading-tight">
+                                                                <div className="font-bold text-slate-700">{stop.nombre || stop.name}</div>
+                                                                <div className="text-xs text-slate-500 truncate">{stop.direccion || stop.address}</div>
+                                                                {(stop.invoices || stop.pieces) && (
+                                                                    <div className="flex gap-2 mt-0.5 text-[9px] text-slate-500">
+                                                                        {stop.invoices && <span className="bg-yellow-50 px-1 rounded border border-yellow-100 text-yellow-700">Inv: {stop.invoices}</span>}
+                                                                        {stop.pieces && <span className="bg-blue-50 px-1 rounded border border-blue-100 text-blue-700">Pcs: {stop.pieces}</span>}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button onClick={() => initiateEditResultStop(zoneName, i, stop)} className="text-blue-400 hover:text-blue-600 p-0.5"><Icon name="pencil" className="h-3 w-3" /></button>
+                                                                <button onClick={() => deleteResultStop(zoneName, i)} className="text-red-400 hover:text-red-600 p-0.5"><Icon name="trash-2" className="h-3 w-3" /></button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                <div className="p-4 bg-slate-50 border-t border-slate-200 grid grid-cols-2 gap-2">
+                                                    <button onClick={() => openDriverMap(zoneName, routeData)} className="bg-white border border-slate-300 hover:border-ess-blue hover:text-ess-blue text-slate-600 font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors">
+                                                        <Icon name="map" className="h-3 w-3" /> Map
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => {
+                                                            const link = routeData.link || getWhatsappLink(routeData.paradas, driver?.name, routeData.link);
+                                                            window.open(link, '_blank');
+                                                        }} 
+                                                        className="bg-white border border-slate-300 hover:border-ess-blue hover:text-ess-blue text-slate-600 font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                    >
+                                                        <Icon name="send" className="h-3 w-3" /> App
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={() => {
+                                                            autoSavePlan();
+                                                            setPrintData({
+                                                                stops: routeData.paradas,
+                                                                driverName: driver ? driver.name : "Unassigned",
+                                                                vehicle: currentVehicleName,
+                                                                phone: driver ? driver.phone : "",
+                                                                duration: routeData.duracion_estimada,
+                                                                zoneName: zoneName
+                                                            });
+                                                        }}
+                                                        className="col-span-2 bg-slate-800 text-white hover:bg-black font-bold py-2 rounded-lg text-center text-xs flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                    >
+                                                        <Icon name="printer" className="h-4 w-4" /> Print Sheet
+                                                    </button>
+
+                                                    {consolidatedRoutes[zoneName] ? (
+                                                        <div className="col-span-2 flex gap-2">
+                                                            <a
+                                                                href={consolidatedRoutes[zoneName]}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="flex-1 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                            >
+                                                                <Icon name="message-circle" className="h-4 w-4" /> Send via WhatsApp
+                                                            </a>
+                                                            <button
+                                                                onClick={() => consolidateRoute(zoneName, routeData, driver)}
+                                                                className="px-3 py-3 bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold rounded-lg text-xs flex items-center gap-1 shadow-sm transition-colors"
+                                                                title="Re-consolidate"
+                                                            >
+                                                                <Icon name="refresh-cw" className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => consolidateRoute(zoneName, routeData, driver)}
+                                                            className="col-span-2 bg-[#25D366] hover:bg-[#128C7E] text-white font-bold py-3 rounded-lg text-center text-sm flex justify-center items-center gap-2 shadow-sm transition-colors"
+                                                        >
+                                                            <Icon name="message-circle" className="h-4 w-4" /> Consolidate & Send
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="mt-8 flex justify-center pb-8">
+                                    <button onClick={handleBulkManifestPrint} className="px-8 py-4 bg-ess-blue text-white rounded-xl font-bold shadow-xl hover:bg-sky-700 transition-all flex items-center gap-3 text-lg">
+                                        <Icon name="printer" className="h-6 w-6" /> PRINT ALL MANIFESTS (2 Sheets Each)
+                                    </button>
+                                </div>
+                                
+                                {selectedResultStops.size > 0 && (
+                                    <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white rounded-full shadow-2xl border border-slate-200 p-2 px-6 flex items-center gap-4 z-[50] animate-fade-in">
+                                        <span className="font-bold text-slate-700 whitespace-nowrap">{selectedResultStops.size} selected</span>
+                                        
+                                        <select 
+                                            className="bg-slate-100 border-none rounded-lg text-sm p-2 w-48 outline-none font-bold text-slate-600"
+                                            value={bulkMoveTargetZone}
+                                            onChange={e => setBulkMoveTargetZone(e.target.value)}
+                                        >
+                                            <option value="">Move to...</option>
+                                            {Object.keys(optimizedRoutes).map(r => (
+                                                <option key={r} value={r}>{r}</option>
+                                            ))}
+                                        </select>
+                                        
+                                        <button 
+                                            onClick={executeBulkMove}
+                                            disabled={!bulkMoveTargetZone}
+                                            className="bg-ess-blue text-white rounded-full p-2 px-4 font-bold text-sm hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                        >
+                                            <Icon name="arrow-right" className="h-4 w-4" /> Move
+                                        </button>
+                                        
+                                        <button 
+                                            onClick={() => setSelectedResultStops(new Set())}
+                                            className="text-slate-400 hover:text-red-500 p-1"
+                                            title="Clear selection"
+                                        >
+                                            <Icon name="x" className="h-5 w-5" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {view === 'clients' && (
+                            /* ... (Clients View) ... */
+                            <div className="animate-fade-in bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="database" className="h-6 w-6 text-ess-blue" /> Clients Database</h2>
+                                <div className="flex gap-4 mb-6">
+                                    <input type="text" placeholder="Client Name" className="flex-1 p-2 border rounded" value={clientFormName} onChange={e=>setClientFormName(e.target.value)} />
+                                    <div className="flex-[2]"><GoogleAddressInput placeholder="Address" value={clientFormAddress} onChange={e=>setClientFormAddress(e.target.value)} className="w-full p-2 border rounded" disabled={!scriptLoaded} isLoaded={scriptLoaded} onSelection={(ll)=>setClientFormLatLng(ll)} /></div>
+                                    <button onClick={saveClient} className="bg-green-600 text-white px-4 py-2 rounded font-bold">
+                                        {editingClientId ? 'Update' : 'Add'}
+                                    </button>
+                                </div>
+                                <div className="overflow-y-auto max-h-[500px]">
+                                    {(clientDB || []).sort((a,b) => (a.name || "").localeCompare(b.name || "")).map(c => {
+                                        const isInRoute = (currentStops || []).some(s => s.address === c.address);
+                                        return (
+                                            <div key={c.id} className="flex justify-between items-center p-3 border-b hover:bg-slate-50">
+                                                <div><div className="font-bold">{c.name}</div><div className="text-xs text-slate-500">{c.address}</div></div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => addClientToRoute(c)} className={`p-1.5 rounded-full transition-colors ${isInRoute ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400 hover:bg-green-50 hover:text-green-600'}`}>
+                                                        <Icon name={isInRoute ? 'check' : 'plus'} className="h-4 w-4" />
+                                                    </button>
+                                                    <button onClick={()=>startEditingClient(c)} className="text-blue-500 hover:bg-blue-50 p-2 rounded"><Icon name="pencil" className="h-4 w-4" /></button>
+                                                    <button onClick={()=>deleteClient(c.id)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'vehicles' && (
+                            /* ... (Vehicles View) ... */
+                            <div className="grid md:grid-cols-2 gap-6 animate-fade-in">
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="truck" className="h-6 w-6 text-ess-blue" /> Vehicles</h2>
+                                    <div className="flex gap-2 mb-4">
+                                        <input type="text" placeholder="Name/Plate" className="flex-1 p-2 border rounded" value={newVehicleName} onChange={e=>setNewVehicleName(e.target.value)} />
+                                        <button onClick={addVehicle} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add</button>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {(vehicles || []).map(v => (
+                                            <div key={v.id} className="p-3 border rounded hover:bg-slate-50">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    {editingVehicleId === v.id ? (
+                                                        <input 
+                                                            type="text" 
+                                                            defaultValue={v.name} 
+                                                            className="border p-1 rounded text-sm w-full mr-2"
+                                                            onBlur={(e) => updateVehicle(v.id, { name: e.target.value })}
+                                                            onKeyDown={(e) => handleEnter(e, () => e.target.blur())}
+                                                            autoFocus
+                                                        />
+                                                    ) : (
+                                                        <div className="font-bold flex items-center gap-2">{v.name} <button onClick={() => setEditingVehicleId(v.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
+                                                    )}
+                                                    <button onClick={()=>deleteVehicle(v.id)} className="text-red-500"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-xs">
+                                                    <span className="text-slate-500">Default driver:</span>
+                                                    <select 
+                                                        className="border rounded p-1 bg-white outline-none"
+                                                        value={v.assignedDriver || ""}
+                                                        onChange={(e) => assignVehicleDriver(v.id, e.target.value)}
+                                                    >
+                                                        <option value="">-- None --</option>
+                                                        {(drivers || []).map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="users" className="h-6 w-6 text-ess-blue" /> Drivers</h2>
+                                    <div className="grid grid-cols-2 gap-2 mb-2">
+                                        <input type="text" placeholder="Name" className="p-2 border rounded" value={newDriverName} onChange={e=>setNewDriverName(e.target.value)} />
+                                        <input type="text" placeholder="Phone" className="p-2 border rounded" value={newDriverPhone} onChange={e=>setNewDriverPhone(e.target.value)} />
+                                        <input type="text" inputMode="numeric" maxLength="4" placeholder="PIN (4 digits)" className="p-2 border rounded font-mono tracking-widest" value={newDriverPin} onChange={e=>setNewDriverPin(e.target.value.replace(/\D/g,'').slice(0,4))} />
+                                        <button onClick={addDriver} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add Driver</button>
+                                    </div>
+                                    <div className="space-y-2 mt-4">
+                                        {(drivers || []).map((d, i) => {
+                                            const avatarColor = d.color || AVATAR_COLORS[i % AVATAR_COLORS.length];
+                                            const initials = d.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+                                            return (
+                                            <div key={d.id} className="flex justify-between items-center p-3 border rounded hover:bg-slate-50">
+                                                {editingDriverId === d.id ? (
+                                                    <div className="flex-1 mr-2 space-y-1">
+                                                        <input type="text" defaultValue={d.name} className="border p-1 rounded text-sm w-full" placeholder="Name" onBlur={(e) => updateDriver(d.id, { name: e.target.value })} />
+                                                        <input type="text" defaultValue={d.phone} className="border p-1 rounded text-sm w-full" placeholder="Phone" onBlur={(e) => updateDriver(d.id, { phone: e.target.value })} />
+                                                        <input type="text" inputMode="numeric" maxLength="4" defaultValue={d.pin || ''} className="border p-1 rounded text-sm w-full font-mono tracking-widest" placeholder="PIN (4 digits)" onBlur={(e) => updateDriver(d.id, { pin: e.target.value.replace(/\D/g,'').slice(0,4) || '0000' })} />
+                                                        <button onClick={() => setEditingDriverId(null)} className="text-xs text-blue-500 font-bold">Done</button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-3 flex-1">
+                                                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-black flex-shrink-0" style={{ backgroundColor: avatarColor }}>{initials}</div>
+                                                        <div>
+                                                            <div className="font-bold flex items-center gap-2">{d.name} <button onClick={() => setEditingDriverId(d.id)} className="text-slate-400 hover:text-blue-500"><Icon name="pencil" className="h-3 w-3" /></button></div>
+                                                            <div className="text-xs text-slate-500">{d.phone} {d.pin ? <span className="ml-1 font-mono bg-slate-100 px-1 rounded">PIN: {'•'.repeat(d.pin.length)}</span> : <span className="ml-1 text-amber-500 font-semibold">No PIN set</span>}</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                <button onClick={()=>deleteDriver(d.id)} className="text-red-500 ml-2 flex-shrink-0"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                            </div>
+                                        )})}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'settings' && (
+                            <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+                                
+                                {/* NUEVO BOTON PARA HISTORIAL DE FACTURAS */}
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex justify-between items-center">
+                                    <div>
+                                        <h2 className="text-lg font-bold text-slate-800">Invoice History</h2>
+                                        <p className="text-xs text-slate-500">Search past orders and drivers (Last 6 weeks).</p>
+                                    </div>
+                                    <a href="InvoiceSearch.html" target="_blank" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors">
+                                        <Icon name="search" className="h-4 w-4" /> Open Search
+                                    </a>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2">Manifest Header Info</h2>
+                                    <div className="space-y-4">
+                                        <div><label className="block text-sm font-bold text-slate-500 mb-1">Company Name</label><input className="w-full p-2 border rounded" value={companyConfig.companyName} onChange={e => setCompanyConfig({...companyConfig, companyName: e.target.value})} /></div>
+                                        <div><label className="block text-sm font-bold text-slate-500 mb-1">Phone</label><input className="w-full p-2 border rounded" value={companyConfig.phone} onChange={e => setCompanyConfig({...companyConfig, phone: e.target.value})} /></div>
+                                        <div><label className="block text-sm font-bold text-slate-500 mb-1">Footer Address</label><input className="w-full p-2 border rounded" value={companyConfig.address} onChange={e => setCompanyConfig({...companyConfig, address: e.target.value})} /></div>
+                                    </div>
+
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2 pt-6">Warehouse Base</h2>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-500 mb-1">Warehouse Base Address</label>
+                                            <GoogleAddressInput 
+                                                value={baseAddress} 
+                                                onChange={e => setBaseAddress(e.target.value)} 
+                                                className="w-full p-2 border rounded" 
+                                                placeholder="Enter address" 
+                                                disabled={!scriptLoaded} 
+                                                isLoaded={scriptLoaded} 
+                                            />
+                                        </div>
+                                        <button onClick={saveSettings} className="bg-slate-800 text-white px-4 py-2 rounded font-bold w-full">Save Settings</button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2">Delivery Monitor Access</h2>
+                                    <div className="space-y-3">
+                                        <p className="text-sm text-slate-500">PIN that sales staff enter to access the Live Delivery Monitor.</p>
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-500 mb-1">Monitor PIN (4+ digits)</label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showMonitorPin ? 'text' : 'password'}
+                                                    inputMode="numeric"
+                                                    maxLength="8"
+                                                    className="w-full p-2 pr-10 border rounded font-mono text-lg tracking-widest"
+                                                    placeholder="1234"
+                                                    value={monitorPin}
+                                                    onChange={e => setMonitorPin(e.target.value.replace(/\D/g, ''))}
+                                                />
+                                                <button type="button" onClick={() => setShowMonitorPin(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                                    <Icon name={showMonitorPin ? 'eye-off' : 'eye'} className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <button onClick={saveSettings} className="bg-ess-blue text-white px-4 py-2 rounded font-bold w-full">Save Monitor PIN</button>
+                                        <div className="mt-3">
+                                            <label className="block text-sm font-bold text-slate-500 mb-1">Monitor Link (share with sales staff)</label>
+                                            <div className="flex gap-2 items-center">
+                                                <input readOnly value={`${window.location.origin}/monitor.html?d=${user?.uid || ''}`} className="flex-1 p-2 border rounded text-xs font-mono bg-slate-50 text-slate-600" onClick={e => e.target.select()} />
+                                                <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/monitor.html?d=${user?.uid || ''}`)} className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold text-slate-600 whitespace-nowrap">Copy</button>
+                                            </div>
+                                        </div>
+                                        <div className="mt-3 pt-3 border-t border-slate-100">
+                                            <label className="block text-sm font-bold text-slate-500 mb-1">Driver App URL (drivers save this to their phone)</label>
+                                            <p className="text-xs text-slate-400 mb-2">Share this once — drivers bookmark it as a PWA on their home screen and see their routes automatically.</p>
+                                            <div className="flex gap-2 items-center">
+                                                <input readOnly value={`${window.location.origin}/driver.html?company=${user?.uid || ''}`} className="flex-1 p-2 border rounded text-xs font-mono bg-slate-50 text-slate-600" onClick={e => e.target.select()} />
+                                                <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/driver.html?company=${user?.uid || ''}`)} className="px-3 py-2 bg-ess-blue hover:bg-blue-700 text-white rounded text-xs font-bold whitespace-nowrap">Copy</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2">Zone Management</h2>
+                                    <div className="space-y-4">
+                                        <div className="flex gap-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="New zone name (e.g. DOWNTOWN)" 
+                                                className="flex-1 p-2 border rounded uppercase" 
+                                                value={newZoneName} 
+                                                onChange={e => setNewZoneName(e.target.value)} 
+                                                onKeyDown={e => handleEnter(e, addZoneFromSettings)}
+                                            />
+                                            <button onClick={addZoneFromSettings} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Add</button>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                                            {(zones || []).map(z => (
+                                                <div key={z.id} className="flex justify-between items-center p-2 border rounded bg-slate-50">
+                                                    <span className="font-bold text-sm">{z.name}</span>
+                                                    <button onClick={() => deleteZoneFromSettings(z.id)} className="text-red-500 hover:text-red-700"><Icon name="trash-2" className="h-4 w-4" /></button>
+                                                </div>
+                                            ))}
+                                            {(zones || []).length === 0 && <p className="text-sm text-slate-400 italic">No saved zones.</p>}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2">Data Management</h2>
+                                    <div className="flex gap-4">
+                                        <button onClick={handleBackup} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded font-bold flex items-center justify-center gap-2"><Icon name="download" className="h-4 w-4" /> Backup Data</button>
+                                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
+                                        <button onClick={handleRestoreClick} className="flex-1 bg-ess-blue text-white hover:bg-sky-700 px-4 py-3 rounded font-bold flex items-center justify-center gap-2"><Icon name="upload" className="h-4 w-4" /> Restore Data</button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2">Security</h2>
+                                    <div className="space-y-4">
+                                        <div><label className="block text-sm font-bold text-slate-500 mb-1">Change PIN</label><input type="text" maxLength="6" className="w-full p-2 border rounded" placeholder="New PIN" value={newPin} onChange={e => setNewPin(e.target.value)} /></div>
+                                        <div className="pt-2 border-t mt-4">
+                                            <p className="text-sm text-slate-600 mb-2">Reset password for <strong>{user.email}</strong></p>
+                                            <button onClick={handleChangePassword} className="text-ess-blue font-bold text-sm hover:underline">Send reset email</button>
+                                            {settingsMsg && <p className="text-xs text-green-600 mt-1">{settingsMsg}</p>}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* COMPONENTES OCULTOS PARA IMPRESIÓN */}
+                        {showGlobalPrint && optimizedRoutes && (
+                            <GlobalManifest 
+                                routes={optimizedRoutes} 
+                                config={companyConfig} 
+                                driverAssignments={driverAssignments} 
+                                drivers={drivers} 
+                                vehicles={vehicles}
+                                manualVehicleAssignments={manualVehicleAssignments}
+                                onClose={() => setShowGlobalPrint(false)}
+                            />
+                        )}
+
+                        {showBulkManifestPrint && optimizedRoutes && (
+                            <div className="bulk-print-container hidden print:block">
+                                {Object.entries(optimizedRoutes).map(([zoneName, routeData]) => {
+                                    const assignedDriverId = driverAssignments[zoneName];
+                                    const driver = (drivers || []).find(d => d.id === assignedDriverId);
+                                    const driverName = driver ? driver.name : "Unassigned";
+                                    const defaultVehicle = (vehicles || []).find(v => v.assignedDriver === driverName);
+                                    const currentVehicleName = manualVehicleAssignments[zoneName] || (defaultVehicle ? defaultVehicle.name : "");
+
+                                    return (
+                                        <React.Fragment key={zoneName}>
+                                            {/* COPIA 1 */}
+                                            <PrintableSheet 
+                                                routeData={routeData.paradas}
+                                                driverName={driverName}
+                                                vehicle={currentVehicleName}
+                                                duration={routeData.duracion_estimada}
+                                                zoneName={zoneName}
+                                                config={companyConfig}
+                                                hideId={true}
+                                            />
+                                            {/* COPIA 2 */}
+                                            <PrintableSheet 
+                                                routeData={routeData.paradas}
+                                                driverName={driverName}
+                                                vehicle={currentVehicleName}
+                                                duration={routeData.duracion_estimada}
+                                                zoneName={zoneName}
+                                                config={companyConfig}
+                                                hideId={true}
+                                            />
+                                        </React.Fragment>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {printData && (
+                            <PrintableSheet 
+                                routeData={printData.stops}
+                                driverName={printData.driverName}
+                                vehicle={printData.vehicle}
+                                phone={printData.phone}
+                                duration={printData.duration}
+                                zoneName={printData.zoneName}
+                                config={companyConfig}
+                                onClose={() => setPrintData(null)}
+                            />
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    

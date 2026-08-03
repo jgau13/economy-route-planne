@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Client Distribution — ESS</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0f4c6e; }
+
+        .screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .card { background: white; border-radius: 16px; padding: 28px; width: 320px; }
+        .logo { height: 44px; filter: brightness(0) invert(1); margin-bottom: 12px; }
+        .title { color: white; font-size: 17px; font-weight: 700; margin-bottom: 20px; }
+
+        input { width: 100%; padding: 12px 14px; border: 1.5px solid #e2e8f0; border-radius: 10px; font-size: 15px; margin-bottom: 10px; outline: none; transition: border .15s; }
+        input:focus { border-color: #3178a1; }
+        button { width: 100%; padding: 13px; background: #0f4c6e; color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; }
+        button:hover { background: #3178a1; }
+        button:disabled { background: #94a3b8; cursor: default; }
+        .err { color: #ef4444; font-size: 12px; margin-top: 8px; min-height: 16px; }
+
+        #screen-loading .msg { color: white; font-size: 16px; font-weight: 600; margin-top: 16px; }
+        #screen-loading .sub { color: #93c5fd; font-size: 13px; margin-top: 6px; }
+        .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,.2); border-top-color: white; border-radius: 50%; animation: spin .8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .prog-wrap { width: 260px; height: 6px; background: rgba(255,255,255,.2); border-radius: 3px; margin-top: 14px; overflow: hidden; }
+        .prog-bar { height: 100%; background: #74b745; border-radius: 3px; transition: width .3s; }
+
+        #map-wrap { display: none; position: relative; width: 100vw; height: 100vh; }
+        #map { width: 100%; height: 100%; }
+
+        #panel {
+            position: absolute; top: 14px; left: 14px; z-index: 1000;
+            background: white; border-radius: 14px; padding: 18px 20px;
+            box-shadow: 0 6px 32px rgba(0,0,0,.18); min-width: 210px; max-width: 240px;
+        }
+        #panel h2 { font-size: 12px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: .5px; margin-bottom: 12px; }
+        .stat { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
+        .stat-label { font-size: 13px; color: #475569; }
+        .stat-val { font-size: 20px; font-weight: 800; color: #0f4c6e; }
+        .divider { height: 1px; background: #f1f5f9; margin: 12px 0; }
+        .city-row { display: flex; justify-content: space-between; font-size: 12px; color: #64748b; margin-bottom: 4px; }
+        .city-row span:last-child { font-weight: 700; color: #334155; }
+        #geo-status { font-size: 11px; color: #94a3b8; margin-top: 10px; line-height: 1.4; }
+        #fit-btn { margin-top: 14px; width: 100%; padding: 9px; background: #f1f5f9; color: #334155; border: none; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+        #fit-btn:hover { background: #e2e8f0; }
+    </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="screen-login" class="screen">
+    <img class="logo" src="https://economysignsupply.com/wp-content/uploads/2024/07/ess-logo-svg-100.svg">
+    <p class="title">Client Distribution Map</p>
+    <div class="card">
+        <input id="inp-email" type="email" placeholder="Email" autocomplete="email">
+        <input id="inp-pass" type="password" placeholder="Password" autocomplete="current-password">
+        <button id="btn-login">View Map</button>
+        <p class="err" id="login-err"></p>
+    </div>
+</div>
+
+<!-- LOADING -->
+<div id="screen-loading" class="screen" style="display:none">
+    <div class="spinner"></div>
+    <p class="msg" id="load-msg">Connecting…</p>
+    <p class="sub" id="load-sub"></p>
+    <div class="prog-wrap" id="prog-wrap" style="display:none">
+        <div class="prog-bar" id="prog-bar" style="width:0%"></div>
+    </div>
+</div>
+
+<!-- MAP -->
+<div id="map-wrap">
+    <div id="map"></div>
+    <div id="panel">
+        <h2>Client Distribution</h2>
+        <div class="stat"><span class="stat-label">Total clients</span><span class="stat-val" id="st-total">—</span></div>
+        <div class="stat"><span class="stat-label">On map</span><span class="stat-val" id="st-mapped">—</span></div>
+        <div class="divider"></div>
+        <div id="city-list"></div>
+        <div id="geo-status"></div>
+        <button id="fit-btn">Fit all markers</button>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+<script type="module">
+    import { initializeApp }                    from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const appId = 'default-app-id';
+    let db, auth;
+
+    const $ = id => document.getElementById(id);
+    const show = id => $(id).style.display = '';
+    const hide = id => $(id).style.display = 'none';
+
+    $('btn-login').addEventListener('click', async () => {
+        const email = $('inp-email').value.trim();
+        const pass  = $('inp-pass').value;
+        if (!email || !pass) return;
+        $('btn-login').disabled = true;
+        $('login-err').textContent = '';
+        try {
+            hide('screen-login');
+            show('screen-loading');
+            $('load-msg').textContent = 'Connecting…';
+
+            const res = await fetch('/config');
+            const cfg = await res.json();
+
+            const app = initializeApp(cfg.firebaseConfig);
+            auth = getAuth(app);
+            db   = getFirestore(app);
+
+            $('load-msg').textContent = 'Signing in…';
+            await signInWithEmailAndPassword(auth, email, pass);
+            await loadAndRender();
+        } catch(e) {
+            hide('screen-loading');
+            show('screen-login');
+            $('login-err').textContent = e.message || 'Login failed';
+            $('btn-login').disabled = false;
+        }
+    });
+
+    async function loadAndRender() {
+        const uid = auth.currentUser.uid;
+        $('load-msg').textContent = 'Loading clients…';
+        $('load-sub').textContent = '';
+
+        const snap = await getDocs(collection(db, 'artifacts', appId, 'users', uid, 'clients'));
+        const clients = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.address);
+
+        const withCoords    = clients.filter(c => c.latlng);
+        const withoutCoords = clients.filter(c => !c.latlng);
+        withCoords.forEach(c => { c._lat = c.latlng.lat; c._lng = c.latlng.lng; });
+
+        // Stats panel
+        $('st-total').textContent = clients.length;
+        $('st-mapped').textContent = withCoords.length;
+        renderCities(clients);
+
+        // Render map immediately with saved coords
+        hide('screen-loading');
+        $('map-wrap').style.display = 'block';
+        const map = renderMap(withCoords);
+
+        // Geocode the rest in background with Nominatim (1 req/sec free)
+        if (withoutCoords.length > 0) {
+            $('geo-status').textContent = `Geocoding ${withoutCoords.length} more in background…`;
+            geocodeBackground(withoutCoords, map);
+        }
+    }
+
+    function renderCities(clients) {
+        const cities = {};
+        clients.forEach(c => {
+            const m = (c.address || '').match(/,\s*([^,]+),\s*FL/i);
+            const city = m ? m[1].trim() : 'Other';
+            cities[city] = (cities[city] || 0) + 1;
+        });
+        const top = Object.entries(cities).sort((a,b) => b[1]-a[1]).slice(0, 7);
+        $('city-list').innerHTML = top.map(([city, n]) =>
+            `<div class="city-row"><span>${city}</span><span>${n}</span></div>`
+        ).join('');
+    }
+
+    function renderMap(initialClients) {
+        const avgLat = initialClients.reduce((s,c) => s + c._lat, 0) / (initialClients.length || 1);
+        const avgLng = initialClients.reduce((s,c) => s + c._lng, 0) / (initialClients.length || 1);
+
+        const map = L.map('map').setView([avgLat || 28.5, avgLng || -81.4], 9);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        initialClients.forEach(c => addMarker(c, map));
+
+        window._mapRef = map;
+        $('fit-btn').addEventListener('click', () => map.setView([avgLat || 28.5, avgLng || -81.4], 9));
+
+        return map;
+    }
+
+    function addMarker(c, map) {
+        L.circleMarker([c._lat, c._lng], {
+            radius: 7,
+            fillColor: '#3178a1',
+            fillOpacity: 0.85,
+            color: 'white',
+            weight: 1.5
+        }).bindPopup(`<strong>${c.name || ''}</strong><br><span style="color:#64748b;font-size:12px">${c.address}</span>`)
+          .addTo(map);
+    }
+
+    async function geocodeBackground(clients, map) {
+        let done = 0;
+        for (const c of clients) {
+            try {
+                const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(c.address)}&format=json&limit=1`;
+                const r = await fetch(url, { headers: { 'User-Agent': 'ESS-ClientMap/1.0' } });
+                const j = await r.json();
+                if (j.length > 0) {
+                    c._lat = parseFloat(j[0].lat);
+                    c._lng = parseFloat(j[0].lon);
+                    addMarker(c, map);
+                    done++;
+                    const total = parseInt($('st-mapped').textContent) || 0;
+                    $('st-mapped').textContent = total + 1;
+                }
+            } catch(e) {}
+            $('geo-status').textContent = `Geocoding: ${done} added (${clients.length - clients.indexOf(c) - 1} remaining…)`;
+            // Nominatim rate limit: 1 req/sec
+            await new Promise(r => setTimeout(r, 1100));
+        }
+        $('geo-status').textContent = `✓ All geocoded. ${done} added.`;
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+⚠️ ADVERTENCIA: GOOGLE_MAPS_API_KEY no detectada.
+⚠️ ADVERTENCIA: MAPBOX_ACCESS_TOKEN no detectada.
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.104:5000
+Press CTRL+C to quit
+127.0.0.1 - - [09/Jun/2026 14:01:52] "GET /config HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 14:04:08] "GET /driver.html?r=test-mq6y7k5e HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 14:04:10] "GET /config HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 14:04:26] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+127.0.0.1 - - [09/Jun/2026 14:04:37] "GET /driver.html?r=test-mq6y7k5e HTTP/1.1" 304 -
+127.0.0.1 - - [09/Jun/2026 14:04:37] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+127.0.0.1 - - [09/Jun/2026 14:04:37] "GET /config HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 14:06:14] "GET /monitor.html HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 14:06:15] "GET /config HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 14:08:52] "GET /InvoiceSearch.html HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 14:08:53] "GET /config HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 15:24:20] "GET /driver.html?r=test-mq6y7k5e HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 15:24:21] "GET /config HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 15:25:52] "GET /monitor.html HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 15:25:53] "GET /config HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 15:28:13] "GET /monitor.html HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 15:28:13] "GET /config HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 15:35:29] "GET /driver.html?r=test-mq6y7k5e HTTP/1.1" 304 -
+127.0.0.1 - - [09/Jun/2026 15:35:30] "GET /config HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 15:35:37] "GET /monitor.html HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 15:35:38] "GET /config HTTP/1.1" 200 -

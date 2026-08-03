@@ -379,13 +379,15 @@ def crear_modelo_datos(items, n_vans, base_addr):
     except:
         print("❌ Error abriendo DB en batch", file=sys.stderr)
 
-    if base_addr:
-        # Pasamos la conexión reutilizable; base address no requiere ZIP estricto
+    base_latlng = data.get('base_latlng')  # {lat, lng} enviado desde el frontend
+    if base_latlng and base_latlng.get('lat') and base_latlng.get('lng'):
+        base_coord = f"{base_latlng['lat']},{base_latlng['lng']}"
+        base_fmt = base_addr
+    elif base_addr:
         c, f, i = obtener_datos_geo(base_addr, db_connection=conn, require_zip=False)
         if c:
             base_coord, base_fmt, base_id = c, f, i
         else:
-            # Si falla la geocodificación de la base, usar coordenadas por defecto
             print(f"⚠️ No se pudo geocodificar la base '{base_addr}', usando coordenadas por defecto.", file=sys.stderr)
             base_fmt = base_addr
 
@@ -692,22 +694,25 @@ def optimizar_restantes():
     data = request.json
     paradas = data.get('paradas', [])
     base = data.get('base_address')
+    base_latlng = data.get('base_latlng')
     dwell = int(data.get('dwell_time', 6))
-    
-    if len(paradas) < 3: return recalcular_ruta_internal(paradas, base, dwell)
+
+    if len(paradas) < 3: return recalcular_ruta_internal(paradas, base, dwell, base_latlng)
 
     fixed = paradas[0]
     loose = paradas[1:]
-    
+
     new_order = resolver_tsp_parcial(fixed, loose, base, dwell)
     if not new_order: return jsonify({"error": "Fallo re-optimizando"}), 500
-    
-    return recalcular_ruta_internal(new_order, base, dwell)
 
-def recalcular_ruta_internal(paradas_objs, base, dwell_time):
-    # También pasamos una conexión compartida aquí si fuera necesario, 
-    # pero recalcular suele ser rápido y con datos ya cacheados.
-    c_base, fmt_base, _ = obtener_datos_geo(base)
+    return recalcular_ruta_internal(new_order, base, dwell, base_latlng)
+
+def recalcular_ruta_internal(paradas_objs, base, dwell_time, base_latlng=None):
+    if base_latlng and base_latlng.get('lat') and base_latlng.get('lng'):
+        c_base = f"{base_latlng['lat']},{base_latlng['lng']}"
+        fmt_base = base
+    else:
+        c_base, fmt_base, _ = obtener_datos_geo(base, require_zip=False)
     if not c_base: return jsonify({"error": "Base invalida"}), 400
     
     coords = [c_base]

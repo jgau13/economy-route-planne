@@ -844,6 +844,7 @@
             // APP STATES
             const [view, setView] = useState('planning'); 
             const [baseAddress, setBaseAddress] = useState('8350 Parkline Blvd, Orlando, FL 32809, USA');
+            const [baseLatlng, setBaseLatlng] = useState(null);
             const [currentStops, setCurrentStops] = useState([]);
             const [stopGroups, setStopGroups] = useState([]); 
             const [zones, setZones] = useState([]); 
@@ -1045,6 +1046,7 @@
                         const data = docSnap.data();
                         if (data.companyConfig) setCompanyConfig(data.companyConfig);
                         if (data.baseAddress) setBaseAddress(data.baseAddress);
+                        if (data.baseLatlng) setBaseLatlng(data.baseLatlng);
                     }
                 }, onErr);
 
@@ -1806,8 +1808,8 @@
                                     body: { 
                                         direcciones: stops.map(formatStopForBackend), 
                                         num_vans: g.numRoutes || 1, 
-                                        base_address: baseAddress, 
-                                        dwell_time: 10 
+                                        base_address: baseAddress, base_latlng: baseLatlng,
+                                        dwell_time: 10
                                     } 
                                 });
                             }
@@ -1820,10 +1822,10 @@
                          tasks.push({ 
                              zoneName: "UNASSIGNED", 
                              color: "#000000", 
-                             body: { 
-                                 direcciones: ungroupedStops.map(formatStopForBackend), 
-                                 num_vans: 1, 
-                                 base_address: baseAddress, 
+                             body: {
+                                 direcciones: ungroupedStops.map(formatStopForBackend),
+                                 num_vans: 1,
+                                 base_address: baseAddress, base_latlng: baseLatlng,
                                  dwell_time: 10 
                              } 
                           });
@@ -1920,11 +1922,11 @@
                     const res = await fetch('/recalcular', { 
                         method: 'POST', 
                         headers: {'Content-Type':'application/json'}, 
-                        body: JSON.stringify({ paradas: stops.map(formatStopForBackend), base_address: baseAddress, dwell_time: 10 }) 
+                        body: JSON.stringify({ paradas: stops.map(formatStopForBackend), base_address: baseAddress, base_latlng: baseLatlng, dwell_time: 10 })
                     });
                     const d = await res.json();
                     if (!res.ok) throw new Error(d.error || `Error ${res.status}`);
-                    
+
                     const isArray = Array.isArray(d);
                     const paradasList = isArray ? d : (d.paradas || []);
                     const duracion = isArray ? 0 : (d.duracion_estimada || 0);
@@ -1946,7 +1948,7 @@
                     const res = await fetch('/optimizar', { 
                         method: 'POST', 
                         headers: {'Content-Type':'application/json'}, 
-                        body: JSON.stringify({ direcciones: stops.map(formatStopForBackend), num_vans: 1, base_address: baseAddress, dwell_time: 10 }) 
+                        body: JSON.stringify({ direcciones: stops.map(formatStopForBackend), num_vans: 1, base_address: baseAddress, base_latlng: baseLatlng, dwell_time: 10 })
                     });
                     const d = await res.json();
                     if (!res.ok) throw new Error(d.error || `Error ${res.status}`);
@@ -1975,7 +1977,7 @@
                     const res = await fetch('/optimizar_restantes', { 
                         method: 'POST', 
                         headers: {'Content-Type':'application/json'}, 
-                        body: JSON.stringify({ paradas: currentRoute.map(formatStopForBackend), base_address: baseAddress, dwell_time: 10 }) 
+                        body: JSON.stringify({ paradas: currentRoute.map(formatStopForBackend), base_address: baseAddress, base_latlng: baseLatlng, dwell_time: 10 })
                     });
                     const d = await res.json();
                     if (!res.ok) throw new Error(d.error || `Error ${res.status}`);
@@ -2332,7 +2334,9 @@
 
             const saveSettings = async () => {
                 if (window.fbDb) {
-                    await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'settings', 'config'), { companyConfig, baseAddress }, { merge: true });
+                    const ll = await getLatLngForAddress(baseAddress);
+                    if (ll) setBaseLatlng(ll);
+                    await window.fbSetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'settings', 'config'), { companyConfig, baseAddress, baseLatlng: ll || baseLatlng }, { merge: true });
                     alert("Settings saved!");
                 }
             };
