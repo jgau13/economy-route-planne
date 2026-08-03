@@ -707,7 +707,7 @@ def optimizar_restantes():
     new_order = resolver_tsp_parcial(fixed, loose, base, dwell)
     if not new_order: return jsonify({"error": "Fallo re-optimizando"}), 500
 
-    return recalcular_ruta_internal(new_order, base, dwell, base_latlng)
+    return recalcular_ruta_internal([fixed] + new_order, base, dwell, base_latlng)
 
 def recalcular_ruta_internal(paradas_objs, base, dwell_time, base_latlng=None):
     if base_latlng and base_latlng.get('lat') and base_latlng.get('lng'):
