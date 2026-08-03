@@ -366,11 +366,11 @@ def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     link += "&travelmode=driving"
     return link
 
-def crear_modelo_datos(items, n_vans, base_addr):
+def crear_modelo_datos(items, n_vans, base_addr, base_latlng=None):
     base_coord = ALMACEN_COORD
     base_fmt = base_addr
     base_id = ""
-    
+
     # Abrimos la conexión AQUÍ una sola vez para todo el procesamiento
     db_path = os.path.join(basedir, 'economy_routes.db')
     conn = None
@@ -379,7 +379,6 @@ def crear_modelo_datos(items, n_vans, base_addr):
     except:
         print("❌ Error abriendo DB en batch", file=sys.stderr)
 
-    base_latlng = data.get('base_latlng')  # {lat, lng} enviado desde el frontend
     if base_latlng and base_latlng.get('lat') and base_latlng.get('lng'):
         base_coord = f"{base_latlng['lat']},{base_latlng['lng']}"
         base_fmt = base_addr
@@ -586,15 +585,15 @@ def procesar_geocoding(s):
         return {'coords': (lat, lng), 'data': s_enriched}
     return {'error': addr}
 
-def resolver_cluster_wrapper(i, clust, base, dwell):
+def resolver_cluster_wrapper(i, clust, base, dwell, base_latlng=None):
     # Wrapper para ejecución segura en thread
     try:
         d_name = f"Van {i+1}"
         if not clust:
             return d_name, {"paradas":[], "duracion_estimada":0, "link":""}
-        
+
         sub_stops = [x['data'] for x in clust]
-        model = crear_modelo_datos(sub_stops, 1, base)
+        model = crear_modelo_datos(sub_stops, 1, base, base_latlng)
         
         if not model:
             return d_name, {"error": "Modelo de datos vacío"}
@@ -620,6 +619,7 @@ def optimizar():
     req = request.json
     n_vans = int(req.get('num_vans', 1))
     base = req.get('base_address')
+    base_latlng = req.get('base_latlng')
     dwell = int(req.get('dwell_time', 6))
     raw_stops = req.get('direcciones', [])
     
@@ -658,7 +658,7 @@ def optimizar():
             
             # REDUCCIÓN DE WORKERS PARA VRP: MÁXIMO 2
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                futures_vrp = [executor.submit(resolver_cluster_wrapper, i, clust, base, dwell) for i, clust in enumerate(clusters)]
+                futures_vrp = [executor.submit(resolver_cluster_wrapper, i, clust, base, dwell, base_latlng) for i, clust in enumerate(clusters)]
                 for future in concurrent.futures.as_completed(futures_vrp):
                     d_name, result = future.result()
                     if "error" in result:
@@ -667,7 +667,7 @@ def optimizar():
                     
         else:
             # Flujo Secuencial (OPTIMIZADO CON CONEXIÓN ÚNICA)
-            model = crear_modelo_datos(stops, 1, base)
+            model = crear_modelo_datos(stops, 1, base, base_latlng)
             if model and "invalidas" in model:
                 return jsonify({"error": f"Direcciones no válidas (Falta Zip o no encontrada): {', '.join(model['invalidas'])}"}), 400
             if model and "error_critico" in model:
