@@ -1,8 +1,13 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { defineSecret } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
 const { getMessaging } = require('firebase-admin/messaging');
 const { getFirestore } = require('firebase-admin/firestore');
+const { google } = require('googleapis');
+
+const SHEETS_KEY = defineSecret('SHEETS_SERVICE_ACCOUNT_KEY');
+const SHEET_ID = '1Y3bFg5hEGY1Dn6kR3VH_a6fdPTzhOgi3sPtRrp7DcT8';
 
 initializeApp();
 
@@ -158,3 +163,72 @@ exports.remindDrivers = onSchedule('every 30 minutes', async () => {
         await docSnap.ref.update({ reminderSent: true });
     }
 });
+
+exports.logRouteToSheets = onDocumentCreated(
+    { document: 'artifacts/default-app-id/active_routes/{routeToken}', secrets: [SHEETS_KEY] },
+    async (event) => {
+        const data = event.data.data();
+        const token = event.params.routeToken;
+        const stops = data.stops || [];
+        if (stops.length === 0) return null;
+
+        let credentials;
+        try {
+            credentials = JSON.parse(SHEETS_KEY.value());
+        } catch (e) {
+            console.error('Failed to parse SHEETS_SERVICE_ACCOUNT_KEY:', e.message);
+            return null;
+        }
+
+        const auth = new google.auth.GoogleAuth({
+            credentials,
+            scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+        });
+
+        const sheets = google.sheets({ version: 'v4', auth });
+        const dispatchDate = data.createdAt
+            ? new Date(data.createdAt).toLocaleDateString('en-US', { timeZone: 'America/New_York' })
+            : new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+
+        const rows = stops.map((stop, i) => [
+            dispatchDate,
+            token,
+            data.zoneName || '',
+            data.driverName || '',
+            i + 1,
+            stop.nombre || stop.name || '',
+            stop.direccion || stop.address || '',
+            stop.invoices || '',
+            stop.pieces || '',
+            stop.notes || '',
+        ]);
+
+        try {
+            // Ensure header row exists on first use
+            const meta = await sheets.spreadsheets.values.get({
+                spreadsheetId: SHEET_ID,
+                range: 'Sheet1!A1:J1',
+            });
+            if (!meta.data.values || meta.data.values.length === 0) {
+                await sheets.spreadsheets.values.update({
+                    spreadsheetId: SHEET_ID,
+                    range: 'Sheet1!A1',
+                    valueInputOption: 'RAW',
+                    requestBody: { values: [['Date', 'Route Token', 'Zone', 'Driver', 'Stop #', 'Client', 'Address', 'Invoices', 'Pieces', 'Notes']] },
+                });
+            }
+
+            await sheets.spreadsheets.values.append({
+                spreadsheetId: SHEET_ID,
+                range: 'Sheet1!A:J',
+                valueInputOption: 'RAW',
+                insertDataOption: 'INSERT_ROWS',
+                requestBody: { values: rows },
+            });
+            console.log(`Logged ${rows.length} stops for route ${token} to Google Sheets`);
+        } catch (e) {
+            console.error('Sheets API error:', e.message);
+        }
+        return null;
+    }
+);
