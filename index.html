@@ -271,7 +271,15 @@
                 attemptInitialization();
             }, [isLoaded]);
             
-            return <input ref={inputRef} type="text" value={value} onChange={onChange} onKeyDown={onKeyDown} className={className} placeholder={placeholder} disabled={disabled} autoComplete="off" />;
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    const pac = document.querySelector('.pac-container');
+                    const dropdownOpen = pac && pac.offsetParent !== null && pac.querySelector('.pac-item');
+                    if (dropdownOpen) { e.stopPropagation(); return; }
+                }
+                if (onKeyDown) onKeyDown(e);
+            };
+            return <input ref={inputRef} type="text" value={value} onChange={onChange} onKeyDown={handleKeyDown} className={className} placeholder={placeholder} disabled={disabled} autoComplete="off" />;
         };
 
         const GlobalMapView = ({ routes, baseAddress, enableDrawing = false, onStopsSelected = null, onMarkerClick = null }) => {
