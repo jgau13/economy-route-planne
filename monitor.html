@@ -155,6 +155,7 @@
             const [busy, setBusy] = useState(false);
             const [resetSent, setResetSent] = useState(false);
             const [resetBusy, setResetBusy] = useState(false);
+            const [showPw, setShowPw] = useState(false);
 
             const handleForgotPassword = async () => {
                 if (!email.trim()) { setError('Enter your email first, then click Forgot Password.'); return; }
@@ -217,15 +218,20 @@
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Password</label>
-                                <input
-                                    type="password"
-                                    autoComplete="current-password"
-                                    value={password}
-                                    onChange={e => setPassword(e.target.value)}
-                                    placeholder="••••••••"
-                                    required
-                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-ess-blue focus:border-transparent"
-                                />
+                                <div className="relative">
+                                    <input
+                                        type={showPw ? "text" : "password"}
+                                        autoComplete="current-password"
+                                        value={password}
+                                        onChange={e => setPassword(e.target.value)}
+                                        placeholder="••••••••"
+                                        required
+                                        className="w-full px-4 py-2.5 pr-10 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-ess-blue focus:border-transparent"
+                                    />
+                                    <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                        <Icon name={showPw ? "eye-off" : "eye"} className="h-4 w-4" />
+                                    </button>
+                                </div>
                             </div>
 
                             {accessRevoked && !error && (
