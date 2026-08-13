@@ -15,7 +15,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, onSnapshot, query, orderBy, where, doc, getDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         window.initFirebaseMonitor = (config) => {
@@ -30,6 +30,7 @@
                 window.fbDb = db;
                 window.fbSignInWithEmail = (email, password) => setPersistence(auth, browserLocalPersistence).then(() => signInWithEmailAndPassword(auth, email, password));
                 window.fbSignOut = signOut;
+                window.fbSendPasswordReset = (email) => sendPasswordResetEmail(auth, email);
                 window.fbOnAuthStateChanged = onAuthStateChanged;
                 window.fbUpdatePassword = updatePassword;
                 window.fbReauthenticate = (user, credential) => reauthenticateWithCredential(user, credential);
@@ -152,6 +153,23 @@
             const [password, setPassword] = useState('');
             const [error, setError] = useState('');
             const [busy, setBusy] = useState(false);
+            const [resetSent, setResetSent] = useState(false);
+            const [resetBusy, setResetBusy] = useState(false);
+
+            const handleForgotPassword = async () => {
+                if (!email.trim()) { setError('Enter your email first, then click Forgot Password.'); return; }
+                setResetBusy(true); setError('');
+                try {
+                    await window.fbSendPasswordReset(email.trim());
+                    setResetSent(true);
+                } catch (err) {
+                    const map = {
+                        'auth/user-not-found': 'No account found with that email.',
+                        'auth/invalid-email':  'Invalid email address.',
+                    };
+                    setError(map[err.code] || 'Error sending reset email.');
+                } finally { setResetBusy(false); }
+            };
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
@@ -232,6 +250,21 @@
                                 {busy ? <span className="loader" style={{ width: 16, height: 16, borderWidth: 2 }} /> : null}
                                 {busy ? 'Signing in…' : 'Sign In'}
                             </button>
+
+                            {resetSent ? (
+                                <p className="text-center text-green-600 text-xs font-bold">
+                                    ✓ Reset email sent. Check your inbox.
+                                </p>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={handleForgotPassword}
+                                    disabled={resetBusy}
+                                    className="w-full text-center text-xs text-slate-400 hover:text-ess-blue transition-colors disabled:opacity-50"
+                                >
+                                    {resetBusy ? 'Sending…' : 'Forgot password?'}
+                                </button>
+                            )}
                         </form>
                     </div>
                 </div>
