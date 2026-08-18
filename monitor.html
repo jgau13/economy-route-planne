@@ -16,7 +16,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, onSnapshot, query, orderBy, where, doc, getDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, query, orderBy, where, doc, getDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         window.initFirebaseMonitor = (config) => {
             try {
@@ -36,7 +36,7 @@
                 window.fbReauthenticate = (user, credential) => reauthenticateWithCredential(user, credential);
                 window.fbEmailAuthProvider = EmailAuthProvider;
                 window.fbCollection = collection;
-                window.fbOnSnapshot = onSnapshot;
+                window.fbGetDocs = getDocs;
                 window.fbQuery = query;
                 window.fbOrderBy = orderBy;
                 window.fbWhere = where;
@@ -71,7 +71,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useCallback } = React;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const dispatcherUid = new URLSearchParams(window.location.search).get('d') || '';
 
@@ -632,7 +632,6 @@
             const [lastUpdate, setLastUpdate] = useState(null);
             const [searchTerm, setSearchTerm] = useState('');
             const [confirmModal, setConfirmModal] = useState(null); // { token, stopIdx, stopName }
-            const unsubRef = useRef(null);
 
             const handleConfirmStop = async (deliveredAt) => {
                 if (!confirmModal) return;
@@ -704,26 +703,39 @@
                 // onAuthStateChanged will update currentUser
             };
 
-            // Subscribe to active_routes when logged in
-            useEffect(() => {
-                if (!currentUser || !firebaseReady || !window.fbDb) return;
-                unsubRef.current?.();
+            // Poll active_routes every 2 minutes instead of onSnapshot (reduces Firestore reads ~10x for multi-user setups)
+            const POLL_INTERVAL = 2 * 60 * 1000;
+            const [refreshing, setRefreshing] = useState(false);
 
-                const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
-                const colRef = window.fbQuery(
-                    window.fbCollection(window.fbDb, 'artifacts', appId, 'active_routes'),
-                    window.fbWhere('createdAt', '>=', twoDaysAgo)
-                );
-                unsubRef.current = window.fbOnSnapshot(colRef, snap => {
+            const fetchRoutes = useCallback(async () => {
+                if (!window.fbDb) return;
+                try {
+                    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+                    const colRef = window.fbQuery(
+                        window.fbCollection(window.fbDb, 'artifacts', appId, 'active_routes'),
+                        window.fbWhere('createdAt', '>=', twoDaysAgo)
+                    );
+                    const snap = await window.fbGetDocs(colRef);
                     const docs = snap.docs
                         .map(d => ({ token: d.id, ...d.data() }))
                         .filter(r => !dispatcherUid || r.dispatcherUid === dispatcherUid)
                         .filter(r => !r.hidden);
                     setRoutes(docs);
                     setLastUpdate(new Date());
-                });
+                } catch(e) { console.error('Poll error:', e); }
+            }, [currentUser, firebaseReady]);
 
-                return () => unsubRef.current?.();
+            const handleManualRefresh = async () => {
+                setRefreshing(true);
+                await fetchRoutes();
+                setRefreshing(false);
+            };
+
+            useEffect(() => {
+                if (!currentUser || !firebaseReady || !window.fbDb) return;
+                fetchRoutes();
+                const interval = setInterval(fetchRoutes, POLL_INTERVAL);
+                return () => clearInterval(interval);
             }, [currentUser, firebaseReady]);
 
             const handleLogout = () => {
@@ -783,9 +795,17 @@
                             <div className="flex items-center gap-3">
                                 {lastUpdate && (
                                     <span className="text-xs text-blue-200 hidden sm:block">
-                                        Updated {lastUpdate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+                                        Updated {lastUpdate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                                     </span>
                                 )}
+                                <button
+                                    onClick={handleManualRefresh}
+                                    disabled={refreshing}
+                                    title="Refresh now"
+                                    className="text-blue-200 hover:text-white p-1.5 rounded hover:bg-white/10 transition-colors disabled:opacity-50"
+                                >
+                                    <Icon name="refresh-cw" className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                                </button>
                                 <input
                                     type="date"
                                     value={filterDate}
