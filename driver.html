@@ -220,8 +220,8 @@
                 img.onload = () => {
                     URL.revokeObjectURL(url);
                     const isAndroid = /Android/i.test(navigator.userAgent);
-                    const MAX = isAndroid ? 480 : 900;
-                    const quality = isAndroid ? 0.3 : 0.55;
+                    const MAX = isAndroid ? 1080 : 1600;
+                    const quality = isAndroid ? 0.7 : 0.8;
                     let w = img.width, h = img.height;
                     if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
                     else if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }

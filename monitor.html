@@ -710,7 +710,7 @@
             const fetchRoutes = useCallback(async () => {
                 if (!window.fbDb) return;
                 try {
-                    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+                    const twoDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
                     const colRef = window.fbQuery(
                         window.fbCollection(window.fbDb, 'artifacts', appId, 'active_routes'),
                         window.fbWhere('createdAt', '>=', twoDaysAgo)
