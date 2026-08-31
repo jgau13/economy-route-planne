@@ -560,9 +560,9 @@
 
                                     {/* Right side: time + photo */}
                                     <div className="flex items-center gap-2 flex-shrink-0">
-                                        {stop.delivered && stop.deliveredAt && !stop.autoConfirmed && (
+                                        {stop.delivered && (stop.photoTimestamp || stop.deliveredAt) && !stop.autoConfirmed && (
                                             <span className="text-xs text-green-600 font-bold whitespace-nowrap">
-                                                {fmtTime(stop.deliveredAt)}
+                                                {fmtTime(stop.photoTimestamp || stop.deliveredAt)}
                                             </span>
                                         )}
                                         {stop.autoConfirmed && (

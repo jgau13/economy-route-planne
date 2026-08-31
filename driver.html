@@ -245,7 +245,7 @@
                     const existingUrls = currentRoute.stops[item.stopIndex].proofUrls || (currentRoute.stops[item.stopIndex].proofUrl ? [currentRoute.stops[item.stopIndex].proofUrl] : []);
                     const newUrls = [...existingUrls.filter(u => !u.startsWith('blob:')), photoUrl];
                     const stops = currentRoute.stops.map((s, i) =>
-                        i === item.stopIndex ? { ...s, proofUrl: newUrls[0], proofUrls: newUrls, storagePath: item.path } : s
+                        i === item.stopIndex ? { ...s, proofUrl: newUrls[0], proofUrls: newUrls, storagePath: item.path, photoTimestamp: item.uploadedAt } : s
                     );
                     await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'active_routes', token), { stops });
                     const stop = currentRoute.stops[item.stopIndex];
@@ -297,7 +297,7 @@
                     ...prev,
                     [stopIndex]: [...(prev[stopIndex] || []), { localUrl, path }]
                 }));
-                uploadQueueRef.current.push({ stopIndex, blob: compressed, path, localUrl, retries: 0 });
+                uploadQueueRef.current.push({ stopIndex, blob: compressed, path, localUrl, retries: 0, uploadedAt: Date.now() });
                 processUploadQueue();
             };
 
@@ -475,7 +475,7 @@
                                         {done ? (
                                             <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 text-xs text-ess-green font-bold">
                                                 <Icon name="check-circle" className="h-4 w-4" />
-                                                Delivered at {stop.deliveredAt ? new Date(stop.deliveredAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '–'}
+                                                Delivered at {(stop.photoTimestamp || stop.deliveredAt) ? new Date(stop.photoTimestamp || stop.deliveredAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '–'}
                                                 {photos.length === 0 && <span className="text-slate-400 font-normal">No photo</span>}
                                                 <button onClick={() => markUndelivered(idx)} className="ml-auto flex items-center gap-1 text-slate-400 hover:text-red-500 font-bold transition-colors px-2 py-1 rounded-lg hover:bg-red-50">
                                                     <Icon name="undo-2" className="h-3.5 w-3.5" /> Undo
