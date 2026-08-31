@@ -475,7 +475,7 @@
                                         {done ? (
                                             <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 text-xs text-ess-green font-bold">
                                                 <Icon name="check-circle" className="h-4 w-4" />
-                                                Delivered at {(stop.photoTimestamp || stop.deliveredAt) ? new Date(stop.photoTimestamp || stop.deliveredAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '–'}
+                                                Delivered at {stop.deliveredAt ? new Date(stop.deliveredAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '–'}
                                                 {photos.length === 0 && <span className="text-slate-400 font-normal">No photo</span>}
                                                 <button onClick={() => markUndelivered(idx)} className="ml-auto flex items-center gap-1 text-slate-400 hover:text-red-500 font-bold transition-colors px-2 py-1 rounded-lg hover:bg-red-50">
                                                     <Icon name="undo-2" className="h-3.5 w-3.5" /> Undo
