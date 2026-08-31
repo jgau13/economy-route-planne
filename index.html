@@ -2231,8 +2231,10 @@
                     if (existingSnap.exists()) {
                         isExistingRoute = true;
                         (existingSnap.data().stops || []).forEach(s => {
-                            const key = (s.nombre || s.name || '').toLowerCase().trim();
-                            if (key) existingStopsMap[key] = s;
+                            const n = (s.nombre || s.name || '').toLowerCase().trim();
+                            const a = (s.direccion || s.address || '').toLowerCase().trim();
+                            const key = `${n}||${a}`;
+                            if (n || a) existingStopsMap[key] = s;
                         });
                     }
                 } catch(e) {}
@@ -2256,7 +2258,8 @@
 
                 const stops = (routeData.paradas || []).map(s => {
                     const nombre = s.nombre || s.name || '';
-                    const prev = existingStopsMap[nombre.toLowerCase().trim()];
+                    const addr = s.direccion || s.address || '';
+                    const prev = existingStopsMap[`${nombre.toLowerCase().trim()}||${addr.toLowerCase().trim()}`];
                     return {
                         nombre,
                         direccion: s.direccion || s.address || '',
