@@ -1087,13 +1087,16 @@
             }, [stopGroups, user]);
 
             // Subscribe to monitor users
-            useEffect(() => {
-                if (!user || !window.fbDb || !window.fbOnSnapshot) return;
-                const unsub = window.fbOnSnapshot(
-                    window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users'),
-                    snap => setMonitorUsers(snap.docs.map(d => ({ uid: d.id, ...d.data() })))
+            const loadMonitorUsers = React.useCallback(async () => {
+                if (!user || !window.fbDb) return;
+                const snap = await window.fbGetDocs(
+                    window.fbCollection(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users')
                 );
-                return () => unsub();
+                setMonitorUsers(snap.docs.map(d => ({ uid: d.id, ...d.data() })));
+            }, [user]);
+
+            useEffect(() => {
+                loadMonitorUsers();
             }, [user, dbReady]);
 
             // --- FUNCIÓN DE UTILIDAD PARA OBTENER COORDENADAS UNA SOLA VEZ AL GUARDAR ---
@@ -2371,6 +2374,7 @@
                     setNewMonitorEmail('');
                     setNewMonitorPassword('');
                     setMonitorUserMsg('User added successfully.');
+                    await loadMonitorUsers();
                 } catch (e) {
                     const map = {
                         'auth/invalid-email':  'Invalid email address.',
@@ -2386,11 +2390,13 @@
                 if (!confirm('Revoke monitor access for this user?')) return;
                 await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users', uid), { active: false });
                 setMonitorUserMsg('Access revoked.');
+                loadMonitorUsers();
             };
 
             const restoreMonitorUser = async (uid) => {
                 await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users', uid), { active: true });
                 setMonitorUserMsg('Access restored.');
+                loadMonitorUsers();
             };
             const handleBackup = () => {
                 const data = { clients: clientDB, drivers, vehicles, stops: currentStops, settings: { companyConfig, baseAddress }, date: new Date().toISOString() };
