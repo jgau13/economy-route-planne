@@ -54,8 +54,11 @@ exports.closeRoutes = onSchedule({ schedule: '0 19 * * *', timeZone: 'America/Ne
     const messaging = getMessaging();
     const todayDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const now = new Date().toISOString();
+    const cutoff = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString();
 
-    const snap = await db.collection('artifacts/default-app-id/active_routes').get();
+    const snap = await db.collection('artifacts/default-app-id/active_routes')
+        .where('createdAt', '>=', cutoff)
+        .get();
 
     for (const docSnap of snap.docs) {
         const data = docSnap.data();
@@ -106,8 +109,11 @@ exports.remindDrivers = onSchedule('every 30 minutes', async () => {
     const messaging = getMessaging();
     const now = Date.now();
     const TWO_HOURS = 2 * 60 * 60 * 1000;
+    const cutoff = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString();
 
-    const snap = await db.collection('artifacts/default-app-id/active_routes').get();
+    const snap = await db.collection('artifacts/default-app-id/active_routes')
+        .where('createdAt', '>=', cutoff)
+        .get();
 
     for (const docSnap of snap.docs) {
         const data = docSnap.data();
