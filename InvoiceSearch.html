@@ -337,12 +337,14 @@
                     const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'proof_of_delivery');
                     const term = proofTerm.trim().toLowerCase();
 
-                    // Always fetch by date range (or last 300 docs) and filter client-side
-                    // This supports invoice #, customer name, and address search uniformly
                     const constraints = [];
+                    const hasDateFilter = proofDateFrom || proofDateTo;
                     if (proofDateFrom) constraints.push(window.fbWhere('date', '>=', proofDateFrom));
                     if (proofDateTo)   constraints.push(window.fbWhere('date', '<=', proofDateTo));
-                    const q = window.fbQuery(col, ...constraints, window.fbOrderBy('date', 'desc'), window.fbLimit(300));
+                    // Without a date filter, skip orderBy to avoid index issues and fetch all docs
+                    const q = hasDateFilter
+                        ? window.fbQuery(col, ...constraints, window.fbOrderBy('date', 'desc'), window.fbLimit(500))
+                        : window.fbQuery(col, window.fbLimit(2000));
 
                     const snap = await window.fbGetDocs(q);
                     let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
