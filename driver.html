@@ -573,7 +573,7 @@
             const [newPinB, setNewPinB] = useState('');
             const [pinChangeShake, setPinChangeShake] = useState(false);
             const [pinChangeDone, setPinChangeDone] = useState(false);
-            const unsubRoutes = useRef(null);
+            const unsubRoutes = useRef(null); // holds polling interval id
             const unsubDetail = useRef(null);
 
             // Init: Firebase + load driver list
@@ -613,7 +613,7 @@
                     }
                 };
                 init();
-                return () => { unsubRoutes.current?.(); unsubDetail.current?.(); };
+                return () => { clearInterval(unsubRoutes.current); unsubDetail.current?.(); };
             }, []);
 
             const pickDriver = (driver) => {
@@ -661,18 +661,22 @@
                 }
             };
 
-            const subscribeRoutes = (driver) => {
-                unsubRoutes.current?.();
+            const fetchRoutes = async (driver) => {
                 const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'active_routes');
-                unsubRoutes.current = window.fbOnSnapshot(col, snap => {
-                    const all = snap.docs.map(d => ({ token: d.id, ...d.data() }));
-                    const mine = all.filter(r => r.dispatcherUid === companyUid && r.driverName === driver.name);
-                    mine.sort((a, b) => {
-                        if (b.date !== a.date) return b.date.localeCompare(a.date);
-                        return a.trip === 'AM' ? -1 : 1;
-                    });
-                    setRoutes(mine);
+                const snap = await window.fbGetDocs(col);
+                const all = snap.docs.map(d => ({ token: d.id, ...d.data() }));
+                const mine = all.filter(r => r.dispatcherUid === companyUid && r.driverName === driver.name);
+                mine.sort((a, b) => {
+                    if (b.date !== a.date) return b.date.localeCompare(a.date);
+                    return a.trip === 'AM' ? -1 : 1;
                 });
+                setRoutes(mine);
+            };
+
+            const subscribeRoutes = (driver) => {
+                clearInterval(unsubRoutes.current);
+                fetchRoutes(driver);
+                unsubRoutes.current = setInterval(() => fetchRoutes(driver), 2 * 60 * 1000);
             };
 
             const openRoute = (token) => {
@@ -687,7 +691,7 @@
 
             const logout = () => {
                 localStorage.removeItem(lsKey);
-                unsubRoutes.current?.();
+                clearInterval(unsubRoutes.current);
                 unsubDetail.current?.();
                 pinRef.current = '';
                 setSelectedDriver(null);
