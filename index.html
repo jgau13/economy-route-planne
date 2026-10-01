@@ -1024,41 +1024,35 @@
                 if (!user || !window.fbDb) return;
                 const uid = user.uid;
                 const userRef = (c) => window.fbCollection(window.fbDb, 'artifacts', appId, 'users', uid, c);
-                const onErr = (e) => console.error('[Firestore onSnapshot error]', e);
+                const onErr = (e) => console.error('[Firestore error]', e);
 
-                const unsub1 = window.fbOnSnapshot(window.fbQuery(userRef('clients')), s => setClientDB(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
-                const unsub2 = window.fbOnSnapshot(window.fbQuery(userRef('drivers')), s => setDrivers(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
-                const unsub3 = window.fbOnSnapshot(window.fbQuery(userRef('vehicles')), s => setVehicles(s.docs.map(d => ({id: d.id, ...d.data()}))), onErr);
-
-                // ORDENAMIENTO LOCAL (Evitar Firebase orderBy)
-                const unsub4 = window.fbOnSnapshot(window.fbQuery(userRef('draft_stops')), s => {
-                    const data = s.docs.map(d => ({id: d.id, ...d.data()}));
-                    data.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-                    setCurrentStops(data);
-                }, onErr);
-
-                const unsub5 = window.fbOnSnapshot(window.fbQuery(userRef('zones')), s => {
-                    const data = s.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    data.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-                    setZones(data);
-                }, onErr);
-
-                const unsub6 = window.fbOnSnapshot(window.fbQuery(userRef('saved_plans')), s => {
-                    const data = s.docs.map(d => ({id: d.id, ...d.data()}));
-                    data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-                    setSavedPlans(data);
-                }, onErr);
-
-                const unsub7 = window.fbOnSnapshot(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config'), (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
+                // Static master data: load once (no persistent listeners)
+                Promise.all([
+                    window.fbGetDocs(window.fbQuery(userRef('clients'))),
+                    window.fbGetDocs(window.fbQuery(userRef('drivers'))),
+                    window.fbGetDocs(window.fbQuery(userRef('vehicles'))),
+                    window.fbGetDocs(window.fbQuery(userRef('zones'))),
+                    window.fbGetDocs(window.fbQuery(userRef('saved_plans'))),
+                    window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config')),
+                ]).then(([clients, drivers, vehicles, zones, plans, configSnap]) => {
+                    setClientDB(clients.docs.map(d => ({id: d.id, ...d.data()})));
+                    setDrivers(drivers.docs.map(d => ({id: d.id, ...d.data()})));
+                    setVehicles(vehicles.docs.map(d => ({id: d.id, ...d.data()})));
+                    const zoneData = zones.docs.map(d => ({ id: d.id, ...d.data() }));
+                    zoneData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+                    setZones(zoneData);
+                    const planData = plans.docs.map(d => ({id: d.id, ...d.data()}));
+                    planData.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                    setSavedPlans(planData);
+                    if (configSnap.exists()) {
+                        const data = configSnap.data();
                         if (data.companyConfig) setCompanyConfig(data.companyConfig);
                         if (data.baseAddress) setBaseAddress(data.baseAddress);
                         if (data.baseLatlng) setBaseLatlng(data.baseLatlng);
                     }
-                }, onErr);
+                }).catch(onErr);
 
-                // Load persisted zone groups for this user (one-time read to avoid write-echo loop)
+                // Zone groups: one-time read
                 window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'zone_groups'))
                     .then(docSnap => {
                         if (docSnap.exists()) {
@@ -1068,7 +1062,14 @@
                         zoneGroupsReadyRef.current = true;
                     }).catch(onErr);
 
-                return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); };
+                // draft_stops: keep live listener so both dispatcher PCs stay in sync
+                const unsubDraft = window.fbOnSnapshot(window.fbQuery(userRef('draft_stops')), s => {
+                    const data = s.docs.map(d => ({id: d.id, ...d.data()}));
+                    data.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+                    setCurrentStops(data);
+                }, onErr);
+
+                return () => { unsubDraft(); };
             }, [user, dbReady, syncKey]);
 
             // Clear zone groups when user logs out (prevents leaking zones between users)
