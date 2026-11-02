@@ -710,10 +710,9 @@
             const fetchRoutes = useCallback(async () => {
                 if (!window.fbDb) return;
                 try {
-                    const twoDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
                     const colRef = window.fbQuery(
                         window.fbCollection(window.fbDb, 'artifacts', appId, 'active_routes'),
-                        window.fbWhere('createdAt', '>=', twoDaysAgo)
+                        window.fbWhere('date', '==', filterDate)
                     );
                     const snap = await window.fbGetDocs(colRef);
                     const docs = snap.docs
@@ -723,7 +722,7 @@
                     setRoutes(docs);
                     setLastUpdate(new Date());
                 } catch(e) { console.error('Poll error:', e); }
-            }, [currentUser, firebaseReady]);
+            }, [currentUser, firebaseReady, filterDate]);
 
             const handleManualRefresh = async () => {
                 setRefreshing(true);
@@ -734,9 +733,11 @@
             useEffect(() => {
                 if (!currentUser || !firebaseReady || !window.fbDb) return;
                 fetchRoutes();
-                const interval = setInterval(fetchRoutes, POLL_INTERVAL);
-                return () => clearInterval(interval);
-            }, [currentUser, firebaseReady]);
+                const interval = setInterval(() => { if (!document.hidden) fetchRoutes(); }, POLL_INTERVAL);
+                const onVisible = () => { if (!document.hidden) fetchRoutes(); };
+                document.addEventListener('visibilitychange', onVisible);
+                return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
+            }, [fetchRoutes]);
 
             const handleLogout = () => {
                 window.fbSignOut(window.fbAuth);

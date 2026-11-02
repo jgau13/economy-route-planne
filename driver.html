@@ -19,7 +19,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, getDocs, setDoc, onSnapshot, updateDoc, addDoc, collection } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, getDocs, setDoc, onSnapshot, updateDoc, addDoc, collection, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
         import { getAuth, signInAnonymously, setPersistence, inMemoryPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getMessaging, getToken } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js";
@@ -44,6 +44,8 @@
                 window.fbUpdateDoc = updateDoc;
                 window.fbAddDoc = addDoc;
                 window.fbCollection = collection;
+                window.fbQuery = query;
+                window.fbWhere = where;
                 window.fbStorageRef = ref;
                 window.fbUploadBytes = uploadBytes;
                 window.fbGetDownloadURL = getDownloadURL;
@@ -663,10 +665,13 @@
             };
 
             const fetchRoutes = async (driver) => {
-                const col = window.fbCollection(window.fbDb, 'artifacts', appId, 'active_routes');
-                const snap = await window.fbGetDocs(col);
-                const all = snap.docs.map(d => ({ token: d.id, ...d.data() }));
-                const mine = all.filter(r => r.dispatcherUid === companyUid && r.driverName === driver.name);
+                const q = window.fbQuery(
+                    window.fbCollection(window.fbDb, 'artifacts', appId, 'active_routes'),
+                    window.fbWhere('dispatcherUid', '==', companyUid),
+                    window.fbWhere('driverName', '==', driver.name)
+                );
+                const snap = await window.fbGetDocs(q);
+                const mine = snap.docs.map(d => ({ token: d.id, ...d.data() }));
                 mine.sort((a, b) => {
                     if (b.date !== a.date) return b.date.localeCompare(a.date);
                     return a.trip === 'AM' ? -1 : 1;
@@ -677,7 +682,7 @@
             const subscribeRoutes = (driver) => {
                 clearInterval(unsubRoutes.current);
                 fetchRoutes(driver);
-                unsubRoutes.current = setInterval(() => fetchRoutes(driver), 2 * 60 * 1000);
+                unsubRoutes.current = setInterval(() => { if (!document.hidden) fetchRoutes(driver); }, 2 * 60 * 1000);
             };
 
             const openRoute = (token) => {
