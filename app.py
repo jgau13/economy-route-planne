@@ -80,7 +80,7 @@ FIREBASE_CONFIG = {
 
 VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
 
-ALMACEN_COORD = "28.450324,-81.405368" 
+BASE_SIN_UBICACION = "The base address has no location. Open Config, select the base address from the Google suggestions and save."
 
 if not GOOGLE_MAPS_API_KEY:
     print("⚠️ ADVERTENCIA: GOOGLE_MAPS_API_KEY no detectada.", file=sys.stderr)
@@ -367,7 +367,6 @@ def generar_link_puro(origen_obj, destino_obj, waypoints_objs):
     return link
 
 def crear_modelo_datos(items, n_vans, base_addr, base_latlng=None):
-    base_coord = ALMACEN_COORD
     base_fmt = base_addr
     base_id = ""
 
@@ -382,13 +381,12 @@ def crear_modelo_datos(items, n_vans, base_addr, base_latlng=None):
     if base_latlng and base_latlng.get('lat') and base_latlng.get('lng'):
         base_coord = f"{base_latlng['lat']},{base_latlng['lng']}"
         base_fmt = base_addr
-    elif base_addr:
+    else:
         c, f, i = obtener_datos_geo(base_addr, db_connection=conn, require_zip=False)
-        if c:
-            base_coord, base_fmt, base_id = c, f, i
-        else:
-            print(f"⚠️ No se pudo geocodificar la base '{base_addr}', usando coordenadas por defecto.", file=sys.stderr)
-            base_fmt = base_addr
+        if not c:
+            if conn: conn.close()
+            return {"error_critico": BASE_SIN_UBICACION}
+        base_coord, base_fmt, base_id = c, f, i
 
     puntos_coords = [base_coord]
     paradas_validas = []
@@ -716,9 +714,8 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time, base_latlng=None):
     else:
         c_base, fmt_base, _ = obtener_datos_geo(base, require_zip=False)
     if not c_base:
-        c_base = ALMACEN_COORD
-        fmt_base = base or ''
-    
+        return jsonify({"error": BASE_SIN_UBICACION}), 400
+
     coords = [c_base]
     clean_stops = []
     
@@ -778,8 +775,16 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time, base_latlng=None):
     })
 
 def resolver_tsp_parcial(fixed, loose, base, dwell):
-    model = crear_modelo_datos(loose, 1, fixed.get('direccion'))
-    if not model or "error" in model or "invalidas" in model: return None
+    ll = fixed.get('coord') or fixed.get('latlng')
+    fixed_latlng = None
+    if isinstance(ll, dict):
+        fixed_latlng = ll
+    elif isinstance(ll, str) and ',' in ll:
+        lat, lng = ll.split(',')[:2]
+        fixed_latlng = {"lat": lat.strip(), "lng": lng.strip()}
+
+    model = crear_modelo_datos(loose, 1, fixed.get('direccion'), fixed_latlng)
+    if not model or "error_critico" in model or "invalidas" in model: return None
     
     manager = pywrapcp.RoutingIndexManager(len(model['time_matrix']), 1, 0)
     routing = pywrapcp.RoutingModel(manager)
