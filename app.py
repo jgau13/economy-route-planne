@@ -702,7 +702,14 @@ def optimizar_restantes():
     fixed = paradas[0]
     loose = paradas[1:]
 
-    new_order = resolver_tsp_parcial(fixed, loose, base, dwell)  # already includes fixed as first element
+    if base_latlng and base_latlng.get('lat') and base_latlng.get('lng'):
+        c_base = f"{base_latlng['lat']},{base_latlng['lng']}"
+    else:
+        c_base, _, _ = obtener_datos_geo(base, require_zip=False)
+    if not c_base:
+        return jsonify({"error": BASE_SIN_UBICACION}), 400
+
+    new_order = resolver_tsp_parcial(fixed, loose, base, c_base)  # already includes fixed as first element
     if not new_order: return jsonify({"error": "Fallo re-optimizando"}), 500
 
     return recalcular_ruta_internal(new_order, base, dwell, base_latlng)
@@ -774,7 +781,7 @@ def recalcular_ruta_internal(paradas_objs, base, dwell_time, base_latlng=None):
         "paradas": clean_stops
     })
 
-def resolver_tsp_parcial(fixed, loose, base, dwell):
+def resolver_tsp_parcial(fixed, loose, base, c_base):
     ll = fixed.get('coord') or fixed.get('latlng')
     fixed_latlng = None
     if isinstance(ll, dict):
@@ -783,10 +790,13 @@ def resolver_tsp_parcial(fixed, loose, base, dwell):
         lat, lng = ll.split(',')[:2]
         fixed_latlng = {"lat": lat.strip(), "lng": lng.strip()}
 
-    model = crear_modelo_datos(loose, 1, fixed.get('direccion'), fixed_latlng)
+    # Base goes last as the route's end node, so the path runs first stop -> ... -> base
+    base_node = {"nombre": "Base", "direccion": base, "latlng": c_base}
+    model = crear_modelo_datos(loose + [base_node], 1, fixed.get('direccion'), fixed_latlng)
     if not model or "error_critico" in model or "invalidas" in model: return None
-    
-    manager = pywrapcp.RoutingIndexManager(len(model['time_matrix']), 1, 0)
+
+    end_node = len(model['time_matrix']) - 1
+    manager = pywrapcp.RoutingIndexManager(len(model['time_matrix']), 1, [0], [end_node])
     routing = pywrapcp.RoutingModel(manager)
     
     def time_cb(i, j):
