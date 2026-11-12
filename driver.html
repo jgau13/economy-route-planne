@@ -288,20 +288,28 @@
             }, []);
 
             const handlePhotoSelected = async (e) => {
-                const file = e.target.files?.[0];
+                const allFiles = Array.from(e.target.files || []);
                 e.target.value = '';
                 const stopIndex = proofStop;
-                if (!file || stopIndex === null) return;
+                if (!allFiles.length || stopIndex === null) return;
                 setProofStop(null); // close modal immediately so driver can continue
-                const compressed = await compressImage(file);
-                const localUrl = URL.createObjectURL(compressed);
-                const path = `artifacts/${appId}/proofs/${token}/stop_${stopIndex}_${Date.now()}.jpg`;
-                setPendingPhotos(prev => ({
-                    ...prev,
-                    [stopIndex]: [...(prev[stopIndex] || []), { localUrl, path }]
-                }));
-                uploadQueueRef.current.push({ stopIndex, blob: compressed, path, localUrl, retries: 0, uploadedAt: Date.now() });
-                processUploadQueue();
+                const s = routeRef.current?.stops?.[stopIndex] || {};
+                const uploaded = (s.proofUrls || (s.proofUrl ? [s.proofUrl] : [])).length;
+                const queued = uploadQueueRef.current.filter(q => q.stopIndex === stopIndex).length;
+                const room = Math.max(0, 6 - uploaded - queued);
+                const files = allFiles.slice(0, room);
+                if (files.length < allFiles.length) alert(`Max 6 photos per stop. ${files.length} added.`);
+                for (let n = 0; n < files.length; n++) {
+                    const compressed = await compressImage(files[n]);
+                    const localUrl = URL.createObjectURL(compressed);
+                    const path = `artifacts/${appId}/proofs/${token}/stop_${stopIndex}_${Date.now()}_${n}.jpg`;
+                    setPendingPhotos(prev => ({
+                        ...prev,
+                        [stopIndex]: [...(prev[stopIndex] || []), { localUrl, path }]
+                    }));
+                    uploadQueueRef.current.push({ stopIndex, blob: compressed, path, localUrl, retries: 0, uploadedAt: Date.now() });
+                    processUploadQueue();
+                }
             };
 
             const stops = route.stops || [];
@@ -317,7 +325,7 @@
                 <div className="min-h-screen bg-slate-100 pb-12">
                 <div className="max-w-lg mx-auto">
                     <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoSelected} />
-                    <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} />
+                    <input ref={galleryInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoSelected} />
 
                     {/* Lightbox */}
                     {lightboxUrl && (
