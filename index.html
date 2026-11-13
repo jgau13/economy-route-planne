@@ -2361,20 +2361,23 @@
                 setAddingMonitorUser(true);
                 setMonitorUserMsg('');
                 try {
-                    // Try to create the auth account; if it already exists, that's fine
+                    // Try to create the auth account; if it already exists skip auth creation
+                    let wasExisting = false;
                     try {
                         await window.fbCreateMonitorUser(newMonitorEmail.trim(), newMonitorPassword);
                     } catch (authErr) {
                         if (authErr.code !== 'auth/email-already-in-use') throw authErr;
+                        wasExisting = true;
                     }
-                    // Use email as doc key so existing accounts can still be added
                     await window.fbSetDoc(
                         window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users', newMonitorEmail.trim()),
                         { email: newMonitorEmail.trim(), createdAt: new Date().toISOString(), active: true }
                     );
                     setNewMonitorEmail('');
                     setNewMonitorPassword('');
-                    setMonitorUserMsg('User added successfully.');
+                    setMonitorUserMsg(wasExisting
+                        ? 'User added. This email already had an account — the new password was NOT applied. Have them use "Forgot Password" on the monitor login to set a new one.'
+                        : 'User added successfully.');
                     await loadMonitorUsers();
                 } catch (e) {
                     const map = {
@@ -2388,15 +2391,9 @@
             };
 
             const revokeMonitorUser = async (uid) => {
-                if (!confirm('Revoke monitor access for this user?')) return;
-                await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users', uid), { active: false });
-                setMonitorUserMsg('Access revoked.');
-                loadMonitorUsers();
-            };
-
-            const restoreMonitorUser = async (uid) => {
-                await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users', uid), { active: true });
-                setMonitorUserMsg('Access restored.');
+                if (!confirm('Remove this monitor user? They will lose access immediately.')) return;
+                await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', user.uid, 'monitor_users', uid));
+                setMonitorUserMsg('User removed.');
                 loadMonitorUsers();
             };
             const handleBackup = () => {
@@ -3444,21 +3441,17 @@
                                         {/* Users list */}
                                         <div>
                                             <label className="block text-sm font-bold text-slate-500 mb-2">Monitor Users</label>
-                                            {monitorUsers.length === 0 ? (
+                                            {monitorUsers.filter(u => u.active !== false).length === 0 ? (
                                                 <p className="text-xs text-slate-400 italic py-2">No monitor users yet. Add one below.</p>
                                             ) : (
                                                 <div className="space-y-2 mb-1">
-                                                    {monitorUsers.map(u => (
-                                                        <div key={u.uid} className={`flex items-center justify-between px-3 py-2 rounded-lg border text-sm ${u.active ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-slate-50'}`}>
+                                                    {monitorUsers.filter(u => u.active !== false).map(u => (
+                                                        <div key={u.uid} className="flex items-center justify-between px-3 py-2 rounded-lg border border-green-200 bg-green-50 text-sm">
                                                             <div className="flex items-center gap-2 min-w-0">
-                                                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${u.active ? 'bg-green-500' : 'bg-slate-300'}`} />
+                                                                <span className="w-2 h-2 rounded-full flex-shrink-0 bg-green-500" />
                                                                 <span className="font-medium text-slate-700 truncate">{u.email}</span>
-                                                                {!u.active && <span className="text-xs text-red-500 font-bold flex-shrink-0">Revoked</span>}
                                                             </div>
-                                                            {u.active
-                                                                ? <button onClick={() => revokeMonitorUser(u.uid)} className="text-xs text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded hover:bg-red-50 flex-shrink-0 ml-2">Revoke</button>
-                                                                : <button onClick={() => restoreMonitorUser(u.uid)} className="text-xs text-green-600 hover:text-green-700 font-bold px-2 py-1 rounded hover:bg-green-50 flex-shrink-0 ml-2">Restore</button>
-                                                            }
+                                                            <button onClick={() => revokeMonitorUser(u.uid)} className="text-xs text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded hover:bg-red-50 flex-shrink-0 ml-2">Remove</button>
                                                         </div>
                                                     ))}
                                                 </div>

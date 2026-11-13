@@ -30,7 +30,7 @@
                 window.fbDb = db;
                 window.fbSignInWithEmail = (email, password) => setPersistence(auth, browserLocalPersistence).then(() => signInWithEmailAndPassword(auth, email, password));
                 window.fbSignOut = signOut;
-                window.fbSendPasswordReset = (email) => sendPasswordResetEmail(auth, email);
+                window.fbSendPasswordReset = (email, actionCodeSettings) => sendPasswordResetEmail(auth, email, actionCodeSettings);
                 window.fbOnAuthStateChanged = onAuthStateChanged;
                 window.fbUpdatePassword = updatePassword;
                 window.fbReauthenticate = (user, credential) => reauthenticateWithCredential(user, credential);
@@ -161,7 +161,10 @@
                 if (!email.trim()) { setError('Enter your email first, then click Forgot Password.'); return; }
                 setResetBusy(true); setError('');
                 try {
-                    await window.fbSendPasswordReset(email.trim());
+                    await window.fbSendPasswordReset(email.trim(), {
+                        url: window.location.href,
+                        handleCodeInApp: false,
+                    });
                     setResetSent(true);
                 } catch (err) {
                     const map = {
