@@ -2376,7 +2376,7 @@
                     setNewMonitorEmail('');
                     setNewMonitorPassword('');
                     setMonitorUserMsg(wasExisting
-                        ? 'User added. This email already had an account — the new password was NOT applied. Have them use "Forgot Password" on the monitor login to set a new one.'
+                        ? 'This user already existed. Password was not applied. They must use Forgot Password on the monitor login.'
                         : 'User added successfully.');
                     await loadMonitorUsers();
                 } catch (e) {
