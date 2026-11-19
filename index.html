@@ -1026,24 +1026,26 @@
                 const userRef = (c) => window.fbCollection(window.fbDb, 'artifacts', appId, 'users', uid, c);
                 const onErr = (e) => console.error('[Firestore error]', e);
 
-                // Static master data: load once (no persistent listeners)
-                Promise.all([
-                    window.fbGetDocs(window.fbQuery(userRef('clients'))),
-                    window.fbGetDocs(window.fbQuery(userRef('drivers'))),
-                    window.fbGetDocs(window.fbQuery(userRef('vehicles'))),
-                    window.fbGetDocs(window.fbQuery(userRef('zones'))),
-                    window.fbGetDocs(window.fbQuery(userRef('saved_plans'))),
-                    window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config')),
-                ]).then(([clients, drivers, vehicles, zones, plans, configSnap]) => {
-                    setClientDB(clients.docs.map(d => ({id: d.id, ...d.data()})));
-                    setDrivers(drivers.docs.map(d => ({id: d.id, ...d.data()})));
-                    setVehicles(vehicles.docs.map(d => ({id: d.id, ...d.data()})));
-                    const zoneData = zones.docs.map(d => ({ id: d.id, ...d.data() }));
-                    zoneData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-                    setZones(zoneData);
-                    const planData = plans.docs.map(d => ({id: d.id, ...d.data()}));
-                    planData.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-                    setSavedPlans(planData);
+                // Master data: live listeners so adds/edits/deletes show up right away.
+                // onSnapshot only downloads changed docs after the first load (cheap, unlike polling).
+                const rows = (s) => s.docs.map(d => ({id: d.id, ...d.data()}));
+                const unsubs = [
+                    window.fbOnSnapshot(window.fbQuery(userRef('clients')), s => setClientDB(rows(s)), onErr),
+                    window.fbOnSnapshot(window.fbQuery(userRef('drivers')), s => setDrivers(rows(s)), onErr),
+                    window.fbOnSnapshot(window.fbQuery(userRef('vehicles')), s => setVehicles(rows(s)), onErr),
+                    window.fbOnSnapshot(window.fbQuery(userRef('zones')), s => {
+                        const zoneData = rows(s);
+                        zoneData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+                        setZones(zoneData);
+                    }, onErr),
+                    window.fbOnSnapshot(window.fbQuery(userRef('saved_plans')), s => {
+                        const planData = rows(s);
+                        planData.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                        setSavedPlans(planData);
+                    }, onErr),
+                ];
+
+                window.fbGetDoc(window.fbDoc(window.fbDb, 'artifacts', appId, 'users', uid, 'settings', 'config')).then((configSnap) => {
                     if (configSnap.exists()) {
                         const data = configSnap.data();
                         if (data.companyConfig) setCompanyConfig(data.companyConfig);
@@ -1069,7 +1071,7 @@
                     setCurrentStops(data);
                 }, onErr);
 
-                return () => { unsubDraft(); };
+                return () => { unsubDraft(); unsubs.forEach(u => u()); };
             }, [user, dbReady, syncKey]);
 
             // Clear zone groups when user logs out (prevents leaking zones between users)
